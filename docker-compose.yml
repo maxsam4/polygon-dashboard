@@ -1,0 +1,43 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-polygon}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-polygon}
+      POSTGRES_DB: ${DB_NAME:-polygon_dashboard}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polygon"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-polygon}:${DB_PASSWORD:-polygon}@db:5432/${DB_NAME:-polygon_dashboard}
+      POLYGON_RPC_URLS: ${POLYGON_RPC_URLS}
+      HEIMDALL_API_URLS: ${HEIMDALL_API_URLS:-https://heimdall-api.polygon.technology}
+      BACKFILL_TO_BLOCK: ${BACKFILL_TO_BLOCK:-50000000}
+      BACKFILL_BATCH_SIZE: ${BACKFILL_BATCH_SIZE:-100}
+      RPC_DELAY_MS: ${RPC_DELAY_MS:-100}
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
