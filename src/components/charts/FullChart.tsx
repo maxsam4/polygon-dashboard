@@ -101,6 +101,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     fetchData();
   }, [fetchData]);
 
+  // Create chart - only recreate when metric changes, not theme
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
@@ -176,7 +177,23 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [theme, metric]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metric]); // Only recreate chart when metric changes
+
+  // Update theme colors without recreating the chart
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current.applyOptions({
+        layout: {
+          textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+        },
+        grid: {
+          vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+          horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+        },
+      });
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;

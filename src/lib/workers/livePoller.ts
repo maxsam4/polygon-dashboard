@@ -7,6 +7,7 @@ import {
   insertBlocksBatch
 } from '@/lib/queries/blocks';
 import { Block } from '@/lib/types';
+import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2000;
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -36,14 +37,14 @@ export class LivePoller {
     while (this.running) {
       try {
         await this.processNewBlocks();
-        await this.sleep(POLL_INTERVAL_MS);
+        await sleep(POLL_INTERVAL_MS);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
           console.error('[LivePoller] RPC exhausted, waiting 5 minutes...');
-          await this.sleep(EXHAUSTED_RETRY_MS);
+          await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[LivePoller] Error:', error);
-          await this.sleep(POLL_INTERVAL_MS);
+          await sleep(POLL_INTERVAL_MS);
         }
       }
     }
@@ -217,9 +218,5 @@ export class LivePoller {
 
     await insertBlock(blockData);
     console.log(`[LivePoller] Processed block ${blockNumber}`);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

@@ -1,4 +1,5 @@
 import { Milestone } from './types';
+import { sleep } from './utils';
 
 interface RetryConfig {
   maxRetries: number;
@@ -62,10 +63,6 @@ export class HeimdallClient {
     return Math.min(exponentialDelay + jitter, this.retryConfig.maxDelayMs);
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   private async fetch<T>(path: string): Promise<T> {
     let lastError: Error | undefined;
 
@@ -88,7 +85,7 @@ export class HeimdallClient {
       if (retry < this.retryConfig.maxRetries) {
         const delay = this.calculateBackoff(retry);
         console.warn(`All Heimdall endpoints failed. Retry ${retry + 1}/${this.retryConfig.maxRetries} in ${delay}ms...`);
-        await this.sleep(delay);
+        await sleep(delay);
       }
     }
 

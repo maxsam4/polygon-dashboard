@@ -1,5 +1,6 @@
 import { createPublicClient, http, PublicClient } from 'viem';
 import { polygon } from 'viem/chains';
+import { sleep } from './utils';
 
 // Re-export Block type for convenience
 export type { Block as ViemBlock } from 'viem';
@@ -57,10 +58,6 @@ export class RpcClient {
     return Math.min(exponentialDelay + jitter, this.retryConfig.maxDelayMs);
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
     let lastError: Error | undefined;
 
@@ -78,7 +75,7 @@ export class RpcClient {
       if (retry < this.retryConfig.maxRetries) {
         const delay = this.calculateBackoff(retry);
         console.warn(`All endpoints failed. Retry ${retry + 1}/${this.retryConfig.maxRetries} in ${delay}ms...`);
-        await this.sleep(delay);
+        await sleep(delay);
       }
     }
 

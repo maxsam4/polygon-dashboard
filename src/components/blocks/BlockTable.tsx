@@ -57,15 +57,18 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-mono">{formatGas(block.gasUsed)}</span>
-                        <span className="text-gray-500">{block.gasUsedPercent.toFixed(2)}%</span>
-                      </div>
-                      <div className="w-1/2 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className="relative w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
                         <div
-                          className={`h-2 rounded-full ${getGasUtilizationColor(block.gasUsedPercent)}`}
+                          className={`h-4 rounded-full ${getGasUtilizationColor(block.gasUsedPercent)}`}
                           style={{ width: `${Math.min(block.gasUsedPercent, 100)}%` }}
                         />
+                        <span className="absolute inset-0 flex items-center justify-center text-xs font-medium text-gray-800 dark:text-gray-100">
+                          {block.gasUsedPercent.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span className="font-mono">{formatGas(block.gasUsed)}</span>
+                        <span className="font-mono">/ {formatGas(block.gasLimit)}</span>
                       </div>
                     </div>
                   </td>

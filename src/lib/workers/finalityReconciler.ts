@@ -1,4 +1,5 @@
 import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
+import { sleep } from '@/lib/utils';
 
 const RECONCILE_INTERVAL_MS = 10000; // 10 seconds
 
@@ -28,11 +29,7 @@ export class FinalityReconciler {
       } catch (error) {
         console.error('[FinalityReconciler] Error:', error);
       }
-      await this.sleep(RECONCILE_INTERVAL_MS);
+      await sleep(RECONCILE_INTERVAL_MS);
     }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

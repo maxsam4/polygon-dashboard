@@ -5,6 +5,7 @@ import {
   insertBlocksBatch
 } from '@/lib/queries/blocks';
 import { Block } from '@/lib/types';
+import { sleep } from '@/lib/utils';
 
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -40,7 +41,7 @@ export class Backfiller {
         if (lowestBlock === null) {
           // No blocks yet, wait for live poller to add some
           console.log('[Backfiller] No blocks in DB yet, waiting...');
-          await this.sleep(5000);
+          await sleep(5000);
           continue;
         }
 
@@ -51,14 +52,14 @@ export class Backfiller {
         }
 
         await this.processBatch(lowestBlock);
-        await this.sleep(this.delayMs);
+        await sleep(this.delayMs);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
           console.error('[Backfiller] RPC exhausted, waiting 5 minutes...');
-          await this.sleep(EXHAUSTED_RETRY_MS);
+          await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[Backfiller] Error:', error);
-          await this.sleep(5000);
+          await sleep(5000);
         }
       }
     }
@@ -129,9 +130,5 @@ export class Backfiller {
 
     await insertBlocksBatch(blocks);
     console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

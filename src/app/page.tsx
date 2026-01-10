@@ -1,31 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Nav } from '@/components/Nav';
 import { MiniChart } from '@/components/charts/MiniChart';
 import { BlockTable } from '@/components/blocks/BlockTable';
-
-interface BlockData {
-  blockNumber: string;
-  timestamp: string;
-  gasUsedPercent: number;
-  baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
-  medianPriorityFeeGwei: number;
-  minPriorityFeeGwei: number;
-  maxPriorityFeeGwei: number;
-  txCount: number;
-  gasUsed: string;
-  gasLimit: string;
-  blockTimeSec: number | null;
-  mgasPerSec: number | null;
-  tps: number | null;
-  finalized: boolean;
-  timeToFinalitySec: number | null;
-}
+import { BlockDataUI } from '@/lib/types';
 
 export default function Home() {
-  const [blocks, setBlocks] = useState<BlockData[]>([]);
+  const [blocks, setBlocks] = useState<BlockDataUI[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,13 +30,37 @@ export default function Home() {
 
   const latestBlock = blocks[0];
   const lastFinalizedBlock = blocks.find(b => b.timeToFinalitySec !== null);
-  const reversedBlocks = blocks.slice().reverse();
-  const gasChartData = reversedBlocks.map((b, i) => ({
-    time: i,
-    value: b.baseFeeGwei,
-    blockNumber: parseInt(b.blockNumber),
-    timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
-  }));
+
+  // Memoize chart data to avoid recalculating on every render
+  const chartData = useMemo(() => {
+    const reversed = blocks.slice().reverse();
+    return {
+      gas: reversed.map((b, i) => ({
+        time: i,
+        value: b.baseFeeGwei,
+        blockNumber: parseInt(b.blockNumber, 10),
+        timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
+      })),
+      finality: reversed.map((b, i) => ({
+        time: i,
+        value: b.timeToFinalitySec ?? 0,
+        blockNumber: parseInt(b.blockNumber, 10),
+        timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
+      })),
+      mgas: reversed.map((b, i) => ({
+        time: i,
+        value: b.mgasPerSec ?? 0,
+        blockNumber: parseInt(b.blockNumber, 10),
+        timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
+      })),
+      tps: reversed.map((b, i) => ({
+        time: i,
+        value: b.tps ?? 0,
+        blockNumber: parseInt(b.blockNumber, 10),
+        timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
+      })),
+    };
+  }, [blocks]);
 
   return (
     <div className="min-h-screen">
@@ -64,28 +70,28 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MiniChart
             title="Gas Price"
-            data={gasChartData}
+            data={chartData.gas}
             currentValue={latestBlock?.baseFeeGwei.toFixed(2) ?? '-'}
             unit="gwei"
             color="#2962FF"
           />
           <MiniChart
             title="Finality Time"
-            data={reversedBlocks.map((b, i) => ({ time: i, value: b.timeToFinalitySec ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
+            data={chartData.finality}
             currentValue={lastFinalizedBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
             unit="sec"
             color="#FF6D00"
           />
           <MiniChart
             title="MGAS/s"
-            data={reversedBlocks.map((b, i) => ({ time: i, value: b.mgasPerSec ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
+            data={chartData.mgas}
             currentValue={latestBlock?.mgasPerSec?.toFixed(1) ?? '-'}
             unit=""
             color="#00C853"
           />
           <MiniChart
             title="TPS"
-            data={reversedBlocks.map((b, i) => ({ time: i, value: b.tps ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
+            data={chartData.tps}
             currentValue={latestBlock?.tps?.toFixed(0) ?? '-'}
             unit=""
             color="#AA00FF"

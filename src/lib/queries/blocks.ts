@@ -148,56 +148,57 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
 export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updatedAt'>[]): Promise<void> {
   if (blocks.length === 0) return;
 
-  const pool = getPool();
-  const client = await pool.connect();
+  // Build multi-value INSERT for better performance (single round-trip vs N round-trips)
+  const values: string[] = [];
+  const params: unknown[] = [];
+  const PARAMS_PER_BLOCK = 21;
 
-  try {
-    await client.query('BEGIN');
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const offset = i * PARAMS_PER_BLOCK;
+    const placeholders = Array.from(
+      { length: PARAMS_PER_BLOCK },
+      (_, j) => `$${offset + j + 1}`
+    ).join(', ');
+    values.push(`(${placeholders})`);
 
-    for (const block of blocks) {
-      await client.query(
-        `INSERT INTO blocks (
-          timestamp, block_number, block_hash, parent_hash,
-          gas_used, gas_limit, base_fee_gwei,
-          min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
-          total_base_fee_gwei, total_priority_fee_gwei,
-          tx_count, block_time_sec, mgas_per_sec, tps,
-          finalized, finalized_at, milestone_id, time_to_finality_sec
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-        ON CONFLICT (timestamp, block_number) DO NOTHING`,
-        [
-          block.timestamp,
-          block.blockNumber.toString(),
-          block.blockHash,
-          block.parentHash,
-          block.gasUsed.toString(),
-          block.gasLimit.toString(),
-          block.baseFeeGwei,
-          block.minPriorityFeeGwei,
-          block.maxPriorityFeeGwei,
-          block.avgPriorityFeeGwei,
-          block.medianPriorityFeeGwei,
-          block.totalBaseFeeGwei,
-          block.totalPriorityFeeGwei,
-          block.txCount,
-          block.blockTimeSec,
-          block.mgasPerSec,
-          block.tps,
-          block.finalized,
-          block.finalizedAt,
-          block.milestoneId?.toString() ?? null,
-          block.timeToFinalitySec,
-        ]
-      );
-    }
-
-    await client.query('COMMIT');
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
+    params.push(
+      block.timestamp,
+      block.blockNumber.toString(),
+      block.blockHash,
+      block.parentHash,
+      block.gasUsed.toString(),
+      block.gasLimit.toString(),
+      block.baseFeeGwei,
+      block.minPriorityFeeGwei,
+      block.maxPriorityFeeGwei,
+      block.avgPriorityFeeGwei,
+      block.medianPriorityFeeGwei,
+      block.totalBaseFeeGwei,
+      block.totalPriorityFeeGwei,
+      block.txCount,
+      block.blockTimeSec,
+      block.mgasPerSec,
+      block.tps,
+      block.finalized,
+      block.finalizedAt,
+      block.milestoneId?.toString() ?? null,
+      block.timeToFinalitySec
+    );
   }
+
+  await query(
+    `INSERT INTO blocks (
+      timestamp, block_number, block_hash, parent_hash,
+      gas_used, gas_limit, base_fee_gwei,
+      min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
+      total_base_fee_gwei, total_priority_fee_gwei,
+      tx_count, block_time_sec, mgas_per_sec, tps,
+      finalized, finalized_at, milestone_id, time_to_finality_sec
+    ) VALUES ${values.join(', ')}
+    ON CONFLICT (timestamp, block_number) DO NOTHING`,
+    params
+  );
 }
 
 export async function updateBlockFinality(

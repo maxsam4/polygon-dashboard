@@ -1,5 +1,6 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import { insertMilestone, getLowestSequenceId } from '@/lib/queries/milestones';
+import { sleep } from '@/lib/utils';
 
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
 const DELAY_MS = 500;
@@ -53,14 +54,14 @@ export class MilestoneBackfiller {
         }
 
         await this.processBatch(heimdall);
-        await this.sleep(DELAY_MS);
+        await sleep(DELAY_MS);
       } catch (error) {
         if (error instanceof HeimdallExhaustedError) {
           console.error('[MilestoneBackfiller] Heimdall exhausted, waiting 5 minutes...');
-          await this.sleep(EXHAUSTED_RETRY_MS);
+          await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[MilestoneBackfiller] Error:', error);
-          await this.sleep(5000);
+          await sleep(5000);
         }
       }
     }
@@ -101,16 +102,12 @@ export class MilestoneBackfiller {
           `[MilestoneBackfiller] Stored milestone seq=${seqId} (blocks ${milestone.startBlock}-${milestone.endBlock})`
         );
 
-        await this.sleep(100); // Small delay between milestones
+        await sleep(100); // Small delay between milestones
       } catch (error) {
         console.error(`[MilestoneBackfiller] Error fetching milestone seq=${seqId}:`, error);
       }
     }
 
     this.currentSequenceId = startId - 1;
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

@@ -4,6 +4,7 @@ import {
   reconcileBlocksForMilestone,
   getHighestSequenceId,
 } from '@/lib/queries/milestones';
+import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2500; // 2.5 seconds
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -31,14 +32,14 @@ export class MilestonePoller {
     while (this.running) {
       try {
         await this.checkNewMilestones();
-        await this.sleep(POLL_INTERVAL_MS);
+        await sleep(POLL_INTERVAL_MS);
       } catch (error) {
         if (error instanceof HeimdallExhaustedError) {
           console.error('[MilestonePoller] Heimdall exhausted, waiting 5 minutes...');
-          await this.sleep(EXHAUSTED_RETRY_MS);
+          await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[MilestonePoller] Error:', error);
-          await this.sleep(POLL_INTERVAL_MS);
+          await sleep(POLL_INTERVAL_MS);
         }
       }
     }
@@ -91,9 +92,5 @@ export class MilestonePoller {
     console.log(
       `[MilestonePoller] Milestone ${milestone.milestoneId}: blocks ${milestone.startBlock}-${milestone.endBlock}, reconciled ${updatedCount} blocks`
     );
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

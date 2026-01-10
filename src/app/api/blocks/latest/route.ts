@@ -23,6 +23,8 @@ export async function GET() {
         medianPriorityFeeGwei: block.medianPriorityFeeGwei,
         minPriorityFeeGwei: block.minPriorityFeeGwei,
         maxPriorityFeeGwei: block.maxPriorityFeeGwei,
+        totalBaseFeeGwei: block.totalBaseFeeGwei,
+        totalPriorityFeeGwei: block.totalPriorityFeeGwei,
         txCount: block.txCount,
         blockTimeSec: block.blockTimeSec,
         mgasPerSec: block.mgasPerSec,
