@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Polygon Dashboard
+
+A real-time analytics dashboard for monitoring Polygon blockchain metrics including gas prices, finality times, throughput (MGAS/s), and transactions per second (TPS).
+
+**Live Deployment:** [https://polygon-dashboard.mudit.blog](https://polygon-dashboard.mudit.blog)
+
+## Features
+
+- **Real-time Block Monitoring** - Live updates every 2 seconds showing the latest blocks with detailed metrics
+- **Gas Price Analytics** - Track base fees and priority fees (min/max/avg/median) in gwei
+- **Finality Tracking** - Monitor time-to-finality using Polygon's milestone system via Heimdall API
+- **Performance Metrics** - View MGAS/s and TPS with historical charts
+- **Historical Analytics** - Interactive charts with configurable time ranges and granularity
+- **Automatic Data Backfilling** - Background workers continuously backfill historical block data
+
+## Tech Stack
+
+### Frontend
+- **Next.js 14** - React framework with App Router
+- **React 18** - UI components
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **lightweight-charts** - TradingView charts for data visualization
+
+### Backend
+- **Next.js API Routes** - REST API endpoints
+- **TimescaleDB** - Time-series database (PostgreSQL extension)
+- **viem** - Ethereum/Polygon RPC client
+- **Background Workers** - Live polling, backfilling, and milestone tracking
+
+### Infrastructure
+- **Docker & Docker Compose** - Containerized deployment
+- **Node.js 20** - Runtime environment
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Next.js Application                     │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│   Pages/UI      │   API Routes    │   Background Workers    │
+│  - Home         │  - /blocks      │  - livePoller           │
+│  - Analytics    │  - /chart-data  │  - backfiller           │
+│  - Blocks       │  - /workers     │  - milestonePoller      │
+└────────┬────────┴────────┬────────┴───────────┬─────────────┘
+         │                 │                    │
+         │                 ▼                    │
+         │         ┌──────────────┐             │
+         │         │  TimescaleDB │◄────────────┘
+         │         │   (blocks,   │
+         │         │  milestones) │
+         │         └──────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    External Services                         │
+│  - Polygon RPC (block data)                                  │
+│  - Heimdall API (milestone/finality data)                    │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Node.js 20+
+- Docker and Docker Compose
+- Polygon RPC endpoint(s)
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# Required
+POLYGON_RPC_URLS=https://polygon.drpc.org,https://polygon-rpc.com,https://polygon-bor-rpc.publicnode.com
+DATABASE_URL=postgresql://polygon:polygon@localhost:5432/polygon_dashboard
+
+# Optional
+HEIMDALL_API_URLS=https://heimdall-api.polygon.technology,https://polygon-heimdall-rest.publicnode.com
+BACKFILL_TO_BLOCK=50000000
+BACKFILL_BATCH_SIZE=100
+RPC_DELAY_MS=100
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Development
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Start the database:
+   ```bash
+   docker compose up db -d
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. Install dependencies and run the development server:
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-## Learn More
+3. Open [http://localhost:3000](http://localhost:3000)
 
-To learn more about Next.js, take a look at the following resources:
+### Production Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Deploy the full stack with Docker Compose:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Set environment variables
+export POLYGON_RPC_URLS=your_rpc_urls
+export DB_PASSWORD=secure_password
 
-## Deploy on Vercel
+# Start all services
+docker compose up -d
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The application will be available on port 3000 (configurable via `APP_PORT`).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Docker Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_USER` | polygon | PostgreSQL username |
+| `DB_PASSWORD` | polygon | PostgreSQL password |
+| `DB_NAME` | polygon_dashboard | Database name |
+| `DB_PORT` | 5432 | PostgreSQL port |
+| `APP_PORT` | 3000 | Application port |
+| `POLYGON_RPC_URLS` | https://polygon.drpc.org,https://polygon-rpc.com,https://polygon-bor-rpc.publicnode.com | Comma-separated RPC endpoints |
+| `HEIMDALL_API_URLS` | https://heimdall-api.polygon.technology,https://polygon-heimdall-rest.publicnode.com | Heimdall API endpoints |
+| `BACKFILL_TO_BLOCK` | 50000000 | Target block for historical backfill |
+| `BACKFILL_BATCH_SIZE` | 100 | Blocks per backfill batch |
+| `RPC_DELAY_MS` | 100 | Delay between RPC calls |
+
+## API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/blocks/latest` | Get the most recent blocks |
+| `GET /api/blocks?start=X&end=Y` | Get blocks in a range |
+| `GET /api/chart-data?range=X&granularity=Y` | Get aggregated chart data |
+| `POST /api/workers/start` | Start background workers |
+
