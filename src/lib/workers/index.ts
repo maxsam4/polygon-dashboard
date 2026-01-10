@@ -2,11 +2,13 @@ import { LivePoller } from './livePoller';
 import { MilestonePoller } from './milestonePoller';
 import { Backfiller } from './backfiller';
 import { MilestoneBackfiller } from './milestoneBackfiller';
+import { FinalityReconciler } from './finalityReconciler';
 
 let livePoller: LivePoller | null = null;
 let milestonePoller: MilestonePoller | null = null;
 let backfiller: Backfiller | null = null;
 let milestoneBackfiller: MilestoneBackfiller | null = null;
+let finalityReconciler: FinalityReconciler | null = null;
 let workersStarted = false;
 
 export function areWorkersRunning(): boolean {
@@ -34,12 +36,14 @@ export async function startWorkers(): Promise<void> {
   milestonePoller = new MilestonePoller();
   backfiller = new Backfiller(targetBlock, batchSize, delayMs);
   milestoneBackfiller = new MilestoneBackfiller(targetMilestoneSeqId);
+  finalityReconciler = new FinalityReconciler();
 
   await Promise.all([
     livePoller.start(),
     milestonePoller.start(),
     backfiller.start(),
     milestoneBackfiller.start(),
+    finalityReconciler.start(),
   ]);
 
   workersStarted = true;
@@ -52,6 +56,7 @@ export function stopWorkers(): void {
   milestonePoller?.stop();
   backfiller?.stop();
   milestoneBackfiller?.stop();
+  finalityReconciler?.stop();
 }
 
 // Handle graceful shutdown

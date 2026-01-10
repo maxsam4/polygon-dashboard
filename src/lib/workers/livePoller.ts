@@ -5,7 +5,6 @@ import {
   getBlockByNumber,
   insertBlock
 } from '@/lib/queries/blocks';
-import { getLatestMilestone } from '@/lib/queries/milestones';
 import { Block } from '@/lib/types';
 
 const POLL_INTERVAL_MS = 2000;
@@ -82,19 +81,7 @@ export class LivePoller {
 
     // Calculate metrics
     const metrics = calculateBlockMetrics(block, previousTimestamp);
-
-    // Check if block should be marked as finalized
-    const latestMilestone = await getLatestMilestone();
-    const finalized = latestMilestone ? blockNumber <= latestMilestone.endBlock : false;
-
-    // Calculate time to finality if block is already finalized
     const blockTimestamp = new Date(Number(block.timestamp) * 1000);
-    let timeToFinalitySec: number | null = null;
-    if (finalized && latestMilestone) {
-      timeToFinalitySec = (latestMilestone.timestamp.getTime() - blockTimestamp.getTime()) / 1000;
-      // Ensure non-negative (shouldn't happen but be safe)
-      if (timeToFinalitySec < 0) timeToFinalitySec = null;
-    }
 
     // Check for reorg
     const existingBlock = await getBlockByNumber(blockNumber);
@@ -106,7 +93,7 @@ export class LivePoller {
       console.warn(`[LivePoller] Reorg detected at block ${blockNumber}, overwriting.`);
     }
 
-    // Insert/update block
+    // Insert/update block - finality is set by the reconciler, not here
     const blockData: Omit<Block, 'createdAt' | 'updatedAt'> = {
       blockNumber,
       timestamp: blockTimestamp,
@@ -125,10 +112,10 @@ export class LivePoller {
       blockTimeSec: metrics.blockTimeSec,
       mgasPerSec: metrics.mgasPerSec,
       tps: metrics.tps,
-      finalized,
-      finalizedAt: finalized && latestMilestone ? latestMilestone.timestamp : null,
-      milestoneId: finalized && latestMilestone ? latestMilestone.milestoneId : null,
-      timeToFinalitySec,
+      finalized: false,
+      finalizedAt: null,
+      milestoneId: null,
+      timeToFinalitySec: null,
     };
 
     await insertBlock(blockData);

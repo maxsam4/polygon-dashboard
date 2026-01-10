@@ -1,9 +1,9 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import {
   getLatestMilestone,
-  insertMilestone
+  insertMilestone,
+  reconcileBlocksForMilestone,
 } from '@/lib/queries/milestones';
-import { updateBlocksFinalityInRange } from '@/lib/queries/blocks';
 
 const POLL_INTERVAL_MS = 2500; // 2.5 seconds
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -67,16 +67,11 @@ export class MilestonePoller {
     // Store milestone
     await insertMilestone(milestone);
 
-    // Update blocks in range
-    const updatedCount = await updateBlocksFinalityInRange(
-      milestone.startBlock,
-      milestone.endBlock,
-      milestone.milestoneId,
-      milestone.timestamp
-    );
+    // Reconcile blocks for this milestone
+    const updatedCount = await reconcileBlocksForMilestone(milestone);
 
     console.log(
-      `[MilestonePoller] Milestone ${milestone.milestoneId}: blocks ${milestone.startBlock}-${milestone.endBlock}, updated ${updatedCount} blocks`
+      `[MilestonePoller] Milestone ${milestone.milestoneId}: blocks ${milestone.startBlock}-${milestone.endBlock}, reconciled ${updatedCount} blocks`
     );
   }
 

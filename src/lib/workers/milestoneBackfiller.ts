@@ -1,6 +1,5 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
-import { query, getPool } from '@/lib/db';
-import { insertMilestone } from '@/lib/queries/milestones';
+import { insertMilestone, getLowestMilestoneId } from '@/lib/queries/milestones';
 
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
 const DELAY_MS = 500;
@@ -32,24 +31,19 @@ export class MilestoneBackfiller {
 
     while (this.running) {
       try {
-        // Get the current milestone count from Heimdall
-        const count = await heimdall.getMilestoneCount();
-
         // Initialize current sequence ID if not set
         if (this.currentSequenceId === null) {
-          // Find where to start - look for gaps in finalized blocks
-          const unfinalizedResult = await query<{ min_block: string; max_block: string }>(
-            `SELECT MIN(block_number) as min_block, MAX(block_number) as max_block
-             FROM blocks WHERE finalized = FALSE`
-          );
-
-          if (!unfinalizedResult[0]?.min_block) {
-            // No unfinalized blocks, start from latest milestone going backwards
-            this.currentSequenceId = count;
+          // Check what we already have in DB
+          const lowestInDb = await getLowestMilestoneId();
+          if (lowestInDb !== null) {
+            // Continue from where we left off
+            this.currentSequenceId = Number(lowestInDb) - 1;
           } else {
-            // Start from the latest and work backwards to cover unfinalized blocks
+            // Start from latest
+            const count = await heimdall.getMilestoneCount();
             this.currentSequenceId = count;
           }
+          console.log(`[MilestoneBackfiller] Starting from sequence ID ${this.currentSequenceId}`);
         }
 
         if (this.currentSequenceId < this.targetSequenceId) {
@@ -78,74 +72,34 @@ export class MilestoneBackfiller {
     const endId = this.currentSequenceId;
     const startId = Math.max(this.targetSequenceId, endId - BATCH_SIZE + 1);
 
-    console.log(`[MilestoneBackfiller] Processing milestones ${startId} to ${endId}`);
+    console.log(`[MilestoneBackfiller] Fetching milestones ${startId} to ${endId}`);
 
-    const pool = getPool();
-    const client = await pool.connect();
+    // Fetch and store milestones - reconciliation will handle block finality
+    for (let seqId = endId; seqId >= startId && this.running; seqId--) {
+      try {
+        const milestone = await heimdall.getMilestone(seqId);
 
-    try {
-      // Fetch and process milestones
-      for (let seqId = endId; seqId >= startId && this.running; seqId--) {
-        try {
-          const milestone = await heimdall.getMilestone(seqId);
+        // Store the milestone - reconciler will match blocks later
+        await insertMilestone({
+          milestoneId: milestone.milestoneId,
+          startBlock: milestone.startBlock,
+          endBlock: milestone.endBlock,
+          hash: milestone.hash,
+          proposer: milestone.proposer,
+          timestamp: milestone.timestamp,
+        });
 
-          // Store the milestone
-          await insertMilestone({
-            milestoneId: milestone.milestoneId,
-            startBlock: milestone.startBlock,
-            endBlock: milestone.endBlock,
-            hash: milestone.hash,
-            proposer: milestone.proposer,
-            timestamp: milestone.timestamp,
-          });
+        console.log(
+          `[MilestoneBackfiller] Stored milestone seq=${seqId} (blocks ${milestone.startBlock}-${milestone.endBlock})`
+        );
 
-          // Update blocks finality for this milestone range
-          // Only update blocks that exist and are unfinalized
-          const result = await client.query<{ block_number: string; timestamp: Date }>(
-            `SELECT block_number, timestamp FROM blocks
-             WHERE block_number >= $1 AND block_number <= $2 AND finalized = FALSE`,
-            [milestone.startBlock.toString(), milestone.endBlock.toString()]
-          );
-
-          if (result.rows.length > 0) {
-            await client.query('BEGIN');
-
-            for (const row of result.rows) {
-              const timeToFinalitySec = (milestone.timestamp.getTime() - row.timestamp.getTime()) / 1000;
-              await client.query(
-                `UPDATE blocks SET
-                  finalized = TRUE,
-                  finalized_at = $1,
-                  milestone_id = $2,
-                  time_to_finality_sec = $3,
-                  updated_at = NOW()
-                WHERE block_number = $4`,
-                [milestone.timestamp, milestone.milestoneId.toString(), timeToFinalitySec, row.block_number]
-              );
-            }
-
-            await client.query('COMMIT');
-
-            console.log(
-              `[MilestoneBackfiller] Milestone seq=${seqId} (blocks ${milestone.startBlock}-${milestone.endBlock}): updated ${result.rows.length} blocks`
-            );
-          }
-
-          await this.sleep(100); // Small delay between milestones
-        } catch (error) {
-          console.error(`[MilestoneBackfiller] Error processing milestone seq=${seqId}:`, error);
-          try {
-            await client.query('ROLLBACK');
-          } catch {
-            // Ignore rollback errors
-          }
-        }
+        await this.sleep(100); // Small delay between milestones
+      } catch (error) {
+        console.error(`[MilestoneBackfiller] Error fetching milestone seq=${seqId}:`, error);
       }
-
-      this.currentSequenceId = startId - 1;
-    } finally {
-      client.release();
     }
+
+    this.currentSequenceId = startId - 1;
   }
 
   private sleep(ms: number): Promise<void> {

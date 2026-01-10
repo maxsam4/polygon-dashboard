@@ -31,6 +31,11 @@ export interface Milestone {
   timestamp: Date;
 }
 
+export interface MilestoneWithStats extends Milestone {
+  blocksInDb: number;
+  avgFinalityTime: number | null;
+}
+
 export interface BlockRow {
   timestamp: Date;
   block_number: string;
