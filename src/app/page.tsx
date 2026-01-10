@@ -1,101 +1,111 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { MiniChart } from '@/components/charts/MiniChart';
+import { BlockList } from '@/components/blocks/BlockList';
+
+interface BlockData {
+  blockNumber: string;
+  timestamp: string;
+  gasUsedPercent: number;
+  baseFeeGwei: number;
+  avgPriorityFeeGwei: number;
+  minPriorityFeeGwei: number;
+  maxPriorityFeeGwei: number;
+  txCount: number;
+  gasUsed: string;
+  gasLimit: string;
+  mgasPerSec: number | null;
+  tps: number | null;
+  finalized: boolean;
+  timeToFinalitySec: number | null;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [blocks, setBlocks] = useState<BlockData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  useEffect(() => {
+    const fetchBlocks = async () => {
+      try {
+        const response = await fetch('/api/blocks/latest');
+        const data = await response.json();
+        setBlocks(data.blocks || []);
+      } catch (error) {
+        console.error('Failed to fetch blocks:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBlocks();
+    const interval = setInterval(fetchBlocks, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const latestBlock = blocks[0];
+  const chartData = blocks
+    .slice()
+    .reverse()
+    .map((b, i) => ({ time: i, value: b.baseFeeGwei }));
+
+  return (
+    <div className="min-h-screen">
+      <header className="bg-white dark:bg-gray-900 shadow">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+          <h1 className="text-xl font-bold">Polygon Dashboard</h1>
+          <div className="flex items-center gap-4">
+            <Link href="/analytics" className="text-blue-500 hover:underline">
+              Analytics
+            </Link>
+            <Link href="/blocks" className="text-blue-500 hover:underline">
+              Blocks
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <MiniChart
+            title="Gas Price"
+            data={chartData}
+            currentValue={latestBlock?.baseFeeGwei.toFixed(2) ?? '-'}
+            unit="gwei"
+            color="#2962FF"
+          />
+          <MiniChart
+            title="Finality Delay"
+            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.timeToFinalitySec ?? 0 }))}
+            currentValue={latestBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
+            unit="sec"
+            color="#FF6D00"
+          />
+          <MiniChart
+            title="MGAS/s"
+            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.mgasPerSec ?? 0 }))}
+            currentValue={latestBlock?.mgasPerSec?.toFixed(1) ?? '-'}
+            unit=""
+            color="#00C853"
+          />
+          <MiniChart
+            title="TPS"
+            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.tps ?? 0 }))}
+            currentValue={latestBlock?.tps?.toFixed(0) ?? '-'}
+            unit=""
+            color="#AA00FF"
+          />
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : (
+          <BlockList blocks={blocks} title="Latest Blocks (Live)" />
+        )}
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
