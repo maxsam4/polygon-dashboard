@@ -70,7 +70,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                     </a>
                   </td>
                   <td className="px-3 py-2 text-gray-500">{getTimeAgo(new Date(block.timestamp))}</td>
-                  <td className="px-3 py-2 text-right">{block.gasUsedPercent.toFixed(1)}%</td>
+                  <td className="px-3 py-2 text-right">{block.gasUsedPercent.toFixed(2)}%</td>
                   <td className="px-3 py-2 text-right font-medium">{block.baseFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">{block.medianPriorityFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right text-gray-500">{block.minPriorityFeeGwei.toFixed(2)}</td>

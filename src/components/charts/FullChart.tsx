@@ -192,13 +192,12 @@ export function FullChart({ title, metric }: FullChartProps) {
           seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
 
-        // Alternate between left and right price scales for multi-series
-        const priceScaleId = index % 2 === 0 ? 'left' : 'right';
+        // All series on left price scale (primary), with labels visible
         const series = chartRef.current!.addSeries(LineSeries, {
           color,
           lineWidth: 2,
           title: opt.label,
-          priceScaleId,
+          priceScaleId: 'left',
         });
         series.setData(seriesData);
         seriesRefs.current.set(opt.key, series);
