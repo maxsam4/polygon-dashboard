@@ -68,6 +68,8 @@ export interface ChartDataPoint {
   baseFee: { open: number; high: number; low: number; close: number; avg: number };
   priorityFee: { avg: number; min: number; max: number; median: number; open: number; close: number };
   total: { avg: number; min: number; max: number };
+  totalBaseFeeSum: number;
+  totalPriorityFeeSum: number;
   mgasPerSec: number;
   tps: number;
   finalityAvg: number | null;

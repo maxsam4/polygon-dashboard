@@ -54,7 +54,7 @@ export function BlockRow({ block }: BlockRowProps) {
           <span className="text-sm">{block.txCount} txs</span>
           {block.finalized ? (
             <span className="text-green-500 text-sm">
-              {block.timeToFinalitySec?.toFixed(1)}s
+              {block.timeToFinalitySec !== null ? `${Math.round(block.timeToFinalitySec)}s` : '-'}
             </span>
           ) : (
             <span className="text-yellow-500 text-sm">pending</span>

@@ -24,6 +24,8 @@ interface ChartDataPoint {
   baseFee: { open: number; high: number; low: number; close: number; avg: number };
   priorityFee: { avg: number; min: number; max: number; median: number };
   total: { avg: number; min: number; max: number };
+  totalBaseFeeSum: number;
+  totalPriorityFeeSum: number;
   mgasPerSec: number;
   tps: number;
   finalityAvg: number | null;
@@ -31,7 +33,8 @@ interface ChartDataPoint {
 
 interface FullChartProps {
   title: string;
-  metric: 'gas' | 'finality' | 'mgas' | 'tps';
+  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee';
+  showCumulative?: boolean;
 }
 
 // Get recommended bucket size for a time range
@@ -53,7 +56,7 @@ function getRecommendedBucket(range: string): string {
   }
 }
 
-export function FullChart({ title, metric }: FullChartProps) {
+export function FullChart({ title, metric, showCumulative = false }: FullChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
@@ -63,6 +66,7 @@ export function FullChart({ title, metric }: FullChartProps) {
   const [bucketSize, setBucketSize] = useState('1m');
   const [chartType, setChartType] = useState('Line');
   const [data, setData] = useState<ChartDataPoint[]>([]);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   // Auto-update bucket when time range changes
   const handleTimeRangeChange = (range: string) => {
@@ -78,6 +82,17 @@ export function FullChart({ title, metric }: FullChartProps) {
         { key: 'minPriority', label: 'Min Priority', enabled: false },
         { key: 'maxPriority', label: 'Max Priority', enabled: false },
         { key: 'total', label: 'Total', enabled: false },
+      ];
+    }
+    if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {
+      if (showCumulative) {
+        return [
+          { key: 'cumulative', label: 'Cumulative', enabled: true },
+          { key: 'perBucket', label: 'Per Period', enabled: false },
+        ];
+      }
+      return [
+        { key: 'perBucket', label: 'Per Period', enabled: true },
       ];
     }
     return [
@@ -137,9 +152,21 @@ export function FullChart({ title, metric }: FullChartProps) {
       },
       rightPriceScale: { visible: true, borderVisible: false },
       leftPriceScale: { visible: true, borderVisible: false },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        mouseWheel: true,
+        pinch: true,
+      },
       timeScale: {
         borderVisible: false,
         timeVisible: true,
+        rightOffset: 5,
         tickMarkFormatter: (time: number) => {
           const date = new Date(time * 1000);
           return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -161,9 +188,16 @@ export function FullChart({ title, metric }: FullChartProps) {
       }
     };
 
+    // Track zoom state
+    const handleVisibleRangeChange = () => {
+      setIsZoomed(true);
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
     window.addEventListener('resize', handleResize);
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
@@ -227,6 +261,28 @@ export function FullChart({ title, metric }: FullChartProps) {
               .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
           } else if (metric === 'mgas') {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
+          } else if (metric === 'tps') {
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
+          } else if (metric === 'totalBaseFee') {
+            if (opt.key === 'cumulative') {
+              let cumulative = 0;
+              seriesData = data.map((d) => {
+                cumulative += d.totalBaseFeeSum;
+                return { time: d.timestamp as UTCTimestamp, value: cumulative };
+              });
+            } else {
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum }));
+            }
+          } else if (metric === 'totalPriorityFee') {
+            if (opt.key === 'cumulative') {
+              let cumulative = 0;
+              seriesData = data.map((d) => {
+                cumulative += d.totalPriorityFeeSum;
+                return { time: d.timestamp as UTCTimestamp, value: cumulative };
+              });
+            } else {
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum }));
+            }
           } else {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
           }
@@ -273,10 +329,56 @@ export function FullChart({ title, metric }: FullChartProps) {
     );
   };
 
+  const handleResetZoom = () => {
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+      setIsZoomed(false);
+    }
+  };
+
+  // Calculate period total for cumulative fee charts
+  const periodTotal = (() => {
+    if (!showCumulative || data.length === 0) return null;
+    if (metric === 'totalBaseFee') {
+      return data.reduce((sum, d) => sum + d.totalBaseFeeSum, 0);
+    }
+    if (metric === 'totalPriorityFee') {
+      return data.reduce((sum, d) => sum + d.totalPriorityFeeSum, 0);
+    }
+    return null;
+  })();
+
+  // Format large numbers
+  const formatFee = (value: number): string => {
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+    return value.toFixed(2);
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">{title}</h3>
+        <div className="flex items-center gap-3">
+          {periodTotal !== null && (
+            <div className="text-right">
+              <span className="text-sm text-gray-500 dark:text-gray-400">Period Total: </span>
+              <span className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                {formatFee(periodTotal)} gwei
+              </span>
+            </div>
+          )}
+          {isZoomed && (
+            <button
+              onClick={handleResetZoom}
+              className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
+              title="Reset zoom to show all data"
+            >
+              Reset Zoom
+            </button>
+          )}
+        </div>
       </div>
       <ChartControls
         timeRange={timeRange}
@@ -288,7 +390,7 @@ export function FullChart({ title, metric }: FullChartProps) {
         seriesOptions={seriesOptions}
         onSeriesToggle={handleSeriesToggle}
       />
-      <div ref={chartContainerRef} className="w-full mt-4" />
+      <div ref={chartContainerRef} className="w-full mt-4 cursor-crosshair" title="Scroll to zoom, drag to pan" />
     </div>
   );
 }

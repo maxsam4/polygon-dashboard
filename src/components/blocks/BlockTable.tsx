@@ -80,7 +80,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
                           className={`h-2 rounded-full ${
-                            block.gasUsedPercent > 80 ? 'bg-red-500' : block.gasUsedPercent > 50 ? 'bg-yellow-500' : 'bg-green-500'
+                            block.gasUsedPercent > 85 || block.gasUsedPercent < 15 ? 'bg-red-500' : block.gasUsedPercent > 75 || block.gasUsedPercent < 55 ? 'bg-yellow-500' : 'bg-green-500'
                           }`}
                           style={{ width: `${Math.min(block.gasUsedPercent, 100)}%` }}
                         />
@@ -99,7 +99,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                     {block.finalized ? (
                       <span className="text-green-500">
                         {block.timeToFinalitySec !== null
-                          ? `${block.timeToFinalitySec.toFixed(1)}s`
+                          ? `${Math.round(block.timeToFinalitySec)}s`
                           : '-'}
                       </span>
                     ) : (

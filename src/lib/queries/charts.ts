@@ -33,6 +33,8 @@ interface ChartRow {
   total_gas_price_avg: number;
   total_gas_price_min: number;
   total_gas_price_max: number;
+  total_base_fee_sum: number;
+  total_priority_fee_sum: number;
   mgas_per_sec: number;
   tps: number;
   finality_avg: number | null;
@@ -84,6 +86,9 @@ export async function getChartData(
       MIN(base_fee_gwei + min_priority_fee_gwei) AS total_gas_price_min,
       MAX(base_fee_gwei + max_priority_fee_gwei) AS total_gas_price_max,
 
+      SUM(total_base_fee_gwei) AS total_base_fee_sum,
+      SUM(total_priority_fee_gwei) AS total_priority_fee_sum,
+
       SUM(gas_used)::DOUBLE PRECISION / NULLIF(SUM(block_time_sec), 0) / 1000000 AS mgas_per_sec,
       SUM(tx_count)::DOUBLE PRECISION / NULLIF(SUM(block_time_sec), 0) AS tps,
 
@@ -123,6 +128,8 @@ export async function getChartData(
       min: row.total_gas_price_min,
       max: row.total_gas_price_max,
     },
+    totalBaseFeeSum: row.total_base_fee_sum ?? 0,
+    totalPriorityFeeSum: row.total_priority_fee_sum ?? 0,
     mgasPerSec: row.mgas_per_sec ?? 0,
     tps: row.tps ?? 0,
     finalityAvg: row.finality_avg,
