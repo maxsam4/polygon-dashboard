@@ -16,20 +16,14 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
-
-interface ChartDataPoint {
-  timestamp: number;
-  blockStart: number;
-  blockEnd: number;
-  baseFee: { open: number; high: number; low: number; close: number; avg: number };
-  priorityFee: { avg: number; min: number; max: number; median: number };
-  total: { avg: number; min: number; max: number };
-  totalBaseFeeSum: number;
-  totalPriorityFeeSum: number;
-  mgasPerSec: number;
-  tps: number;
-  finalityAvg: number | null;
-}
+import { ChartDataPoint } from '@/lib/types';
+import { formatPol } from '@/lib/utils';
+import {
+  GWEI_PER_POL,
+  CHART_COLOR_PALETTE,
+  TIME_RANGE_BUCKETS,
+  TIME_RANGE_SECONDS,
+} from '@/lib/constants';
 
 interface FullChartProps {
   title: string;
@@ -37,23 +31,8 @@ interface FullChartProps {
   showCumulative?: boolean;
 }
 
-// Get recommended bucket size for a time range
 function getRecommendedBucket(range: string): string {
-  switch (range) {
-    case '5m': return '2s';
-    case '15m': return '2s';
-    case '30m': return '1m';
-    case '1H': return '1m';
-    case '3H': return '1m';
-    case '6H': return '5m';
-    case '1D': return '15m';
-    case '1W': return '1h';
-    case '1M': return '4h';
-    case '6M': return '1d';
-    case '1Y': return '1d';
-    case 'ALL': return '1w';
-    default: return '2s';
-  }
+  return TIME_RANGE_BUCKETS[range] ?? '2s';
 }
 
 export function FullChart({ title, metric, showCumulative = false }: FullChartProps) {
@@ -104,22 +83,8 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   const fetchData = useCallback(async () => {
     const now = Math.floor(Date.now() / 1000);
-    let fromTime: number;
-
-    switch (timeRange) {
-      case '5m': fromTime = now - 5 * 60; break;
-      case '15m': fromTime = now - 15 * 60; break;
-      case '30m': fromTime = now - 30 * 60; break;
-      case '1H': fromTime = now - 3600; break;
-      case '3H': fromTime = now - 3 * 3600; break;
-      case '6H': fromTime = now - 6 * 3600; break;
-      case '1D': fromTime = now - 86400; break;
-      case '1W': fromTime = now - 7 * 86400; break;
-      case '1M': fromTime = now - 30 * 86400; break;
-      case '6M': fromTime = now - 180 * 86400; break;
-      case '1Y': fromTime = now - 365 * 86400; break;
-      default: fromTime = 0;
-    }
+    const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
+    const fromTime = rangeSeconds > 0 ? now - rangeSeconds : 0;
 
     try {
       const response = await fetch(
@@ -220,7 +185,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
 
-    const colors = ['#2962FF', '#FF6D00', '#00C853', '#AA00FF', '#FF1744'];
+    const colors = CHART_COLOR_PALETTE;
 
     seriesOptions
       .filter((opt) => opt.enabled)
@@ -279,10 +244,10 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
               let cumulative = 0;
               seriesData = data.map((d) => {
                 cumulative += d.totalBaseFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative / 1_000_000_000 };
+                return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
               });
             } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / 1_000_000_000 }));
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / GWEI_PER_POL }));
             }
           } else if (metric === 'totalPriorityFee') {
             // Convert gwei to POL (1 POL = 1,000,000 gwei)
@@ -290,10 +255,10 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
               let cumulative = 0;
               seriesData = data.map((d) => {
                 cumulative += d.totalPriorityFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative / 1_000_000_000 };
+                return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
               });
             } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / 1_000_000_000 }));
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
             }
           } else {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
@@ -360,13 +325,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     return null;
   })();
 
-  // Format fee in POL with commas (1 POL = 1,000,000 gwei)
+  // Format fee in POL with commas
   const formatFeeAsPol = (gweiValue: number): string => {
-    const polValue = gweiValue / 1_000_000_000;
-    return polValue.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
+    return formatPol(gweiValue / GWEI_PER_POL);
   };
 
   return (

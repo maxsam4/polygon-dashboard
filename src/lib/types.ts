@@ -61,6 +61,30 @@ export interface BlockRow {
   time_to_finality_sec: number | null;
 }
 
+/**
+ * Block data for UI components (serialized for client-side use)
+ */
+export interface BlockDataUI {
+  blockNumber: string;
+  timestamp: string;
+  gasUsedPercent: number;
+  baseFeeGwei: number;
+  avgPriorityFeeGwei: number;
+  medianPriorityFeeGwei: number;
+  minPriorityFeeGwei: number;
+  maxPriorityFeeGwei: number;
+  txCount: number;
+  gasUsed: string;
+  gasLimit: string;
+  blockTimeSec?: number | null;
+  mgasPerSec?: number | null;
+  tps?: number | null;
+  totalBaseFeeGwei?: number;
+  totalPriorityFeeGwei?: number;
+  finalized: boolean;
+  timeToFinalitySec: number | null;
+}
+
 export interface ChartDataPoint {
   timestamp: number;
   blockStart: number;

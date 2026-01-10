@@ -1,26 +1,10 @@
 'use client';
 
 import { BlockRow } from './BlockRow';
-
-interface BlockData {
-  blockNumber: string;
-  timestamp: string;
-  gasUsedPercent: number;
-  baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
-  minPriorityFeeGwei: number;
-  maxPriorityFeeGwei: number;
-  txCount: number;
-  gasUsed: string;
-  gasLimit: string;
-  totalBaseFeeGwei?: number;
-  totalPriorityFeeGwei?: number;
-  finalized: boolean;
-  timeToFinalitySec: number | null;
-}
+import { BlockDataUI } from '@/lib/types';
 
 interface BlockListProps {
-  blocks: BlockData[];
+  blocks: BlockDataUI[];
   title?: string;
 }
 

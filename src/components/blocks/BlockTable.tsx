@@ -1,28 +1,11 @@
 'use client';
 
-interface BlockData {
-  blockNumber: string;
-  timestamp: string;
-  gasUsedPercent: number;
-  baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
-  medianPriorityFeeGwei: number;
-  minPriorityFeeGwei: number;
-  maxPriorityFeeGwei: number;
-  txCount: number;
-  gasUsed: string;
-  gasLimit: string;
-  blockTimeSec?: number | null;
-  mgasPerSec?: number | null;
-  tps?: number | null;
-  totalBaseFeeGwei?: number;
-  totalPriorityFeeGwei?: number;
-  finalized: boolean;
-  timeToFinalitySec: number | null;
-}
+import { BlockDataUI } from '@/lib/types';
+import { getTimeAgo, formatGas, formatGweiToPol, getGasUtilizationColor } from '@/lib/utils';
+import { EXTERNAL_URLS } from '@/lib/constants';
 
 interface BlockTableProps {
-  blocks: BlockData[];
+  blocks: BlockDataUI[];
   title?: string;
 }
 
@@ -61,7 +44,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                 <tr key={block.blockNumber} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="px-3 py-2">
                     <a
-                      href={`https://polygonscan.com/block/${block.blockNumber}`}
+                      href={`${EXTERNAL_URLS.POLYGONSCAN_BLOCK}${block.blockNumber}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:underline font-mono"
@@ -69,7 +52,9 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                       {block.blockNumber}
                     </a>
                   </td>
-                  <td className="px-3 py-2 text-gray-500" title={new Date(block.timestamp).toLocaleString()}>{getTimeAgo(new Date(block.timestamp))}</td>
+                  <td className="px-3 py-2 text-gray-500" title={new Date(block.timestamp).toLocaleString()}>
+                    {getTimeAgo(new Date(block.timestamp))}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-1">
                       <div className="flex justify-between text-xs">
@@ -78,9 +63,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                       </div>
                       <div className="w-1/2 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
-                          className={`h-2 rounded-full ${
-                            block.gasUsedPercent > 85 || block.gasUsedPercent < 15 ? 'bg-red-500' : block.gasUsedPercent > 75 || block.gasUsedPercent < 55 ? 'bg-yellow-500' : 'bg-green-500'
-                          }`}
+                          className={`h-2 rounded-full ${getGasUtilizationColor(block.gasUsedPercent)}`}
                           style={{ width: `${Math.min(block.gasUsedPercent, 100)}%` }}
                         />
                       </div>
@@ -96,9 +79,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   <td className="px-3 py-2 text-right">
                     {block.finalized ? (
                       <span className="text-green-500">
-                        {block.timeToFinalitySec !== null
-                          ? `${Math.round(block.timeToFinalitySec)}s`
-                          : '-'}
+                        {block.timeToFinalitySec !== null ? `${Math.round(block.timeToFinalitySec)}s` : '-'}
                       </span>
                     ) : (
                       <span className="text-yellow-500">pending</span>
@@ -112,36 +93,4 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
       </div>
     </div>
   );
-}
-
-function getTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
-
-function formatGas(gas: string): string {
-  const num = BigInt(gas);
-  if (num >= 1_000_000_000n) {
-    return `${(Number(num) / 1_000_000_000).toFixed(2)}B`;
-  }
-  if (num >= 1_000_000n) {
-    return `${(Number(num) / 1_000_000).toFixed(2)}M`;
-  }
-  if (num >= 1_000n) {
-    return `${(Number(num) / 1_000).toFixed(1)}K`;
-  }
-  return num.toString();
-}
-
-function formatGweiToPol(gwei: number | undefined): string {
-  if (gwei === undefined) return '-';
-  // 1 POL = 1,000,000,000 gwei (10^9)
-  const pol = gwei / 1_000_000_000;
-  return pol.toLocaleString('en-US', {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4
-  });
 }

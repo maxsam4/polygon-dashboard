@@ -1,33 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-
-interface BlockData {
-  blockNumber: string;
-  timestamp: string;
-  gasUsedPercent: number;
-  baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
-  minPriorityFeeGwei: number;
-  maxPriorityFeeGwei: number;
-  txCount: number;
-  gasUsed: string;
-  gasLimit: string;
-  totalBaseFeeGwei?: number;
-  totalPriorityFeeGwei?: number;
-  finalized: boolean;
-  timeToFinalitySec: number | null;
-}
+import { BlockDataUI } from '@/lib/types';
+import { getTimeAgo, formatLargeNumber } from '@/lib/utils';
+import { EXTERNAL_URLS } from '@/lib/constants';
 
 interface BlockRowProps {
-  block: BlockData;
+  block: BlockDataUI;
 }
 
 export function BlockRow({ block }: BlockRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const timeAgo = getTimeAgo(new Date(block.timestamp));
-  const polygonscanUrl = `https://polygonscan.com/block/${block.blockNumber}`;
+  const polygonscanUrl = `${EXTERNAL_URLS.POLYGONSCAN_BLOCK}${block.blockNumber}`;
 
   return (
     <div className="border-b border-gray-200 dark:border-gray-700">
@@ -82,11 +68,11 @@ export function BlockRow({ block }: BlockRowProps) {
           </div>
           <div>
             <span className="text-gray-500">Gas Used:</span>{' '}
-            {formatNumber(parseInt(block.gasUsed, 10))}
+            {formatLargeNumber(parseInt(block.gasUsed, 10))}
           </div>
           <div>
             <span className="text-gray-500">Gas Limit:</span>{' '}
-            {formatNumber(parseInt(block.gasLimit, 10))}
+            {formatLargeNumber(parseInt(block.gasLimit, 10))}
           </div>
           {block.totalBaseFeeGwei !== undefined && (
             <div>
@@ -114,18 +100,4 @@ export function BlockRow({ block }: BlockRowProps) {
       )}
     </div>
   );
-}
-
-function getTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
-
-function formatNumber(num: number): string {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`;
-  return num.toString();
 }
