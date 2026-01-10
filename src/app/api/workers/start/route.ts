@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { startWorkers } from '@/lib/workers';
 
+export const dynamic = 'force-dynamic';
+
 let started = false;
 
 export async function POST() {
