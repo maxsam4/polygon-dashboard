@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, IChartApi, ISeriesApi, LineData } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, LineData, UTCTimestamp, LineSeries } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
 
@@ -127,7 +127,7 @@ export function FullChart({ title, metric }: FullChartProps) {
       .filter((opt) => opt.enabled)
       .forEach((opt, index) => {
         const color = colors[index % colors.length];
-        let seriesData: LineData[];
+        let seriesData: LineData<UTCTimestamp>[];
 
         if (metric === 'gas') {
           seriesData = data.map((d) => {
@@ -137,19 +137,19 @@ export function FullChart({ title, metric }: FullChartProps) {
               opt.key === 'total' ? d.total.avg :
               opt.key === 'minPriority' ? d.priorityFee.min :
               d.priorityFee.max;
-            return { time: d.timestamp as number, value };
+            return { time: d.timestamp as UTCTimestamp, value };
           });
         } else if (metric === 'finality') {
           seriesData = data
             .filter((d) => d.finalityAvg !== null)
-            .map((d) => ({ time: d.timestamp as number, value: d.finalityAvg! }));
+            .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
         } else if (metric === 'mgas') {
-          seriesData = data.map((d) => ({ time: d.timestamp as number, value: d.mgasPerSec }));
+          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
         } else {
-          seriesData = data.map((d) => ({ time: d.timestamp as number, value: d.tps }));
+          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
 
-        const series = chartRef.current!.addLineSeries({
+        const series = chartRef.current!.addSeries(LineSeries, {
           color,
           lineWidth: 2,
           title: opt.label,

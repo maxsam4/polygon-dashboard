@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, LineData } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, LineData, UTCTimestamp, LineSeries } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 
 interface MiniChartProps {
@@ -47,7 +47,7 @@ export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }
       handleScroll: false,
     });
 
-    const series = chart.addLineSeries({
+    const series = chart.addSeries(LineSeries, {
       color,
       lineWidth: 2,
       priceLineVisible: false,
@@ -73,8 +73,8 @@ export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }
 
   useEffect(() => {
     if (seriesRef.current && data.length > 0) {
-      const chartData: LineData[] = data.map((d) => ({
-        time: d.time as number,
+      const chartData: LineData<UTCTimestamp>[] = data.map((d) => ({
+        time: d.time as UTCTimestamp,
         value: d.value,
       }));
       seriesRef.current.setData(chartData);
