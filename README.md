@@ -61,7 +61,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 ┌─────────────────────────────────────────────────────────────┐
 │                    External Services                         │
 │  - Polygon RPC (block data)                                  │
-│  - Heimdall API (milestone/finality data)                    │
+│  - Heimdall API (finality data)                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
