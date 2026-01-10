@@ -1,29 +1,54 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, LineData, UTCTimestamp, LineSeries } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 
+interface DataPoint {
+  time: number;
+  value: number;
+  blockNumber?: number;
+  timestamp?: number; // Unix timestamp in seconds
+}
+
+interface SeriesData {
+  data: DataPoint[];
+  color: string;
+  label?: string;
+}
+
 interface MiniChartProps {
   title: string;
-  data: { time: number; value: number }[];
+  data?: DataPoint[];
+  series?: SeriesData[];
   currentValue: string;
   unit: string;
   color?: string;
 }
 
-export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }: MiniChartProps) {
+export function MiniChart({ title, data, series, currentValue, unit, color = '#2962FF' }: MiniChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const seriesRefs = useRef<ISeriesApi<'Line'>[]>([]);
+  const blockMapRef = useRef<Map<number, number>>(new Map());
   const { theme } = useTheme();
+  const [hoveredBlock, setHoveredBlock] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleChartClick = () => {
+    if (hoveredBlock !== null) {
+      navigator.clipboard.writeText(hoveredBlock.toString());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 120,
+      height: 180,
       layout: {
         background: { color: 'transparent' },
         textColor: theme === 'dark' ? '#d1d5db' : '#374151',
@@ -37,25 +62,36 @@ export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }
       },
       timeScale: {
         borderVisible: false,
+        visible: true,
         timeVisible: false,
+        tickMarkFormatter: (time: number) => {
+          const now = Math.floor(Date.now() / 1000);
+          const diff = now - time;
+          if (diff < 60) return `${Math.round(diff)}s`;
+          if (diff < 3600) return `${Math.round(diff / 60)}m`;
+          return `${Math.round(diff / 3600)}h`;
+        },
       },
       crosshair: {
-        vertLine: { visible: false },
-        horzLine: { visible: false },
+        vertLine: { visible: true, labelVisible: false },
+        horzLine: { visible: true, labelVisible: true },
       },
       handleScale: false,
       handleScroll: false,
     });
 
-    const series = chart.addSeries(LineSeries, {
-      color,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
+    // Subscribe to crosshair move to track hovered block
+    chart.subscribeCrosshairMove((param) => {
+      if (param.time !== undefined) {
+        const blockNum = blockMapRef.current.get(param.time as number);
+        setHoveredBlock(blockNum ?? null);
+      } else {
+        setHoveredBlock(null);
+      }
     });
 
     chartRef.current = chart;
-    seriesRef.current = series;
+    seriesRefs.current = [];
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -72,15 +108,45 @@ export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }
   }, [theme, color]);
 
   useEffect(() => {
-    if (seriesRef.current && data.length > 0) {
-      const chartData: LineData<UTCTimestamp>[] = data.map((d) => ({
-        time: d.time as UTCTimestamp,
+    if (!chartRef.current) return;
+
+    // Clear existing series
+    seriesRefs.current.forEach((s) => chartRef.current?.removeSeries(s));
+    seriesRefs.current = [];
+
+    // Determine which data to use
+    const allSeries: SeriesData[] = series || (data ? [{ data, color }] : []);
+    if (allSeries.length === 0) return;
+
+    // Build block number map for tick formatting from first series
+    blockMapRef.current.clear();
+    allSeries[0].data.forEach((d) => {
+      if (d.blockNumber !== undefined) {
+        // Use timestamp if available for the map key
+        const timeKey = d.timestamp ?? d.time;
+        blockMapRef.current.set(timeKey, d.blockNumber);
+      }
+    });
+
+    // Create series for each data set
+    allSeries.forEach((s) => {
+      const lineSeries = chartRef.current!.addSeries(LineSeries, {
+        color: s.color,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      // Use actual timestamps if available, otherwise fall back to index
+      const chartData: LineData<UTCTimestamp>[] = s.data.map((d) => ({
+        time: (d.timestamp ?? d.time) as UTCTimestamp,
         value: d.value,
       }));
-      seriesRef.current.setData(chartData);
-      chartRef.current?.timeScale().fitContent();
-    }
-  }, [data]);
+      lineSeries.setData(chartData);
+      seriesRefs.current.push(lineSeries);
+    });
+
+    chartRef.current.timeScale().fitContent();
+  }, [data, series, color]);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
@@ -91,7 +157,25 @@ export function MiniChart({ title, data, currentValue, unit, color = '#2962FF' }
           <span className="text-sm text-gray-500 ml-1">{unit}</span>
         </div>
       </div>
-      <div ref={chartContainerRef} className="w-full" />
+      <div
+        ref={chartContainerRef}
+        className="w-full cursor-pointer relative"
+        onClick={handleChartClick}
+      />
+      <div className="text-xs mt-1 flex justify-between items-center h-4">
+        {hoveredBlock !== null ? (
+          <>
+            <span className="text-gray-500 dark:text-gray-400">Block: {hoveredBlock.toLocaleString()}</span>
+            {copied ? (
+              <span className="text-green-500">Copied!</span>
+            ) : (
+              <span className="text-gray-400">Click to copy</span>
+            )}
+          </>
+        ) : (
+          <span>&nbsp;</span>
+        )}
+      </div>
     </div>
   );
 }

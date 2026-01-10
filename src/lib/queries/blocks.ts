@@ -13,6 +13,7 @@ function rowToBlock(row: BlockRow): Block {
     minPriorityFeeGwei: row.min_priority_fee_gwei,
     maxPriorityFeeGwei: row.max_priority_fee_gwei,
     avgPriorityFeeGwei: row.avg_priority_fee_gwei,
+    medianPriorityFeeGwei: row.median_priority_fee_gwei,
     totalBaseFeeGwei: row.total_base_fee_gwei,
     totalPriorityFeeGwei: row.total_priority_fee_gwei,
     txCount: row.tx_count,
@@ -95,11 +96,11 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
     `INSERT INTO blocks (
       timestamp, block_number, block_hash, parent_hash,
       gas_used, gas_limit, base_fee_gwei,
-      min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei,
+      min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
       total_base_fee_gwei, total_priority_fee_gwei,
       tx_count, block_time_sec, mgas_per_sec, tps,
       finalized, finalized_at, milestone_id, time_to_finality_sec
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     ON CONFLICT (timestamp, block_number) DO UPDATE SET
       block_hash = EXCLUDED.block_hash,
       parent_hash = EXCLUDED.parent_hash,
@@ -109,6 +110,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       min_priority_fee_gwei = EXCLUDED.min_priority_fee_gwei,
       max_priority_fee_gwei = EXCLUDED.max_priority_fee_gwei,
       avg_priority_fee_gwei = EXCLUDED.avg_priority_fee_gwei,
+      median_priority_fee_gwei = EXCLUDED.median_priority_fee_gwei,
       total_base_fee_gwei = EXCLUDED.total_base_fee_gwei,
       total_priority_fee_gwei = EXCLUDED.total_priority_fee_gwei,
       tx_count = EXCLUDED.tx_count,
@@ -128,6 +130,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       block.minPriorityFeeGwei,
       block.maxPriorityFeeGwei,
       block.avgPriorityFeeGwei,
+      block.medianPriorityFeeGwei,
       block.totalBaseFeeGwei,
       block.totalPriorityFeeGwei,
       block.txCount,
@@ -156,11 +159,11 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
         `INSERT INTO blocks (
           timestamp, block_number, block_hash, parent_hash,
           gas_used, gas_limit, base_fee_gwei,
-          min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei,
+          min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
           total_base_fee_gwei, total_priority_fee_gwei,
           tx_count, block_time_sec, mgas_per_sec, tps,
           finalized, finalized_at, milestone_id, time_to_finality_sec
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         ON CONFLICT (timestamp, block_number) DO NOTHING`,
         [
           block.timestamp,
@@ -173,6 +176,7 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
           block.minPriorityFeeGwei,
           block.maxPriorityFeeGwei,
           block.avgPriorityFeeGwei,
+          block.medianPriorityFeeGwei,
           block.totalBaseFeeGwei,
           block.totalPriorityFeeGwei,
           block.txCount,
@@ -222,12 +226,30 @@ export async function updateBlockFinality(
   );
 }
 
+export async function resetInvalidFinalityData(maxValidFinalitySec = 300): Promise<number> {
+  // Reset finality data for blocks with unreasonably high finality times
+  // This allows the milestone backfiller to recalculate the correct values
+  const result = await query(
+    `UPDATE blocks SET
+      finalized = FALSE,
+      finalized_at = NULL,
+      milestone_id = NULL,
+      time_to_finality_sec = NULL,
+      updated_at = NOW()
+    WHERE time_to_finality_sec > $1`,
+    [maxValidFinalitySec]
+  );
+  return (result as unknown as { rowCount: number }).rowCount ?? 0;
+}
+
 export async function updateBlocksFinalityInRange(
   startBlock: bigint,
   endBlock: bigint,
   milestoneId: bigint,
   finalizedAt: Date
 ): Promise<number> {
+  // Only update blocks within the milestone's actual range (startBlock to endBlock)
+  // Using the milestone timestamp is only accurate for blocks in this range
   const result = await query<{ block_number: string; timestamp: Date }>(
     `SELECT block_number, timestamp FROM blocks
      WHERE block_number >= $1 AND block_number <= $2 AND finalized = FALSE`,

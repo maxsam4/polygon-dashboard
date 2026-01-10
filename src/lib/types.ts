@@ -9,6 +9,7 @@ export interface Block {
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   avgPriorityFeeGwei: number;
+  medianPriorityFeeGwei: number;
   totalBaseFeeGwei: number;
   totalPriorityFeeGwei: number;
   txCount: number;
@@ -41,6 +42,7 @@ export interface BlockRow {
   min_priority_fee_gwei: number;
   max_priority_fee_gwei: number;
   avg_priority_fee_gwei: number;
+  median_priority_fee_gwei: number;
   total_base_fee_gwei: number;
   total_priority_fee_gwei: number;
   tx_count: number;
@@ -58,7 +60,7 @@ export interface ChartDataPoint {
   blockStart: number;
   blockEnd: number;
   baseFee: { open: number; high: number; low: number; close: number; avg: number };
-  priorityFee: { avg: number; min: number; max: number; open: number; close: number };
+  priorityFee: { avg: number; min: number; max: number; median: number; open: number; close: number };
   total: { avg: number; min: number; max: number };
   mgasPerSec: number;
   tps: number;

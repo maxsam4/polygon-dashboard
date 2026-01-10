@@ -13,21 +13,19 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 interface HeimdallMilestoneResponse {
-  result: {
-    id: number;
-    start_block: number;
-    end_block: number;
+  milestone: {
+    milestone_id: string;
+    start_block: string;
+    end_block: string;
     hash: string;
     proposer: string;
     bor_chain_id: string;
-    timestamp: number;
+    timestamp: string;
   };
 }
 
 interface HeimdallCountResponse {
-  result: {
-    count: number;
-  };
+  count: string;
 }
 
 export class HeimdallExhaustedError extends Error {
@@ -101,29 +99,32 @@ export class HeimdallClient {
   }
 
   async getLatestMilestone(): Promise<Milestone> {
-    const response = await this.fetch<HeimdallMilestoneResponse>('/milestone/latest');
+    const response = await this.fetch<HeimdallMilestoneResponse>('/milestones/latest');
     return this.parseMilestone(response);
   }
 
   async getMilestone(id: number): Promise<Milestone> {
-    const response = await this.fetch<HeimdallMilestoneResponse>(`/milestone/${id}`);
+    const response = await this.fetch<HeimdallMilestoneResponse>(`/milestones/${id}`);
     return this.parseMilestone(response);
   }
 
   async getMilestoneCount(): Promise<number> {
-    const response = await this.fetch<HeimdallCountResponse>('/milestone/count');
-    return response.result.count;
+    const response = await this.fetch<HeimdallCountResponse>('/milestones/count');
+    return parseInt(response.count, 10);
   }
 
   private parseMilestone(response: HeimdallMilestoneResponse): Milestone {
-    const r = response.result;
+    const r = response.milestone;
+    // milestone_id is a hash string, we'll use a counter from count endpoint instead
+    // For now, derive a numeric ID from the block range
+    const milestoneNumericId = BigInt(r.end_block);
     return {
-      milestoneId: BigInt(r.id),
+      milestoneId: milestoneNumericId,
       startBlock: BigInt(r.start_block),
       endBlock: BigInt(r.end_block),
       hash: r.hash,
       proposer: r.proposer || null,
-      timestamp: new Date(r.timestamp * 1000),
+      timestamp: new Date(parseInt(r.timestamp, 10) * 1000),
     };
   }
 }

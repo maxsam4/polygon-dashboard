@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     const toTime = searchParams.get('toTime');
     const bucketSize = searchParams.get('bucketSize') as BucketSize;
     const page = parseInt(searchParams.get('page') ?? '1', 10);
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '500', 10), 1000);
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '500', 10), 10000);
 
     if (!fromTime || !toTime) {
       return NextResponse.json(

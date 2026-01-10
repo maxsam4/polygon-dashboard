@@ -6,6 +6,7 @@ interface BlockData {
   gasUsedPercent: number;
   baseFeeGwei: number;
   avgPriorityFeeGwei: number;
+  medianPriorityFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   txCount: number;
@@ -39,7 +40,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Time</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Gas %</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Base Fee</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Avg Priority</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Median Priority</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Min Priority</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Max Priority</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Txs</th>
@@ -71,7 +72,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   <td className="px-3 py-2 text-gray-500">{getTimeAgo(new Date(block.timestamp))}</td>
                   <td className="px-3 py-2 text-right">{block.gasUsedPercent.toFixed(1)}%</td>
                   <td className="px-3 py-2 text-right font-medium">{block.baseFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right">{block.avgPriorityFeeGwei.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right">{block.medianPriorityFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right text-gray-500">{block.minPriorityFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right text-gray-500">{block.maxPriorityFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">{block.txCount}</td>
@@ -79,7 +80,11 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">
                     {block.finalized ? (
-                      <span className="text-green-500">{block.timeToFinalitySec?.toFixed(1) ?? '0'}s</span>
+                      <span className="text-green-500">
+                        {block.timeToFinalitySec !== null
+                          ? `${block.timeToFinalitySec.toFixed(1)}s`
+                          : '-'}
+                      </span>
                     ) : (
                       <span className="text-yellow-500">pending</span>
                     )}

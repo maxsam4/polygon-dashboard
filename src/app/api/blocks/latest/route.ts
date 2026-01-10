@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const [blocks, latestBlockNumber] = await Promise.all([
-      getLatestBlocks(20),
+      getLatestBlocks(30),
       getHighestBlockNumber(),
     ]);
 
@@ -20,6 +20,7 @@ export async function GET() {
         gasUsedPercent: Number(block.gasUsed * 100n / block.gasLimit),
         baseFeeGwei: block.baseFeeGwei,
         avgPriorityFeeGwei: block.avgPriorityFeeGwei,
+        medianPriorityFeeGwei: block.medianPriorityFeeGwei,
         minPriorityFeeGwei: block.minPriorityFeeGwei,
         maxPriorityFeeGwei: block.maxPriorityFeeGwei,
         txCount: block.txCount,

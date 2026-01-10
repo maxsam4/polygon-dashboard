@@ -25,6 +25,7 @@ export function calculateBlockMetrics(
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   avgPriorityFeeGwei: number;
+  medianPriorityFeeGwei: number;
   totalBaseFeeGwei: number;
   totalPriorityFeeGwei: number;
   blockTimeSec: number | null;
@@ -44,6 +45,7 @@ export function calculateBlockMetrics(
   let minPriorityFee = BigInt(Number.MAX_SAFE_INTEGER);
   let maxPriorityFee = 0n;
   let totalPriorityFee = 0n;
+  const priorityFees: bigint[] = [];
 
   if (txCount === 0) {
     minPriorityFee = 0n;
@@ -63,6 +65,7 @@ export function calculateBlockMetrics(
         priorityFee = 0n;
       }
 
+      priorityFees.push(priorityFee);
       if (priorityFee < minPriorityFee) minPriorityFee = priorityFee;
       if (priorityFee > maxPriorityFee) maxPriorityFee = priorityFee;
       totalPriorityFee += priorityFee * (tx.gas ?? 0n);
@@ -75,6 +78,16 @@ export function calculateBlockMetrics(
   const avgPriorityFee = txCount > 0
     ? totalPriorityFee / BigInt(txCount) / (gasUsed > 0n ? gasUsed / BigInt(txCount) : 1n)
     : 0n;
+
+  // Calculate median priority fee
+  let medianPriorityFee = 0n;
+  if (priorityFees.length > 0) {
+    priorityFees.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const mid = Math.floor(priorityFees.length / 2);
+    medianPriorityFee = priorityFees.length % 2 === 0
+      ? (priorityFees[mid - 1] + priorityFees[mid]) / 2n
+      : priorityFees[mid];
+  }
 
   // Calculate totals
   const totalBaseFeeGwei = weiToGwei(baseFeePerGas * gasUsed);
@@ -98,6 +111,7 @@ export function calculateBlockMetrics(
     minPriorityFeeGwei: weiToGwei(minPriorityFee),
     maxPriorityFeeGwei: weiToGwei(maxPriorityFee),
     avgPriorityFeeGwei: weiToGwei(avgPriorityFee),
+    medianPriorityFeeGwei: weiToGwei(medianPriorityFee),
     totalBaseFeeGwei,
     totalPriorityFeeGwei,
     blockTimeSec,

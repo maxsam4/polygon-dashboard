@@ -14,6 +14,7 @@ CREATE TABLE blocks (
   min_priority_fee_gwei DOUBLE PRECISION NOT NULL,
   max_priority_fee_gwei DOUBLE PRECISION NOT NULL,
   avg_priority_fee_gwei DOUBLE PRECISION NOT NULL,
+  median_priority_fee_gwei DOUBLE PRECISION NOT NULL DEFAULT 0,
   total_base_fee_gwei DOUBLE PRECISION NOT NULL,
   total_priority_fee_gwei DOUBLE PRECISION NOT NULL,
   tx_count INTEGER NOT NULL,

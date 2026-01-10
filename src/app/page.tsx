@@ -11,6 +11,7 @@ interface BlockData {
   gasUsedPercent: number;
   baseFeeGwei: number;
   avgPriorityFeeGwei: number;
+  medianPriorityFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   txCount: number;
@@ -46,10 +47,13 @@ export default function Home() {
   }, []);
 
   const latestBlock = blocks[0];
-  const chartData = blocks
-    .slice()
-    .reverse()
-    .map((b, i) => ({ time: i, value: b.baseFeeGwei }));
+  const reversedBlocks = blocks.slice().reverse();
+  const gasChartData = reversedBlocks.map((b, i) => ({
+    time: i,
+    value: b.baseFeeGwei,
+    blockNumber: parseInt(b.blockNumber),
+    timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
+  }));
 
   return (
     <div className="min-h-screen">
@@ -59,28 +63,28 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MiniChart
             title="Gas Price"
-            data={chartData}
+            data={gasChartData}
             currentValue={latestBlock?.baseFeeGwei.toFixed(2) ?? '-'}
             unit="gwei"
             color="#2962FF"
           />
           <MiniChart
-            title="Finality Delay"
-            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.timeToFinalitySec ?? 0 }))}
+            title="Finality Time"
+            data={reversedBlocks.map((b, i) => ({ time: i, value: b.timeToFinalitySec ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
             currentValue={latestBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
             unit="sec"
             color="#FF6D00"
           />
           <MiniChart
             title="MGAS/s"
-            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.mgasPerSec ?? 0 }))}
+            data={reversedBlocks.map((b, i) => ({ time: i, value: b.mgasPerSec ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
             currentValue={latestBlock?.mgasPerSec?.toFixed(1) ?? '-'}
             unit=""
             color="#00C853"
           />
           <MiniChart
             title="TPS"
-            data={blocks.slice().reverse().map((b, i) => ({ time: i, value: b.tps ?? 0 }))}
+            data={reversedBlocks.map((b, i) => ({ time: i, value: b.tps ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
             currentValue={latestBlock?.tps?.toFixed(0) ?? '-'}
             unit=""
             color="#AA00FF"

@@ -87,6 +87,15 @@ export class LivePoller {
     const latestMilestone = await getLatestMilestone();
     const finalized = latestMilestone ? blockNumber <= latestMilestone.endBlock : false;
 
+    // Calculate time to finality if block is already finalized
+    const blockTimestamp = new Date(Number(block.timestamp) * 1000);
+    let timeToFinalitySec: number | null = null;
+    if (finalized && latestMilestone) {
+      timeToFinalitySec = (latestMilestone.timestamp.getTime() - blockTimestamp.getTime()) / 1000;
+      // Ensure non-negative (shouldn't happen but be safe)
+      if (timeToFinalitySec < 0) timeToFinalitySec = null;
+    }
+
     // Check for reorg
     const existingBlock = await getBlockByNumber(blockNumber);
     if (existingBlock && existingBlock.blockHash !== block.hash) {
@@ -100,7 +109,7 @@ export class LivePoller {
     // Insert/update block
     const blockData: Omit<Block, 'createdAt' | 'updatedAt'> = {
       blockNumber,
-      timestamp: new Date(Number(block.timestamp) * 1000),
+      timestamp: blockTimestamp,
       blockHash: block.hash,
       parentHash: block.parentHash,
       gasUsed: block.gasUsed,
@@ -109,6 +118,7 @@ export class LivePoller {
       minPriorityFeeGwei: metrics.minPriorityFeeGwei,
       maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
       avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+      medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
       totalBaseFeeGwei: metrics.totalBaseFeeGwei,
       totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
       txCount: block.transactions.length,
@@ -118,7 +128,7 @@ export class LivePoller {
       finalized,
       finalizedAt: finalized && latestMilestone ? latestMilestone.timestamp : null,
       milestoneId: finalized && latestMilestone ? latestMilestone.milestoneId : null,
-      timeToFinalitySec: null,
+      timeToFinalitySec,
     };
 
     await insertBlock(blockData);

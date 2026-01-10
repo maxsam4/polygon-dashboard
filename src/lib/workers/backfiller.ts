@@ -109,6 +109,7 @@ export class Backfiller {
           minPriorityFeeGwei: metrics.minPriorityFeeGwei,
           maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
           avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+          medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
           totalBaseFeeGwei: metrics.totalBaseFeeGwei,
           totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
           txCount: block.transactions.length,

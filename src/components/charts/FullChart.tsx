@@ -10,7 +10,7 @@ interface ChartDataPoint {
   blockStart: number;
   blockEnd: number;
   baseFee: { open: number; high: number; low: number; close: number; avg: number };
-  priorityFee: { avg: number; min: number; max: number };
+  priorityFee: { avg: number; min: number; max: number; median: number };
   total: { avg: number; min: number; max: number };
   mgasPerSec: number;
   tps: number;
@@ -22,25 +22,50 @@ interface FullChartProps {
   metric: 'gas' | 'finality' | 'mgas' | 'tps';
 }
 
+// Get recommended bucket size for a time range
+function getRecommendedBucket(range: string): string {
+  switch (range) {
+    case '5m': return '2s';
+    case '15m': return '2s';
+    case '30m': return '1m';
+    case '1H': return '1m';
+    case '3H': return '1m';
+    case '6H': return '5m';
+    case '1D': return '15m';
+    case '1W': return '1h';
+    case '1M': return '4h';
+    case '6M': return '1d';
+    case '1Y': return '1d';
+    case 'ALL': return '1w';
+    default: return '2s';
+  }
+}
+
 export function FullChart({ title, metric }: FullChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const { theme } = useTheme();
 
-  const [timeRange, setTimeRange] = useState('5m');
-  const [bucketSize, setBucketSize] = useState('2s');
+  const [timeRange, setTimeRange] = useState('1H');
+  const [bucketSize, setBucketSize] = useState('1m');
   const [chartType, setChartType] = useState('Line');
   const [data, setData] = useState<ChartDataPoint[]>([]);
+
+  // Auto-update bucket when time range changes
+  const handleTimeRangeChange = (range: string) => {
+    setTimeRange(range);
+    setBucketSize(getRecommendedBucket(range));
+  };
 
   const [seriesOptions, setSeriesOptions] = useState(() => {
     if (metric === 'gas') {
       return [
         { key: 'base', label: 'Base', enabled: true },
-        { key: 'avgPriority', label: 'Avg Priority', enabled: true },
-        { key: 'total', label: 'Total', enabled: true },
+        { key: 'medianPriority', label: 'Median Priority', enabled: true },
         { key: 'minPriority', label: 'Min Priority', enabled: false },
         { key: 'maxPriority', label: 'Max Priority', enabled: false },
+        { key: 'total', label: 'Total', enabled: false },
       ];
     }
     return [
@@ -59,6 +84,7 @@ export function FullChart({ title, metric }: FullChartProps) {
       case '15m': fromTime = now - 15 * 60; break;
       case '30m': fromTime = now - 30 * 60; break;
       case '1H': fromTime = now - 3600; break;
+      case '3H': fromTime = now - 3 * 3600; break;
       case '6H': fromTime = now - 6 * 3600; break;
       case '1D': fromTime = now - 86400; break;
       case '1W': fromTime = now - 7 * 86400; break;
@@ -70,7 +96,7 @@ export function FullChart({ title, metric }: FullChartProps) {
 
     try {
       const response = await fetch(
-        `/api/chart-data?fromTime=${fromTime}&toTime=${now}&bucketSize=${bucketSize}`
+        `/api/chart-data?fromTime=${fromTime}&toTime=${now}&bucketSize=${bucketSize}&limit=5000`
       );
       const json = await response.json();
       setData(json.data || []);
@@ -97,8 +123,22 @@ export function FullChart({ title, metric }: FullChartProps) {
         vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
         horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
       },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true },
+      rightPriceScale: { visible: true, borderVisible: false },
+      leftPriceScale: { visible: true, borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        timeVisible: true,
+        tickMarkFormatter: (time: number) => {
+          const date = new Date(time * 1000);
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
+      },
+      localization: {
+        timeFormatter: (timestamp: number) => {
+          const date = new Date(timestamp * 1000);
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
+      },
     });
 
     chartRef.current = chart;
@@ -136,7 +176,7 @@ export function FullChart({ title, metric }: FullChartProps) {
           seriesData = data.map((d) => {
             const value =
               opt.key === 'base' ? d.baseFee.avg :
-              opt.key === 'avgPriority' ? d.priorityFee.avg :
+              opt.key === 'medianPriority' ? d.priorityFee.median :
               opt.key === 'total' ? d.total.avg :
               opt.key === 'minPriority' ? d.priorityFee.min :
               d.priorityFee.max;
@@ -152,10 +192,13 @@ export function FullChart({ title, metric }: FullChartProps) {
           seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
 
+        // Alternate between left and right price scales for multi-series
+        const priceScaleId = index % 2 === 0 ? 'left' : 'right';
         const series = chartRef.current!.addSeries(LineSeries, {
           color,
           lineWidth: 2,
           title: opt.label,
+          priceScaleId,
         });
         series.setData(seriesData);
         seriesRefs.current.set(opt.key, series);
@@ -177,7 +220,7 @@ export function FullChart({ title, metric }: FullChartProps) {
       </div>
       <ChartControls
         timeRange={timeRange}
-        onTimeRangeChange={setTimeRange}
+        onTimeRangeChange={handleTimeRangeChange}
         bucketSize={bucketSize}
         onBucketSizeChange={setBucketSize}
         chartType={chartType}

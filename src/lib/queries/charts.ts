@@ -27,6 +27,7 @@ interface ChartRow {
   priority_fee_avg: number;
   priority_fee_min: number;
   priority_fee_max: number;
+  priority_fee_median: number;
   priority_fee_open: number;
   priority_fee_close: number;
   total_gas_price_avg: number;
@@ -75,6 +76,7 @@ export async function getChartData(
       AVG(avg_priority_fee_gwei) AS priority_fee_avg,
       MIN(min_priority_fee_gwei) AS priority_fee_min,
       MAX(max_priority_fee_gwei) AS priority_fee_max,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY avg_priority_fee_gwei) AS priority_fee_median,
       (array_agg(avg_priority_fee_gwei ORDER BY timestamp))[1] AS priority_fee_open,
       (array_agg(avg_priority_fee_gwei ORDER BY timestamp DESC))[1] AS priority_fee_close,
 
@@ -112,6 +114,7 @@ export async function getChartData(
       avg: row.priority_fee_avg,
       min: row.priority_fee_min,
       max: row.priority_fee_max,
+      median: row.priority_fee_median,
       open: row.priority_fee_open,
       close: row.priority_fee_close,
     },

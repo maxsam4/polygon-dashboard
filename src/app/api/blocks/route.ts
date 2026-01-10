@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') ?? '1', 10);
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 100);
+    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10), 10000);
     const fromBlock = searchParams.get('fromBlock');
     const toBlock = searchParams.get('toBlock');
 
@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
         gasUsedPercent: Number(block.gasUsed * 100n / block.gasLimit),
         baseFeeGwei: block.baseFeeGwei,
         avgPriorityFeeGwei: block.avgPriorityFeeGwei,
+        medianPriorityFeeGwei: block.medianPriorityFeeGwei,
         minPriorityFeeGwei: block.minPriorityFeeGwei,
         maxPriorityFeeGwei: block.maxPriorityFeeGwei,
         totalBaseFeeGwei: block.totalBaseFeeGwei,

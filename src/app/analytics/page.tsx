@@ -8,11 +8,13 @@ export default function AnalyticsPage() {
     <div className="min-h-screen">
       <Nav />
 
-      <main className="w-full px-4 py-6 space-y-6">
-        <FullChart title="Gas Price (gwei)" metric="gas" />
-        <FullChart title="Finality Delay (seconds)" metric="finality" />
-        <FullChart title="MGAS/s" metric="mgas" />
-        <FullChart title="TPS" metric="tps" />
+      <main className="w-full px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FullChart title="Gas Price (gwei)" metric="gas" />
+          <FullChart title="Finality Time (seconds)" metric="finality" />
+          <FullChart title="MGAS/s" metric="mgas" />
+          <FullChart title="TPS" metric="tps" />
+        </div>
       </main>
     </div>
   );
