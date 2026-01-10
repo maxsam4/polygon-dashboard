@@ -38,12 +38,11 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
             <tr>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Block</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Time</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '180px' }}>Gas Used</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Gas Limit</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '120px' }}>Gas Used</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Base Fee</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Median Priority</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Min Priority</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Max Priority</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" title="Total Base Fee (POL)">Base (POL)</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" title="Total Priority Fee (POL)">Priority (POL)</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Txs</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">MGAS/s</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">TPS</th>
@@ -53,7 +52,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {blocks.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
                   No blocks found
                 </td>
               </tr>
@@ -77,7 +76,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                         <span className="font-mono">{formatGas(block.gasUsed)}</span>
                         <span className="text-gray-500">{block.gasUsedPercent.toFixed(2)}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className="w-1/2 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
                           className={`h-2 rounded-full ${
                             block.gasUsedPercent > 85 || block.gasUsedPercent < 15 ? 'bg-red-500' : block.gasUsedPercent > 75 || block.gasUsedPercent < 55 ? 'bg-yellow-500' : 'bg-green-500'
@@ -87,11 +86,10 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{formatGas(block.gasLimit)}</td>
                   <td className="px-3 py-2 text-right font-medium">{block.baseFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">{block.medianPriorityFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right text-gray-500">{block.minPriorityFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right text-gray-500">{block.maxPriorityFeeGwei.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right text-gray-500">{formatGweiToPol(block.totalBaseFeeGwei)}</td>
+                  <td className="px-3 py-2 text-right text-gray-500">{formatGweiToPol(block.totalPriorityFeeGwei)}</td>
                   <td className="px-3 py-2 text-right">{block.txCount}</td>
                   <td className="px-3 py-2 text-right">{block.mgasPerSec?.toFixed(1) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>
@@ -136,4 +134,14 @@ function formatGas(gas: string): string {
     return `${(Number(num) / 1_000).toFixed(1)}K`;
   }
   return num.toString();
+}
+
+function formatGweiToPol(gwei: number | undefined): string {
+  if (gwei === undefined) return '-';
+  // 1 POL = 1,000,000,000 gwei (10^9)
+  const pol = gwei / 1_000_000_000;
+  return pol.toLocaleString('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4
+  });
 }

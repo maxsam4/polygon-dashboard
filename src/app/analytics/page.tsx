@@ -14,10 +14,10 @@ export default function AnalyticsPage() {
           <FullChart title="Finality Time (seconds)" metric="finality" />
           <FullChart title="MGAS/s" metric="mgas" />
           <FullChart title="TPS" metric="tps" />
-          <FullChart title="Total Base Fee (gwei)" metric="totalBaseFee" />
-          <FullChart title="Total Priority Fee (gwei)" metric="totalPriorityFee" />
-          <FullChart title="Cumulative Base Fee (gwei)" metric="totalBaseFee" showCumulative />
-          <FullChart title="Cumulative Priority Fee (gwei)" metric="totalPriorityFee" showCumulative />
+          <FullChart title="Total Base Fee (POL)" metric="totalBaseFee" />
+          <FullChart title="Total Priority Fee (POL)" metric="totalPriorityFee" />
+          <FullChart title="Cumulative Base Fee (POL)" metric="totalBaseFee" showCumulative />
+          <FullChart title="Cumulative Priority Fee (POL)" metric="totalPriorityFee" showCumulative />
         </div>
       </main>
     </div>

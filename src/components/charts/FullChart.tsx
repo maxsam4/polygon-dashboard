@@ -177,6 +177,16 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           const date = new Date(timestamp * 1000);
           return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         },
+        priceFormatter: (price: number) => {
+          // Format with commas for fee charts (already in POL)
+          if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {
+            return price.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+          return price.toFixed(2);
+        },
       },
     });
 
@@ -201,7 +211,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [theme]);
+  }, [theme, metric]);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
@@ -264,24 +274,26 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           } else if (metric === 'tps') {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
           } else if (metric === 'totalBaseFee') {
+            // Convert gwei to POL (1 POL = 1,000,000 gwei)
             if (opt.key === 'cumulative') {
               let cumulative = 0;
               seriesData = data.map((d) => {
                 cumulative += d.totalBaseFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative };
+                return { time: d.timestamp as UTCTimestamp, value: cumulative / 1_000_000_000 };
               });
             } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum }));
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / 1_000_000_000 }));
             }
           } else if (metric === 'totalPriorityFee') {
+            // Convert gwei to POL (1 POL = 1,000,000 gwei)
             if (opt.key === 'cumulative') {
               let cumulative = 0;
               seriesData = data.map((d) => {
                 cumulative += d.totalPriorityFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative };
+                return { time: d.timestamp as UTCTimestamp, value: cumulative / 1_000_000_000 };
               });
             } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum }));
+              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / 1_000_000_000 }));
             }
           } else {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
@@ -348,12 +360,13 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     return null;
   })();
 
-  // Format large numbers
-  const formatFee = (value: number): string => {
-    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
-    return value.toFixed(2);
+  // Format fee in POL with commas (1 POL = 1,000,000 gwei)
+  const formatFeeAsPol = (gweiValue: number): string => {
+    const polValue = gweiValue / 1_000_000_000;
+    return polValue.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
   };
 
   return (
@@ -365,7 +378,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             <div className="text-right">
               <span className="text-sm text-gray-500 dark:text-gray-400">Period Total: </span>
               <span className="text-lg font-semibold text-blue-600 dark:text-blue-400">
-                {formatFee(periodTotal)} gwei
+                {formatFeeAsPol(periodTotal)} POL
               </span>
             </div>
           )}
