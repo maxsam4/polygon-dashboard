@@ -1,13 +1,24 @@
-import { Block as ViemBlock, Transaction } from 'viem';
-
 const GWEI = 1_000_000_000n;
 
 export function weiToGwei(wei: bigint): number {
   return Number(wei) / Number(GWEI);
 }
 
+interface TransactionLike {
+  maxPriorityFeePerGas?: bigint | null;
+  gasPrice?: bigint | null;
+  gas?: bigint;
+}
+
+interface BlockLike {
+  baseFeePerGas?: bigint | null;
+  gasUsed: bigint;
+  timestamp: bigint;
+  transactions: TransactionLike[] | string[];
+}
+
 export function calculateBlockMetrics(
-  block: ViemBlock<bigint, boolean, Transaction>,
+  block: BlockLike,
   previousBlockTimestamp?: bigint
 ): {
   baseFeeGwei: number;
@@ -23,19 +34,21 @@ export function calculateBlockMetrics(
   const baseFeePerGas = block.baseFeePerGas ?? 0n;
   const baseFeeGwei = weiToGwei(baseFeePerGas);
   const gasUsed = block.gasUsed;
-  const txCount = block.transactions.length;
+
+  // Handle both transaction objects and transaction hashes
+  const transactions = block.transactions;
+  const hasFullTransactions = transactions.length > 0 && typeof transactions[0] !== 'string';
+  const txCount = transactions.length;
 
   // Calculate priority fees from transactions
   let minPriorityFee = BigInt(Number.MAX_SAFE_INTEGER);
   let maxPriorityFee = 0n;
   let totalPriorityFee = 0n;
 
-  const transactions = block.transactions as Transaction[];
-
-  if (transactions.length === 0) {
+  if (txCount === 0) {
     minPriorityFee = 0n;
-  } else {
-    for (const tx of transactions) {
+  } else if (hasFullTransactions) {
+    for (const tx of transactions as TransactionLike[]) {
       let priorityFee: bigint;
 
       if (tx.maxPriorityFeePerGas !== undefined && tx.maxPriorityFeePerGas !== null) {
@@ -54,6 +67,9 @@ export function calculateBlockMetrics(
       if (priorityFee > maxPriorityFee) maxPriorityFee = priorityFee;
       totalPriorityFee += priorityFee * (tx.gas ?? 0n);
     }
+  } else {
+    // Only have transaction hashes, not full transactions
+    minPriorityFee = 0n;
   }
 
   const avgPriorityFee = txCount > 0

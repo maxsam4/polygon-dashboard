@@ -1,5 +1,8 @@
-import { createPublicClient, http, PublicClient, Block as ViemBlock, Transaction } from 'viem';
+import { createPublicClient, http, PublicClient } from 'viem';
 import { polygon } from 'viem/chains';
+
+// Re-export Block type for convenience
+export type { Block as ViemBlock } from 'viem';
 
 interface RetryConfig {
   maxRetries: number;
@@ -89,16 +92,16 @@ export class RpcClient {
     return this.call((client) => client.getBlockNumber());
   }
 
-  async getBlock(blockNumber: bigint): Promise<ViemBlock> {
+  async getBlock(blockNumber: bigint) {
     return this.call((client) =>
       client.getBlock({ blockNumber, includeTransactions: false })
     );
   }
 
-  async getBlockWithTransactions(blockNumber: bigint): Promise<ViemBlock<bigint, boolean, Transaction>> {
+  async getBlockWithTransactions(blockNumber: bigint) {
     return this.call((client) =>
       client.getBlock({ blockNumber, includeTransactions: true })
-    ) as Promise<ViemBlock<bigint, boolean, Transaction>>;
+    );
   }
 }
 
