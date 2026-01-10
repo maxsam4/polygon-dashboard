@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, IChartApi, ISeriesApi, LineData, UTCTimestamp, LineSeries } from 'lightweight-charts';
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  LineData,
+  UTCTimestamp,
+  LineSeries,
+  AreaSeries,
+  HistogramSeries,
+  CandlestickSeries,
+  CandlestickData,
+  SeriesType,
+} from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
 
@@ -44,7 +56,7 @@ function getRecommendedBucket(range: string): string {
 export function FullChart({ title, metric }: FullChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRefs = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const seriesRefs = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const { theme } = useTheme();
 
   const [timeRange, setTimeRange] = useState('1H');
@@ -170,37 +182,86 @@ export function FullChart({ title, metric }: FullChartProps) {
       .filter((opt) => opt.enabled)
       .forEach((opt, index) => {
         const color = colors[index % colors.length];
-        let seriesData: LineData<UTCTimestamp>[];
 
-        if (metric === 'gas') {
-          seriesData = data.map((d) => {
-            const value =
-              opt.key === 'base' ? d.baseFee.avg :
-              opt.key === 'medianPriority' ? d.priorityFee.median :
-              opt.key === 'total' ? d.total.avg :
-              opt.key === 'minPriority' ? d.priorityFee.min :
-              d.priorityFee.max;
-            return { time: d.timestamp as UTCTimestamp, value };
+        // For candlestick, only base fee has OHLC data
+        const useCandlestick = chartType === 'Candle' && metric === 'gas' && opt.key === 'base';
+
+        if (useCandlestick) {
+          // Candlestick series for base fee OHLC
+          const candleData: CandlestickData<UTCTimestamp>[] = data.map((d) => ({
+            time: d.timestamp as UTCTimestamp,
+            open: d.baseFee.open,
+            high: d.baseFee.high,
+            low: d.baseFee.low,
+            close: d.baseFee.close,
+          }));
+
+          const series = chartRef.current!.addSeries(CandlestickSeries, {
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350',
+            title: opt.label,
+            priceScaleId: 'left',
           });
-        } else if (metric === 'finality') {
-          seriesData = data
-            .filter((d) => d.finalityAvg !== null)
-            .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
-        } else if (metric === 'mgas') {
-          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
+          series.setData(candleData);
+          seriesRefs.current.set(opt.key, series);
         } else {
-          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
-        }
+          // Line data for all other cases
+          let seriesData: LineData<UTCTimestamp>[];
 
-        // All series on left price scale (primary), with labels visible
-        const series = chartRef.current!.addSeries(LineSeries, {
-          color,
-          lineWidth: 2,
-          title: opt.label,
-          priceScaleId: 'left',
-        });
-        series.setData(seriesData);
-        seriesRefs.current.set(opt.key, series);
+          if (metric === 'gas') {
+            seriesData = data.map((d) => {
+              const value =
+                opt.key === 'base' ? d.baseFee.avg :
+                opt.key === 'medianPriority' ? d.priorityFee.median :
+                opt.key === 'total' ? d.total.avg :
+                opt.key === 'minPriority' ? d.priorityFee.min :
+                d.priorityFee.max;
+              return { time: d.timestamp as UTCTimestamp, value };
+            });
+          } else if (metric === 'finality') {
+            seriesData = data
+              .filter((d) => d.finalityAvg !== null)
+              .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
+          } else if (metric === 'mgas') {
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
+          } else {
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
+          }
+
+          // Create series based on chart type
+          let series: ISeriesApi<SeriesType>;
+
+          if (chartType === 'Area') {
+            series = chartRef.current!.addSeries(AreaSeries, {
+              lineColor: color,
+              topColor: `${color}80`,
+              bottomColor: `${color}10`,
+              lineWidth: 2,
+              title: opt.label,
+              priceScaleId: 'left',
+            });
+          } else if (chartType === 'Bar') {
+            series = chartRef.current!.addSeries(HistogramSeries, {
+              color,
+              title: opt.label,
+              priceScaleId: 'left',
+            });
+          } else {
+            // Default to Line (also used for Candle when not base fee)
+            series = chartRef.current!.addSeries(LineSeries, {
+              color,
+              lineWidth: 2,
+              title: opt.label,
+              priceScaleId: 'left',
+            });
+          }
+
+          series.setData(seriesData);
+          seriesRefs.current.set(opt.key, series);
+        }
       });
 
     chartRef.current.timeScale().fitContent();

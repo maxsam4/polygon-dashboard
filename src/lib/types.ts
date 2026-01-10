@@ -24,6 +24,7 @@ export interface Block {
 
 export interface Milestone {
   milestoneId: bigint;
+  sequenceId: number;
   startBlock: bigint;
   endBlock: bigint;
   hash: string;

@@ -17,7 +17,7 @@ export async function GET() {
         blockHash: block.blockHash,
         gasUsed: block.gasUsed.toString(),
         gasLimit: block.gasLimit.toString(),
-        gasUsedPercent: Number(block.gasUsed * 100n / block.gasLimit),
+        gasUsedPercent: (Number(block.gasUsed) / Number(block.gasLimit)) * 100,
         baseFeeGwei: block.baseFeeGwei,
         avgPriorityFeeGwei: block.avgPriorityFeeGwei,
         medianPriorityFeeGwei: block.medianPriorityFeeGwei,

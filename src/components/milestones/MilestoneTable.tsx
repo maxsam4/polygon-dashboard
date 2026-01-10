@@ -40,7 +40,8 @@ export function MilestoneTable({ milestones, title = 'Milestones' }: Props) {
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="px-3 py-2 text-left">ID</th>
-              <th className="px-3 py-2 text-left">Block Range</th>
+              <th className="px-3 py-2 text-right">From Block</th>
+              <th className="px-3 py-2 text-right">To Block</th>
               <th className="px-3 py-2 text-right">Expected</th>
               <th className="px-3 py-2 text-right">In DB</th>
               <th className="px-3 py-2 text-right">Coverage</th>
@@ -57,10 +58,11 @@ export function MilestoneTable({ milestones, title = 'Milestones' }: Props) {
               return (
                 <tr key={m.milestoneId} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="px-3 py-2 font-mono text-xs">{m.milestoneId}</td>
-                  <td className="px-3 py-2">
-                    <span className="font-mono text-xs">{parseInt(m.startBlock).toLocaleString()}</span>
-                    <span className="text-gray-500 mx-1">-</span>
-                    <span className="font-mono text-xs">{parseInt(m.endBlock).toLocaleString()}</span>
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    {parseInt(m.startBlock).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    {parseInt(m.endBlock).toLocaleString()}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs">
                     {m.blockCount.toLocaleString()}

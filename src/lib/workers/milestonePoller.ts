@@ -1,8 +1,8 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import {
-  getLatestMilestone,
   insertMilestone,
   reconcileBlocksForMilestone,
+  getHighestSequenceId,
 } from '@/lib/queries/milestones';
 
 const POLL_INTERVAL_MS = 2500; // 2.5 seconds
@@ -10,16 +10,15 @@ const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
 
 export class MilestonePoller {
   private running = false;
-  private lastMilestoneId: bigint | null = null;
+  private lastSequenceId: number | null = null;
 
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
 
-    // Initialize from database
-    const latestMilestone = await getLatestMilestone();
-    this.lastMilestoneId = latestMilestone?.milestoneId ?? null;
-    console.log(`[MilestonePoller] Starting from milestone ${this.lastMilestoneId?.toString() ?? 'none'}`);
+    // Initialize from database - get highest sequence ID we have
+    this.lastSequenceId = await getHighestSequenceId();
+    console.log(`[MilestonePoller] Starting from sequence ID ${this.lastSequenceId ?? 'none'}`);
 
     this.poll();
   }
@@ -47,17 +46,36 @@ export class MilestonePoller {
 
   private async checkNewMilestones(): Promise<void> {
     const heimdall = getHeimdallClient();
-    const latestMilestone = await heimdall.getLatestMilestone();
+    const currentCount = await heimdall.getMilestoneCount();
 
-    if (this.lastMilestoneId === null || latestMilestone.milestoneId > this.lastMilestoneId) {
-      // Process new milestone
+    // If we don't have a last sequence ID, start from current
+    if (this.lastSequenceId === null) {
+      this.lastSequenceId = currentCount;
+      const latestMilestone = await heimdall.getLatestMilestone();
       await this.processMilestone(latestMilestone);
-      this.lastMilestoneId = latestMilestone.milestoneId;
+      return;
+    }
+
+    // Check if there are new milestones
+    if (currentCount > this.lastSequenceId) {
+      // Fetch all missing milestones in order
+      for (let seqId = this.lastSequenceId + 1; seqId <= currentCount && this.running; seqId++) {
+        try {
+          const milestone = await heimdall.getMilestone(seqId);
+          await this.processMilestone(milestone);
+          this.lastSequenceId = seqId;
+        } catch (error) {
+          console.error(`[MilestonePoller] Error fetching milestone seq=${seqId}:`, error);
+          // Don't update lastSequenceId so we retry this one next time
+          break;
+        }
+      }
     }
   }
 
   private async processMilestone(milestone: {
     milestoneId: bigint;
+    sequenceId: number;
     startBlock: bigint;
     endBlock: bigint;
     hash: string;

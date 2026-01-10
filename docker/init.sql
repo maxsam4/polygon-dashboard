@@ -45,6 +45,7 @@ SELECT add_compression_policy('blocks', INTERVAL '7 days');
 -- Milestones table
 CREATE TABLE milestones (
   milestone_id BIGINT PRIMARY KEY,
+  sequence_id INTEGER NOT NULL UNIQUE,
   start_block BIGINT NOT NULL,
   end_block BIGINT NOT NULL,
   hash CHAR(66) NOT NULL,
@@ -55,3 +56,4 @@ CREATE TABLE milestones (
 
 CREATE INDEX idx_milestones_blocks ON milestones (start_block, end_block);
 CREATE INDEX idx_milestones_end ON milestones (end_block DESC);
+CREATE INDEX idx_milestones_sequence ON milestones (sequence_id DESC);

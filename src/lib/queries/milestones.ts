@@ -3,6 +3,7 @@ import { Milestone, MilestoneWithStats } from '../types';
 
 interface MilestoneRow {
   milestone_id: string;
+  sequence_id: number;
   start_block: string;
   end_block: string;
   hash: string;
@@ -13,6 +14,7 @@ interface MilestoneRow {
 function rowToMilestone(row: MilestoneRow): Milestone {
   return {
     milestoneId: BigInt(row.milestone_id),
+    sequenceId: row.sequence_id,
     startBlock: BigInt(row.start_block),
     endBlock: BigInt(row.end_block),
     hash: row.hash,
@@ -48,11 +50,12 @@ export async function getMilestoneForBlock(blockNumber: bigint): Promise<Milesto
 
 export async function insertMilestone(milestone: Milestone): Promise<void> {
   await query(
-    `INSERT INTO milestones (milestone_id, start_block, end_block, hash, proposer, timestamp)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO milestones (milestone_id, sequence_id, start_block, end_block, hash, proposer, timestamp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (milestone_id) DO NOTHING`,
     [
       milestone.milestoneId.toString(),
+      milestone.sequenceId,
       milestone.startBlock.toString(),
       milestone.endBlock.toString(),
       milestone.hash,
@@ -60,6 +63,16 @@ export async function insertMilestone(milestone: Milestone): Promise<void> {
       milestone.timestamp,
     ]
   );
+}
+
+export async function getLowestSequenceId(): Promise<number | null> {
+  const row = await queryOne<{ min: number }>(`SELECT MIN(sequence_id) as min FROM milestones`);
+  return row?.min ?? null;
+}
+
+export async function getHighestSequenceId(): Promise<number | null> {
+  const row = await queryOne<{ max: number }>(`SELECT MAX(sequence_id) as max FROM milestones`);
+  return row?.max ?? null;
 }
 
 export async function getLowestMilestoneId(): Promise<bigint | null> {
@@ -127,6 +140,7 @@ interface MilestoneWithStatsRow extends MilestoneRow {
 function rowToMilestoneWithStats(row: MilestoneWithStatsRow): MilestoneWithStats {
   return {
     milestoneId: BigInt(row.milestone_id),
+    sequenceId: row.sequence_id,
     startBlock: BigInt(row.start_block),
     endBlock: BigInt(row.end_block),
     hash: row.hash,

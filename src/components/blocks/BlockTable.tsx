@@ -38,7 +38,8 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
             <tr>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Block</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Time</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Gas %</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '180px' }}>Gas Used</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Gas Limit</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Base Fee</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Median Priority</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Min Priority</th>
@@ -52,7 +53,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {blocks.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
                   No blocks found
                 </td>
               </tr>
@@ -69,8 +70,24 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                       {block.blockNumber}
                     </a>
                   </td>
-                  <td className="px-3 py-2 text-gray-500">{getTimeAgo(new Date(block.timestamp))}</td>
-                  <td className="px-3 py-2 text-right">{block.gasUsedPercent.toFixed(2)}%</td>
+                  <td className="px-3 py-2 text-gray-500" title={new Date(block.timestamp).toLocaleString()}>{getTimeAgo(new Date(block.timestamp))}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="font-mono">{formatGas(block.gasUsed)}</span>
+                        <span className="text-gray-500">{block.gasUsedPercent.toFixed(2)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            block.gasUsedPercent > 80 ? 'bg-red-500' : block.gasUsedPercent > 50 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(block.gasUsedPercent, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">{formatGas(block.gasLimit)}</td>
                   <td className="px-3 py-2 text-right font-medium">{block.baseFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">{block.medianPriorityFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right text-gray-500">{block.minPriorityFeeGwei.toFixed(2)}</td>
@@ -105,4 +122,18 @@ function getTimeAgo(date: Date): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function formatGas(gas: string): string {
+  const num = BigInt(gas);
+  if (num >= 1_000_000_000n) {
+    return `${(Number(num) / 1_000_000_000).toFixed(2)}B`;
+  }
+  if (num >= 1_000_000n) {
+    return `${(Number(num) / 1_000_000).toFixed(2)}M`;
+  }
+  if (num >= 1_000n) {
+    return `${(Number(num) / 1_000).toFixed(1)}K`;
+  }
+  return num.toString();
 }

@@ -47,6 +47,7 @@ export default function Home() {
   }, []);
 
   const latestBlock = blocks[0];
+  const lastFinalizedBlock = blocks.find(b => b.timeToFinalitySec !== null);
   const reversedBlocks = blocks.slice().reverse();
   const gasChartData = reversedBlocks.map((b, i) => ({
     time: i,
@@ -71,7 +72,7 @@ export default function Home() {
           <MiniChart
             title="Finality Time"
             data={reversedBlocks.map((b, i) => ({ time: i, value: b.timeToFinalitySec ?? 0, blockNumber: parseInt(b.blockNumber), timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000) }))}
-            currentValue={latestBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
+            currentValue={lastFinalizedBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
             unit="sec"
             color="#FF6D00"
           />

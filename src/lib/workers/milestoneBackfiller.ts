@@ -1,5 +1,5 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
-import { insertMilestone, getLowestMilestoneId } from '@/lib/queries/milestones';
+import { insertMilestone, getLowestSequenceId } from '@/lib/queries/milestones';
 
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
 const DELAY_MS = 500;
@@ -7,18 +7,18 @@ const BATCH_SIZE = 50; // Process 50 milestones at a time
 
 export class MilestoneBackfiller {
   private running = false;
-  private targetSequenceId: number;
+  private targetBlock: bigint;
   private currentSequenceId: number | null = null;
 
-  constructor(targetSequenceId = 1) {
-    this.targetSequenceId = targetSequenceId;
+  constructor(targetBlock: bigint) {
+    this.targetBlock = targetBlock;
   }
 
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
 
-    console.log(`[MilestoneBackfiller] Starting backfill to sequence ID ${this.targetSequenceId}`);
+    console.log(`[MilestoneBackfiller] Starting backfill to block ${this.targetBlock}`);
     await this.backfill();
   }
 
@@ -34,10 +34,10 @@ export class MilestoneBackfiller {
         // Initialize current sequence ID if not set
         if (this.currentSequenceId === null) {
           // Check what we already have in DB
-          const lowestInDb = await getLowestMilestoneId();
+          const lowestInDb = await getLowestSequenceId();
           if (lowestInDb !== null) {
             // Continue from where we left off
-            this.currentSequenceId = Number(lowestInDb) - 1;
+            this.currentSequenceId = lowestInDb - 1;
           } else {
             // Start from latest
             const count = await heimdall.getMilestoneCount();
@@ -46,7 +46,7 @@ export class MilestoneBackfiller {
           console.log(`[MilestoneBackfiller] Starting from sequence ID ${this.currentSequenceId}`);
         }
 
-        if (this.currentSequenceId < this.targetSequenceId) {
+        if (this.currentSequenceId < 1) {
           console.log('[MilestoneBackfiller] Milestone backfill complete!');
           this.running = false;
           return;
@@ -70,7 +70,7 @@ export class MilestoneBackfiller {
     if (this.currentSequenceId === null) return;
 
     const endId = this.currentSequenceId;
-    const startId = Math.max(this.targetSequenceId, endId - BATCH_SIZE + 1);
+    const startId = Math.max(1, endId - BATCH_SIZE + 1);
 
     console.log(`[MilestoneBackfiller] Fetching milestones ${startId} to ${endId}`);
 
@@ -79,9 +79,17 @@ export class MilestoneBackfiller {
       try {
         const milestone = await heimdall.getMilestone(seqId);
 
+        // Stop if we've reached milestones before target block
+        if (milestone.endBlock < this.targetBlock) {
+          console.log(`[MilestoneBackfiller] Reached target block ${this.targetBlock}, stopping backfill`);
+          this.running = false;
+          return;
+        }
+
         // Store the milestone - reconciler will match blocks later
         await insertMilestone({
           milestoneId: milestone.milestoneId,
+          sequenceId: milestone.sequenceId,
           startBlock: milestone.startBlock,
           endBlock: milestone.endBlock,
           hash: milestone.hash,

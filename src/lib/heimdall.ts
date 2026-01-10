@@ -99,13 +99,14 @@ export class HeimdallClient {
   }
 
   async getLatestMilestone(): Promise<Milestone> {
+    const count = await this.getMilestoneCount();
     const response = await this.fetch<HeimdallMilestoneResponse>('/milestones/latest');
-    return this.parseMilestone(response);
+    return this.parseMilestone(response, count);
   }
 
-  async getMilestone(id: number): Promise<Milestone> {
-    const response = await this.fetch<HeimdallMilestoneResponse>(`/milestones/${id}`);
-    return this.parseMilestone(response);
+  async getMilestone(sequenceId: number): Promise<Milestone> {
+    const response = await this.fetch<HeimdallMilestoneResponse>(`/milestones/${sequenceId}`);
+    return this.parseMilestone(response, sequenceId);
   }
 
   async getMilestoneCount(): Promise<number> {
@@ -113,13 +114,13 @@ export class HeimdallClient {
     return parseInt(response.count, 10);
   }
 
-  private parseMilestone(response: HeimdallMilestoneResponse): Milestone {
+  private parseMilestone(response: HeimdallMilestoneResponse, sequenceId: number): Milestone {
     const r = response.milestone;
-    // milestone_id is a hash string, we'll use a counter from count endpoint instead
-    // For now, derive a numeric ID from the block range
+    // Use end_block as the milestone ID for consistency with block references
     const milestoneNumericId = BigInt(r.end_block);
     return {
       milestoneId: milestoneNumericId,
+      sequenceId,
       startBlock: BigInt(r.start_block),
       endBlock: BigInt(r.end_block),
       hash: r.hash,

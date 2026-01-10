@@ -23,19 +23,17 @@ export async function startWorkers(): Promise<void> {
   const targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK ?? '50000000');
   const batchSize = parseInt(process.env.BACKFILL_BATCH_SIZE ?? '100', 10);
   const delayMs = parseInt(process.env.RPC_DELAY_MS ?? '100', 10);
-  const targetMilestoneSeqId = parseInt(process.env.MILESTONE_BACKFILL_TARGET ?? '1', 10);
 
   console.log('[Workers] Starting workers...');
   console.log(`[Workers] Backfill target: ${targetBlock}`);
   console.log(`[Workers] Batch size: ${batchSize}`);
   console.log(`[Workers] RPC delay: ${delayMs}ms`);
-  console.log(`[Workers] Milestone backfill target sequence ID: ${targetMilestoneSeqId}`);
 
   // Start workers
   livePoller = new LivePoller();
   milestonePoller = new MilestonePoller();
   backfiller = new Backfiller(targetBlock, batchSize, delayMs);
-  milestoneBackfiller = new MilestoneBackfiller(targetMilestoneSeqId);
+  milestoneBackfiller = new MilestoneBackfiller(targetBlock);
   finalityReconciler = new FinalityReconciler();
 
   await Promise.all([
