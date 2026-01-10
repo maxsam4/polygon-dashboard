@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { BlockList } from '@/components/blocks/BlockList';
+import { Nav } from '@/components/Nav';
+import { BlockTable } from '@/components/blocks/BlockTable';
 
 interface BlockData {
   blockNumber: string;
@@ -16,6 +15,9 @@ interface BlockData {
   txCount: number;
   gasUsed: string;
   gasLimit: string;
+  blockTimeSec?: number | null;
+  mgasPerSec?: number | null;
+  tps?: number | null;
   totalBaseFeeGwei: number;
   totalPriorityFeeGwei: number;
   finalized: boolean;
@@ -64,7 +66,6 @@ export default function BlocksPage() {
       const response = await fetch(`/api/blocks?fromBlock=${blockNum}&toBlock=${blockNum}&limit=1`);
       const data = await response.json();
       if (data.blocks?.length > 0) {
-        // Calculate which page this block is on
         const total = data.pagination?.total || 0;
         const pageNum = Math.ceil((total - blockNum + parseInt(data.blocks[0].blockNumber)) / 50);
         setPage(Math.max(1, pageNum));
@@ -78,19 +79,9 @@ export default function BlocksPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-white dark:bg-gray-900 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-blue-500 hover:underline">
-              Home
-            </Link>
-            <h1 className="text-xl font-bold">Historic Blocks</h1>
-          </div>
-          <ThemeToggle />
-        </div>
-      </header>
+      <Nav />
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="w-full px-4 py-6">
         <div className="flex gap-4 mb-6">
           <div className="flex gap-2">
             <input
@@ -116,7 +107,7 @@ export default function BlocksPage() {
           <div className="text-center py-8">Loading...</div>
         ) : (
           <>
-            <BlockList blocks={blocks} title="Historic Blocks" />
+            <BlockTable blocks={blocks} title="Historic Blocks" />
 
             {pagination && (
               <div className="flex justify-center items-center gap-4 mt-6">

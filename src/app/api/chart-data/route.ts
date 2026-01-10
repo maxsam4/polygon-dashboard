@@ -3,7 +3,7 @@ import { getChartData } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_BUCKET_SIZES = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'] as const;
+const VALID_BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'] as const;
 type BucketSize = (typeof VALID_BUCKET_SIZES)[number];
 
 export async function GET(request: NextRequest) {

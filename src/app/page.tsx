@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ThemeToggle } from '@/components/ThemeToggle';
+import { Nav } from '@/components/Nav';
 import { MiniChart } from '@/components/charts/MiniChart';
-import { BlockList } from '@/components/blocks/BlockList';
+import { BlockTable } from '@/components/blocks/BlockTable';
 
 interface BlockData {
   blockNumber: string;
@@ -17,6 +16,7 @@ interface BlockData {
   txCount: number;
   gasUsed: string;
   gasLimit: string;
+  blockTimeSec: number | null;
   mgasPerSec: number | null;
   tps: number | null;
   finalized: boolean;
@@ -53,22 +53,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-white dark:bg-gray-900 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold">Polygon Dashboard</h1>
-          <div className="flex items-center gap-4">
-            <Link href="/analytics" className="text-blue-500 hover:underline">
-              Analytics
-            </Link>
-            <Link href="/blocks" className="text-blue-500 hover:underline">
-              Blocks
-            </Link>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <Nav />
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="w-full px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <MiniChart
             title="Gas Price"
@@ -103,7 +90,7 @@ export default function Home() {
         {loading ? (
           <div className="text-center py-8">Loading...</div>
         ) : (
-          <BlockList blocks={blocks} title="Latest Blocks (Live)" />
+          <BlockTable blocks={blocks} title="Latest Blocks (Live)" />
         )}
       </main>
     </div>

@@ -11,8 +11,8 @@ interface ChartControlsProps {
   onSeriesToggle: (key: string) => void;
 }
 
-const TIME_RANGES = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y', 'ALL'];
-const BUCKET_SIZES = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
+const TIME_RANGES = ['5m', '15m', '30m', '1H', '6H', '1D', '1W', '1M', '6M', '1Y', 'ALL'];
+const BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 const CHART_TYPES = ['Line', 'Candle', 'Area', 'Bar'];
 
 export function ChartControls({

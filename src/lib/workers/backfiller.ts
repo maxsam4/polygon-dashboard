@@ -1,14 +1,9 @@
 import { getRpcClient, RpcExhaustedError } from '@/lib/rpc';
-import { getHeimdallClient } from '@/lib/heimdall';
 import { calculateBlockMetrics } from '@/lib/gas';
 import {
   getLowestBlockNumber,
   insertBlocksBatch
 } from '@/lib/queries/blocks';
-import {
-  getMilestoneForBlock,
-  insertMilestone
-} from '@/lib/queries/milestones';
 import { Block } from '@/lib/types';
 
 const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -71,7 +66,6 @@ export class Backfiller {
 
   private async processBatch(currentLowest: bigint): Promise<void> {
     const rpc = getRpcClient();
-    const heimdall = getHeimdallClient();
 
     const startBlock = currentLowest - BigInt(this.batchSize);
     const endBlock = currentLowest - 1n;
@@ -81,66 +75,59 @@ export class Backfiller {
 
     const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
 
+    // Fetch all blocks in parallel for speed
+    const blockNumbers: bigint[] = [];
     for (let blockNum = endBlock; blockNum >= targetStart; blockNum--) {
-      const block = await rpc.getBlockWithTransactions(blockNum);
+      blockNumbers.push(blockNum);
+    }
 
-      // Get previous block for block time calculation
-      let previousTimestamp: bigint | undefined;
-      if (blockNum > 0n) {
-        const prevBlock = await rpc.getBlock(blockNum - 1n);
-        previousTimestamp = prevBlock.timestamp;
-      }
+    // Process in smaller parallel chunks to avoid overwhelming RPC
+    const chunkSize = 10;
+    for (let i = 0; i < blockNumbers.length; i += chunkSize) {
+      const chunk = blockNumbers.slice(i, i + chunkSize);
 
-      const metrics = calculateBlockMetrics(block, previousTimestamp);
+      const blockPromises = chunk.map(async (blockNum) => {
+        const block = await rpc.getBlockWithTransactions(blockNum);
 
-      // Check milestone for finality
-      let milestone = await getMilestoneForBlock(blockNum);
-      if (!milestone) {
-        // Try to fetch from Heimdall
-        try {
-          const latestMilestone = await heimdall.getLatestMilestone();
-          if (blockNum <= latestMilestone.endBlock) {
-            await insertMilestone(latestMilestone);
-            milestone = latestMilestone;
-          }
-        } catch {
-          // Milestone not available, continue without
+        // Get previous block for block time calculation
+        let previousTimestamp: bigint | undefined;
+        if (blockNum > 0n) {
+          const prevBlock = await rpc.getBlock(blockNum - 1n);
+          previousTimestamp = prevBlock.timestamp;
         }
-      }
 
-      const finalized = milestone ? blockNum <= milestone.endBlock : false;
-      let timeToFinalitySec: number | null = null;
-      if (finalized && milestone) {
-        const blockTime = new Date(Number(block.timestamp) * 1000);
-        timeToFinalitySec = (milestone.timestamp.getTime() - blockTime.getTime()) / 1000;
-      }
+        const metrics = calculateBlockMetrics(block, previousTimestamp);
 
-      blocks.push({
-        blockNumber: blockNum,
-        timestamp: new Date(Number(block.timestamp) * 1000),
-        blockHash: block.hash,
-        parentHash: block.parentHash,
-        gasUsed: block.gasUsed,
-        gasLimit: block.gasLimit,
-        baseFeeGwei: metrics.baseFeeGwei,
-        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
-        totalBaseFeeGwei: metrics.totalBaseFeeGwei,
-        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
-        txCount: block.transactions.length,
-        blockTimeSec: metrics.blockTimeSec,
-        mgasPerSec: metrics.mgasPerSec,
-        tps: metrics.tps,
-        finalized,
-        finalizedAt: finalized && milestone ? milestone.timestamp : null,
-        milestoneId: finalized && milestone ? milestone.milestoneId : null,
-        timeToFinalitySec,
+        return {
+          blockNumber: blockNum,
+          timestamp: new Date(Number(block.timestamp) * 1000),
+          blockHash: block.hash,
+          parentHash: block.parentHash,
+          gasUsed: block.gasUsed,
+          gasLimit: block.gasLimit,
+          baseFeeGwei: metrics.baseFeeGwei,
+          minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+          maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+          avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+          totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+          totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+          txCount: block.transactions.length,
+          blockTimeSec: metrics.blockTimeSec,
+          mgasPerSec: metrics.mgasPerSec,
+          tps: metrics.tps,
+          finalized: false, // Will be updated later by milestone poller
+          finalizedAt: null,
+          milestoneId: null,
+          timeToFinalitySec: null,
+        };
       });
+
+      const chunkBlocks = await Promise.all(blockPromises);
+      blocks.push(...chunkBlocks);
     }
 
     await insertBlocksBatch(blocks);
-    console.log(`[Backfiller] Inserted ${blocks.length} blocks`);
+    console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
   }
 
   private sleep(ms: number): Promise<void> {

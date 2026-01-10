@@ -1,9 +1,10 @@
 import { query } from '../db';
 import { ChartDataPoint } from '../types';
 
-type BucketSize = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
+type BucketSize = '2s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
 
 const BUCKET_INTERVALS: Record<BucketSize, string> = {
+  '2s': '2 seconds',
   '1m': '1 minute',
   '5m': '5 minutes',
   '15m': '15 minutes',
@@ -97,7 +98,7 @@ export async function getChartData(
   );
 
   const data: ChartDataPoint[] = rows.map((row) => ({
-    timestamp: row.bucket.getTime() / 1000,
+    timestamp: Math.floor(new Date(row.bucket).getTime() / 1000),
     blockStart: parseInt(row.block_start, 10),
     blockEnd: parseInt(row.block_end, 10),
     baseFee: {

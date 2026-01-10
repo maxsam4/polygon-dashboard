@@ -28,8 +28,8 @@ export function FullChart({ title, metric }: FullChartProps) {
   const seriesRefs = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const { theme } = useTheme();
 
-  const [timeRange, setTimeRange] = useState('1H');
-  const [bucketSize, setBucketSize] = useState('1m');
+  const [timeRange, setTimeRange] = useState('5m');
+  const [bucketSize, setBucketSize] = useState('2s');
   const [chartType, setChartType] = useState('Line');
   const [data, setData] = useState<ChartDataPoint[]>([]);
 
@@ -55,6 +55,9 @@ export function FullChart({ title, metric }: FullChartProps) {
     let fromTime: number;
 
     switch (timeRange) {
+      case '5m': fromTime = now - 5 * 60; break;
+      case '15m': fromTime = now - 15 * 60; break;
+      case '30m': fromTime = now - 30 * 60; break;
       case '1H': fromTime = now - 3600; break;
       case '6H': fromTime = now - 6 * 3600; break;
       case '1D': fromTime = now - 86400; break;
