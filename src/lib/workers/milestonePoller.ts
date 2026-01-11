@@ -2,12 +2,14 @@ import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import {
   insertMilestonesBatch,
   getHighestSequenceId,
+  reconcileBlocksForMilestones,
 } from '@/lib/queries/milestones';
 import { Milestone } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
 
-// Note: Reconciliation is handled by FinalityReconciler to avoid concurrent queries
+// Immediate reconciliation for new milestones (fast, targeted updates)
+// FinalityReconciler handles any missed blocks in background
 
 const POLL_INTERVAL_MS = 2000; // 2 seconds
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
@@ -62,8 +64,9 @@ export class MilestonePoller {
       this.lastSequenceId = currentCount;
       const latestMilestone = await heimdall.getLatestMilestone();
       await insertMilestonesBatch([latestMilestone]);
-      // FinalityReconciler handles reconciliation
-      console.log(`[MilestonePoller] Initialized with milestone ${latestMilestone.milestoneId}`);
+      // Immediately reconcile blocks for this milestone
+      const reconciled = await reconcileBlocksForMilestones([latestMilestone]);
+      console.log(`[MilestonePoller] Initialized with milestone ${latestMilestone.milestoneId}, reconciled ${reconciled} blocks`);
       return 1;
     }
 
@@ -117,7 +120,11 @@ export class MilestonePoller {
     // Insert all milestones in batch
     await insertMilestonesBatch(milestones);
 
-    // Note: FinalityReconciler handles block reconciliation separately
+    // Immediately reconcile blocks for these milestones (fast, targeted)
+    const reconciled = await reconcileBlocksForMilestones(milestones);
+    if (reconciled > 0) {
+      console.log(`[MilestonePoller] Reconciled ${reconciled} blocks for new milestones`);
+    }
 
     // Update lastSequenceId - advance to highest contiguous sequence
     const fetchedSet = new Set(milestones.map(m => m.sequenceId));
