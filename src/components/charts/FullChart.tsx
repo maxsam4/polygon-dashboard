@@ -46,11 +46,43 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const [chartType, setChartType] = useState('Line');
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
+  const timeRangeRef = useRef(timeRange);
 
   // Auto-update bucket when time range changes
   const handleTimeRangeChange = (range: string) => {
     setTimeRange(range);
     setBucketSize(getRecommendedBucket(range));
+    timeRangeRef.current = range;
+  };
+
+  // Helper to check if time range is longer than 1 day
+  const shouldShowDates = (range: string): boolean => {
+    const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'ALL'];
+    return longRanges.includes(range);
+  };
+
+  // Format time based on time range
+  const formatTimeLabel = (time: number): string => {
+    const date = new Date(time * 1000);
+    if (shouldShowDates(timeRangeRef.current)) {
+      // Show date for longer ranges
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Format tooltip time (always show full date+time for longer ranges)
+  const formatTooltipTime = (timestamp: number): string => {
+    const date = new Date(timestamp * 1000);
+    if (shouldShowDates(timeRangeRef.current)) {
+      return date.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const [seriesOptions, setSeriesOptions] = useState(() => {
@@ -133,16 +165,10 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         borderVisible: false,
         timeVisible: true,
         rightOffset: 5,
-        tickMarkFormatter: (time: number) => {
-          const date = new Date(time * 1000);
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        },
+        tickMarkFormatter: (time: number) => formatTimeLabel(time),
       },
       localization: {
-        timeFormatter: (timestamp: number) => {
-          const date = new Date(timestamp * 1000);
-          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        },
+        timeFormatter: (timestamp: number) => formatTooltipTime(timestamp),
         priceFormatter: (price: number) => {
           // Format with commas for fee charts (already in POL)
           if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {

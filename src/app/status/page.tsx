@@ -1,7 +1,7 @@
 'use client';
 
 import { Nav } from '@/components/Nav';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 interface Gap {
   start: string;
@@ -98,6 +98,121 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+interface HistoricalData {
+  timestamp: number;
+  minBlock: string | null;
+  unfinalizedInRange: number;
+  totalBlocks: number;
+  minMilestoneSeq: string | null;
+  totalMilestones: number;
+  blockGapSize: number;
+  milestoneGapSize: number;
+  finalityGapSize: number;
+}
+
+interface SpeedStats {
+  backfillerSpeed: number | null;      // blocks/sec (going backwards)
+  reconcilerSpeed: number | null;       // blocks/sec (unfinalized decreasing)
+  blockGapSpeed: number | null;         // blocks/sec (gap filling)
+  milestoneBackfillerSpeed: number | null; // milestones/sec
+  milestoneGapSpeed: number | null;     // milestones/sec
+}
+
+function calculateSpeeds(history: HistoricalData[]): SpeedStats {
+  if (history.length < 2) {
+    return {
+      backfillerSpeed: null,
+      reconcilerSpeed: null,
+      blockGapSpeed: null,
+      milestoneBackfillerSpeed: null,
+      milestoneGapSpeed: null,
+    };
+  }
+
+  const oldest = history[0];
+  const newest = history[history.length - 1];
+  const timeDiffSec = (newest.timestamp - oldest.timestamp) / 1000;
+
+  if (timeDiffSec < 1) {
+    return {
+      backfillerSpeed: null,
+      reconcilerSpeed: null,
+      blockGapSpeed: null,
+      milestoneBackfillerSpeed: null,
+      milestoneGapSpeed: null,
+    };
+  }
+
+  // Backfiller speed: how fast min block is decreasing
+  let backfillerSpeed: number | null = null;
+  if (oldest.minBlock && newest.minBlock) {
+    const oldMin = BigInt(oldest.minBlock);
+    const newMin = BigInt(newest.minBlock);
+    if (newMin < oldMin) {
+      backfillerSpeed = Number(oldMin - newMin) / timeDiffSec;
+    }
+  }
+
+  // Reconciler speed: how fast unfinalized is decreasing
+  let reconcilerSpeed: number | null = null;
+  if (oldest.unfinalizedInRange > newest.unfinalizedInRange) {
+    reconcilerSpeed = (oldest.unfinalizedInRange - newest.unfinalizedInRange) / timeDiffSec;
+  }
+
+  // Block gap speed: how fast gap size is decreasing
+  let blockGapSpeed: number | null = null;
+  if (oldest.blockGapSize > newest.blockGapSize) {
+    blockGapSpeed = (oldest.blockGapSize - newest.blockGapSize) / timeDiffSec;
+  }
+
+  // Milestone backfiller speed: how fast min seq is decreasing
+  let milestoneBackfillerSpeed: number | null = null;
+  if (oldest.minMilestoneSeq && newest.minMilestoneSeq) {
+    const oldMinSeq = parseInt(oldest.minMilestoneSeq, 10);
+    const newMinSeq = parseInt(newest.minMilestoneSeq, 10);
+    if (newMinSeq < oldMinSeq) {
+      milestoneBackfillerSpeed = (oldMinSeq - newMinSeq) / timeDiffSec;
+    }
+  }
+
+  // Milestone gap speed: how fast gap size is decreasing
+  let milestoneGapSpeed: number | null = null;
+  if (oldest.milestoneGapSize > newest.milestoneGapSize) {
+    milestoneGapSpeed = (oldest.milestoneGapSize - newest.milestoneGapSize) / timeDiffSec;
+  }
+
+  return {
+    backfillerSpeed,
+    reconcilerSpeed,
+    blockGapSpeed,
+    milestoneBackfillerSpeed,
+    milestoneGapSpeed,
+  };
+}
+
+function formatSpeed(speed: number | null, unit: string): string {
+  if (speed === null || speed <= 0) return '-';
+  if (speed >= 1000) {
+    return `${(speed / 1000).toFixed(1)}k ${unit}/s`;
+  }
+  return `${speed.toFixed(1)} ${unit}/s`;
+}
+
+function formatEta(remaining: number, speed: number | null): string {
+  if (speed === null || speed <= 0 || remaining <= 0) return '-';
+  const seconds = remaining / speed;
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  return `${days}d ${hours}h`;
+}
+
 function formatDateRange(minTimestamp: string | null, maxTimestamp: string | null): string {
   if (!minTimestamp || !maxTimestamp) return 'N/A';
   const min = new Date(minTimestamp);
@@ -186,18 +301,47 @@ function GapCard({ title, gaps, gapStats, unitLabel }: { title: string; gaps: Ga
   );
 }
 
+const MAX_HISTORY = 12; // 12 samples at 5s = 60 seconds of history
+
 export default function StatusPage() {
   const [status, setStatus] = useState<StatusData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [speeds, setSpeeds] = useState<SpeedStats>({
+    backfillerSpeed: null,
+    reconcilerSpeed: null,
+    blockGapSpeed: null,
+    milestoneBackfillerSpeed: null,
+    milestoneGapSpeed: null,
+  });
+  const historyRef = useRef<HistoricalData[]>([]);
 
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/status');
       if (!res.ok) throw new Error('Failed to fetch status');
-      const data = await res.json();
+      const data: StatusData = await res.json();
       setStatus(data);
       setError(null);
+
+      // Add to history for speed calculations
+      const historyEntry: HistoricalData = {
+        timestamp: Date.now(),
+        minBlock: data.blocks.min,
+        unfinalizedInRange: data.blocks.unfinalizedInMilestoneRange,
+        totalBlocks: data.blocks.total,
+        minMilestoneSeq: data.milestones.minSeq,
+        totalMilestones: data.milestones.total,
+        blockGapSize: data.blocks.gapStats.totalPendingSize,
+        milestoneGapSize: data.milestones.gapStats.totalPendingSize,
+        finalityGapSize: data.finality.gapStats.totalPendingSize,
+      };
+
+      const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
+      historyRef.current = newHistory;
+
+      // Calculate speeds from history
+      setSpeeds(calculateSpeeds(newHistory));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -452,6 +596,100 @@ export default function StatusPage() {
                     label={status.finality.gapStats.pendingCount > 0 ? `${status.finality.gapStats.pendingCount} pending` : 'None'}
                   />
                 </div>
+              </div>
+            </Card>
+
+            {/* Progress Stats - Speed and ETA */}
+            <Card title="Progress Stats">
+              <div className="space-y-3 text-sm">
+                <div className="text-gray-500 text-xs mb-2">
+                  {historyRef.current.length < 2
+                    ? 'Collecting data...'
+                    : `Based on ${historyRef.current.length} samples (${Math.round((historyRef.current[historyRef.current.length - 1].timestamp - historyRef.current[0].timestamp) / 1000)}s)`
+                  }
+                </div>
+
+                {/* Backfiller */}
+                <div className="py-2 border-b border-gray-700">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Backfiller</span>
+                    <span className="text-blue-400 font-mono">
+                      {formatSpeed(speeds.backfillerSpeed, 'blk')}
+                    </span>
+                  </div>
+                  {speeds.backfillerSpeed && status.blocks.min && (
+                    <div className="text-gray-500 text-xs mt-1">
+                      ETA to block 0: {formatEta(parseInt(status.blocks.min, 10), speeds.backfillerSpeed)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Reconciler */}
+                <div className="py-2 border-b border-gray-700">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Reconciler</span>
+                    <span className="text-green-400 font-mono">
+                      {formatSpeed(speeds.reconcilerSpeed, 'blk')}
+                    </span>
+                  </div>
+                  {speeds.reconcilerSpeed && status.blocks.unfinalizedInMilestoneRange > 0 && (
+                    <div className="text-gray-500 text-xs mt-1">
+                      ETA: {formatEta(status.blocks.unfinalizedInMilestoneRange, speeds.reconcilerSpeed)}
+                      <span className="ml-2">({formatNumber(status.blocks.unfinalizedInMilestoneRange)} remaining)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Block Gap Filler */}
+                {status.blocks.gapStats.totalPendingSize > 0 && (
+                  <div className="py-2 border-b border-gray-700">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Block Gap Filler</span>
+                      <span className="text-yellow-400 font-mono">
+                        {formatSpeed(speeds.blockGapSpeed, 'blk')}
+                      </span>
+                    </div>
+                    {speeds.blockGapSpeed && (
+                      <div className="text-gray-500 text-xs mt-1">
+                        ETA: {formatEta(status.blocks.gapStats.totalPendingSize, speeds.blockGapSpeed)}
+                        <span className="ml-2">({formatNumber(status.blocks.gapStats.totalPendingSize)} remaining)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Milestone Backfiller */}
+                <div className="py-2 border-b border-gray-700">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Milestone Backfiller</span>
+                    <span className="text-purple-400 font-mono">
+                      {formatSpeed(speeds.milestoneBackfillerSpeed, 'ms')}
+                    </span>
+                  </div>
+                  {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && (
+                    <div className="text-gray-500 text-xs mt-1">
+                      ETA to seq 1: {formatEta(parseInt(status.milestones.minSeq, 10) - 1, speeds.milestoneBackfillerSpeed)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Milestone Gap Filler */}
+                {status.milestones.gapStats.totalPendingSize > 0 && (
+                  <div className="py-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Milestone Gap Filler</span>
+                      <span className="text-orange-400 font-mono">
+                        {formatSpeed(speeds.milestoneGapSpeed, 'ms')}
+                      </span>
+                    </div>
+                    {speeds.milestoneGapSpeed && (
+                      <div className="text-gray-500 text-xs mt-1">
+                        ETA: {formatEta(status.milestones.gapStats.totalPendingSize, speeds.milestoneGapSpeed)}
+                        <span className="ml-2">({formatNumber(status.milestones.gapStats.totalPendingSize)} remaining)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
 

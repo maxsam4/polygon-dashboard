@@ -231,10 +231,8 @@ export async function reconcileBlocksForMilestones(milestones: Milestone[]): Pro
   const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
   const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
 
-  // Get the specific milestone IDs we care about
-  const milestoneIds = milestones.map(m => m.milestoneId.toString());
-
-  // Use a single query that joins ONLY with the specific milestones we inserted
+  // Use efficient query with milestone range filter (avoids scanning all milestones)
+  // The range filter m.start_block <= $2 AND m.end_block >= $1 limits milestone scan
   const result = await query<{ count: string }>(
     `WITH updated AS (
       UPDATE blocks b
@@ -245,14 +243,14 @@ export async function reconcileBlocksForMilestones(milestones: Milestone[]): Pro
         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
         updated_at = NOW()
       FROM milestones m
-      WHERE b.block_number BETWEEN m.start_block AND m.end_block
+      WHERE m.start_block <= $2 AND m.end_block >= $1
+        AND b.block_number BETWEEN m.start_block AND m.end_block
         AND b.finalized = FALSE
         AND b.block_number BETWEEN $1 AND $2
-        AND m.milestone_id = ANY($3::bigint[])
       RETURNING 1
     )
     SELECT COUNT(*) as count FROM updated`,
-    [minBlock.toString(), maxBlock.toString(), milestoneIds]
+    [minBlock.toString(), maxBlock.toString()]
   );
   return parseInt(result[0]?.count ?? '0', 10);
 }
