@@ -8,10 +8,6 @@ import {
   LineData,
   UTCTimestamp,
   LineSeries,
-  AreaSeries,
-  HistogramSeries,
-  CandlestickSeries,
-  CandlestickData,
   SeriesType,
 } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
@@ -32,7 +28,13 @@ interface FullChartProps {
 }
 
 function getRecommendedBucket(range: string): string {
-  return TIME_RANGE_BUCKETS[range] ?? '2s';
+  return TIME_RANGE_BUCKETS[range] ?? '1h';
+}
+
+// Format datetime-local input value
+function formatDateTimeLocal(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function FullChart({ title, metric, showCumulative = false }: FullChartProps) {
@@ -43,20 +45,40 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   const [timeRange, setTimeRange] = useState('1H');
   const [bucketSize, setBucketSize] = useState('1m');
-  const [chartType, setChartType] = useState('Line');
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
   const timeRangeRef = useRef(timeRange);
 
+  // Custom date range state
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
+  const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
+  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
   // Auto-update bucket when time range changes
   const handleTimeRangeChange = (range: string) => {
     setTimeRange(range);
-    setBucketSize(getRecommendedBucket(range));
+    if (range !== 'Custom') {
+      setBucketSize(getRecommendedBucket(range));
+      setAppliedCustomRange(null);
+    }
     timeRangeRef.current = range;
+  };
+
+  const handleApplyCustomRange = () => {
+    const start = Math.floor(new Date(customStartTime).getTime() / 1000);
+    const end = Math.floor(new Date(customEndTime).getTime() / 1000);
+    if (start < end) {
+      setAppliedCustomRange({ start, end });
+    }
   };
 
   // Helper to check if time range is longer than 1 day
   const shouldShowDates = (range: string): boolean => {
+    if (range === 'Custom' && appliedCustomRange) {
+      return (appliedCustomRange.end - appliedCustomRange.start) > 86400;
+    }
     const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'ALL'];
     return longRanges.includes(range);
   };
@@ -65,13 +87,12 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const formatTimeLabel = (time: number): string => {
     const date = new Date(time * 1000);
     if (shouldShowDates(timeRangeRef.current)) {
-      // Show date for longer ranges
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Format tooltip time (always show full date+time for longer ranges)
+  // Format tooltip time
   const formatTooltipTime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000);
     if (shouldShowDates(timeRangeRef.current)) {
@@ -114,26 +135,34 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   });
 
   const fetchData = useCallback(async () => {
-    const now = Math.floor(Date.now() / 1000);
-    const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
-    const fromTime = rangeSeconds > 0 ? now - rangeSeconds : 0;
+    let fromTime: number;
+    let toTime: number;
+
+    if (timeRange === 'Custom' && appliedCustomRange) {
+      fromTime = appliedCustomRange.start;
+      toTime = appliedCustomRange.end;
+    } else {
+      toTime = Math.floor(Date.now() / 1000);
+      const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
+      fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
+    }
 
     try {
       const response = await fetch(
-        `/api/chart-data?fromTime=${fromTime}&toTime=${now}&bucketSize=${bucketSize}&limit=5000`
+        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
       );
       const json = await response.json();
       setData(json.data || []);
     } catch (error) {
       console.error('Failed to fetch chart data:', error);
     }
-  }, [timeRange, bucketSize]);
+  }, [timeRange, bucketSize, appliedCustomRange]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Create chart - only recreate when metric changes, not theme
+  // Create chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
@@ -170,7 +199,6 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       localization: {
         timeFormatter: (timestamp: number) => formatTooltipTime(timestamp),
         priceFormatter: (price: number) => {
-          // Format with commas for fee charts (already in POL)
           if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {
             return price.toLocaleString('en-US', {
               minimumFractionDigits: 2,
@@ -190,7 +218,6 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       }
     };
 
-    // Track zoom state
     const handleVisibleRangeChange = () => {
       setIsZoomed(true);
     };
@@ -204,9 +231,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       chart.remove();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metric]); // Only recreate chart when metric changes
+  }, [metric]);
 
-  // Update theme colors without recreating the chart
+  // Update theme colors
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current.applyOptions({
@@ -234,114 +261,63 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       .filter((opt) => opt.enabled)
       .forEach((opt, index) => {
         const color = colors[index % colors.length];
+        let seriesData: LineData<UTCTimestamp>[];
 
-        // For candlestick, only base fee has OHLC data
-        const useCandlestick = chartType === 'Candle' && metric === 'gas' && opt.key === 'base';
-
-        if (useCandlestick) {
-          // Candlestick series for base fee OHLC
-          const candleData: CandlestickData<UTCTimestamp>[] = data.map((d) => ({
-            time: d.timestamp as UTCTimestamp,
-            open: d.baseFee.open,
-            high: d.baseFee.high,
-            low: d.baseFee.low,
-            close: d.baseFee.close,
-          }));
-
-          const series = chartRef.current!.addSeries(CandlestickSeries, {
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
-            title: opt.label,
-            priceScaleId: 'left',
+        if (metric === 'gas') {
+          seriesData = data.map((d) => {
+            const value =
+              opt.key === 'base' ? d.baseFee.avg :
+              opt.key === 'medianPriority' ? d.priorityFee.median :
+              opt.key === 'total' ? d.total.avg :
+              opt.key === 'minPriority' ? d.priorityFee.min :
+              d.priorityFee.max;
+            return { time: d.timestamp as UTCTimestamp, value };
           });
-          series.setData(candleData);
-          seriesRefs.current.set(opt.key, series);
-        } else {
-          // Line data for all other cases
-          let seriesData: LineData<UTCTimestamp>[];
-
-          if (metric === 'gas') {
+        } else if (metric === 'finality') {
+          seriesData = data
+            .filter((d) => d.finalityAvg !== null)
+            .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
+        } else if (metric === 'mgas') {
+          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
+        } else if (metric === 'tps') {
+          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
+        } else if (metric === 'totalBaseFee') {
+          if (opt.key === 'cumulative') {
+            let cumulative = 0;
             seriesData = data.map((d) => {
-              const value =
-                opt.key === 'base' ? d.baseFee.avg :
-                opt.key === 'medianPriority' ? d.priorityFee.median :
-                opt.key === 'total' ? d.total.avg :
-                opt.key === 'minPriority' ? d.priorityFee.min :
-                d.priorityFee.max;
-              return { time: d.timestamp as UTCTimestamp, value };
-            });
-          } else if (metric === 'finality') {
-            seriesData = data
-              .filter((d) => d.finalityAvg !== null)
-              .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
-          } else if (metric === 'mgas') {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
-          } else if (metric === 'tps') {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
-          } else if (metric === 'totalBaseFee') {
-            // Convert gwei to POL (1 POL = 1,000,000 gwei)
-            if (opt.key === 'cumulative') {
-              let cumulative = 0;
-              seriesData = data.map((d) => {
-                cumulative += d.totalBaseFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
-              });
-            } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / GWEI_PER_POL }));
-            }
-          } else if (metric === 'totalPriorityFee') {
-            // Convert gwei to POL (1 POL = 1,000,000 gwei)
-            if (opt.key === 'cumulative') {
-              let cumulative = 0;
-              seriesData = data.map((d) => {
-                cumulative += d.totalPriorityFeeSum;
-                return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
-              });
-            } else {
-              seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
-            }
-          } else {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
-          }
-
-          // Create series based on chart type
-          let series: ISeriesApi<SeriesType>;
-
-          if (chartType === 'Area') {
-            series = chartRef.current!.addSeries(AreaSeries, {
-              lineColor: color,
-              topColor: `${color}80`,
-              bottomColor: `${color}10`,
-              lineWidth: 2,
-              title: opt.label,
-              priceScaleId: 'left',
-            });
-          } else if (chartType === 'Bar') {
-            series = chartRef.current!.addSeries(HistogramSeries, {
-              color,
-              title: opt.label,
-              priceScaleId: 'left',
+              cumulative += d.totalBaseFeeSum;
+              return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
             });
           } else {
-            // Default to Line (also used for Candle when not base fee)
-            series = chartRef.current!.addSeries(LineSeries, {
-              color,
-              lineWidth: 2,
-              title: opt.label,
-              priceScaleId: 'left',
-            });
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / GWEI_PER_POL }));
           }
-
-          series.setData(seriesData);
-          seriesRefs.current.set(opt.key, series);
+        } else if (metric === 'totalPriorityFee') {
+          if (opt.key === 'cumulative') {
+            let cumulative = 0;
+            seriesData = data.map((d) => {
+              cumulative += d.totalPriorityFeeSum;
+              return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
+            });
+          } else {
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
+          }
+        } else {
+          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
+
+        const series = chartRef.current!.addSeries(LineSeries, {
+          color,
+          lineWidth: 2,
+          title: opt.label,
+          priceScaleId: 'left',
+        });
+
+        series.setData(seriesData);
+        seriesRefs.current.set(opt.key, series);
       });
 
     chartRef.current.timeScale().fitContent();
-  }, [data, seriesOptions, metric, chartType]);
+  }, [data, seriesOptions, metric]);
 
   const handleSeriesToggle = (key: string) => {
     setSeriesOptions((prev) =>
@@ -368,7 +344,6 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     return null;
   })();
 
-  // Format fee in POL with commas
   const formatFeeAsPol = (gweiValue: number): string => {
     return formatPol(gweiValue / GWEI_PER_POL);
   };
@@ -402,10 +377,13 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         onTimeRangeChange={handleTimeRangeChange}
         bucketSize={bucketSize}
         onBucketSizeChange={setBucketSize}
-        chartType={chartType}
-        onChartTypeChange={setChartType}
         seriesOptions={seriesOptions}
         onSeriesToggle={handleSeriesToggle}
+        customStartTime={customStartTime}
+        customEndTime={customEndTime}
+        onCustomStartTimeChange={setCustomStartTime}
+        onCustomEndTimeChange={setCustomEndTime}
+        onApplyCustomRange={handleApplyCustomRange}
       />
       <div ref={chartContainerRef} className="w-full mt-4 cursor-crosshair" title="Scroll to zoom, drag to pan" />
     </div>

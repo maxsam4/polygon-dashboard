@@ -190,8 +190,11 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
   };
 }
 
-function formatSpeed(speed: number | null, unit: string): string {
-  if (speed === null || speed <= 0) return '-';
+function formatSpeed(speed: number | null, unit: string, isFinished?: boolean, isCalculating?: boolean): string {
+  if (isFinished) return 'Finished';
+  if (speed === null || speed <= 0) {
+    return isCalculating ? 'Calculating...' : '-';
+  }
   if (speed >= 1000) {
     return `${(speed / 1000).toFixed(1)}k ${unit}/s`;
   }
@@ -276,7 +279,7 @@ function GapCard({ title, gaps, gapStats, unitLabel }: { title: string; gaps: Ga
           {gapStats.pendingCount} pending
         </span>
         {gapStats.fillingCount > 0 && (
-          <span className="text-blue-400 ml-3">{gapStats.fillingCount} filling</span>
+          <span className="text-blue-400 ml-3">{gapStats.fillingCount} filled</span>
         )}
         {gapStats.totalPendingSize > 0 && (
           <span className="text-gray-500 ml-3">({formatNumber(gapStats.totalPendingSize)} total {unitLabel})</span>
@@ -468,7 +471,7 @@ export default function StatusPage() {
                       {status.blocks.gapStats.pendingCount} pending
                     </span>
                     {status.blocks.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.blocks.gapStats.fillingCount} filling)</span>
+                      <span className="text-blue-400 ml-2">({status.blocks.gapStats.fillingCount} filled)</span>
                     )}
                   </div>
                 </div>
@@ -479,7 +482,7 @@ export default function StatusPage() {
                       {status.milestones.gapStats.pendingCount} pending
                     </span>
                     {status.milestones.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.milestones.gapStats.fillingCount} filling)</span>
+                      <span className="text-blue-400 ml-2">({status.milestones.gapStats.fillingCount} filled)</span>
                     )}
                   </div>
                 </div>
@@ -490,7 +493,7 @@ export default function StatusPage() {
                       {status.finality.gapStats.pendingCount} pending
                     </span>
                     {status.finality.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.finality.gapStats.fillingCount} filling)</span>
+                      <span className="text-blue-400 ml-2">({status.finality.gapStats.fillingCount} filled)</span>
                     )}
                   </div>
                 </div>
@@ -613,11 +616,16 @@ export default function StatusPage() {
                 <div className="py-2 border-b border-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Backfiller</span>
-                    <span className="text-blue-400 font-mono">
-                      {formatSpeed(speeds.backfillerSpeed, 'blk')}
+                    <span className={`font-mono ${status.blocks.min === '0' ? 'text-green-400' : 'text-blue-400'}`}>
+                      {formatSpeed(
+                        speeds.backfillerSpeed,
+                        'blk',
+                        status.blocks.min === '0',
+                        historyRef.current.length >= 2
+                      )}
                     </span>
                   </div>
-                  {speeds.backfillerSpeed && status.blocks.min && (
+                  {speeds.backfillerSpeed && status.blocks.min && status.blocks.min !== '0' && (
                     <div className="text-gray-500 text-xs mt-1">
                       ETA to block 0: {formatEta(parseInt(status.blocks.min, 10), speeds.backfillerSpeed)}
                     </div>
@@ -628,8 +636,13 @@ export default function StatusPage() {
                 <div className="py-2 border-b border-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Reconciler</span>
-                    <span className="text-green-400 font-mono">
-                      {formatSpeed(speeds.reconcilerSpeed, 'blk')}
+                    <span className={`font-mono ${status.blocks.pendingUnfinalized === 0 ? 'text-green-400' : speeds.reconcilerSpeed ? 'text-green-400' : 'text-gray-400'}`}>
+                      {formatSpeed(
+                        speeds.reconcilerSpeed,
+                        'blk',
+                        status.blocks.pendingUnfinalized === 0,
+                        historyRef.current.length >= 2
+                      )}
                     </span>
                   </div>
                   {speeds.reconcilerSpeed && status.blocks.pendingUnfinalized > 0 && (
@@ -645,8 +658,8 @@ export default function StatusPage() {
                   <div className="py-2 border-b border-gray-700">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-400">Block Gap Filler</span>
-                      <span className="text-yellow-400 font-mono">
-                        {formatSpeed(speeds.blockGapSpeed, 'blk')}
+                      <span className={`font-mono ${speeds.blockGapSpeed ? 'text-yellow-400' : 'text-gray-400'}`}>
+                        {formatSpeed(speeds.blockGapSpeed, 'blk', false, historyRef.current.length >= 2)}
                       </span>
                     </div>
                     {speeds.blockGapSpeed && (
@@ -662,11 +675,16 @@ export default function StatusPage() {
                 <div className="py-2 border-b border-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Milestone Backfiller</span>
-                    <span className="text-purple-400 font-mono">
-                      {formatSpeed(speeds.milestoneBackfillerSpeed, 'ms')}
+                    <span className={`font-mono ${status.milestones.minSeq === '1' ? 'text-green-400' : 'text-purple-400'}`}>
+                      {formatSpeed(
+                        speeds.milestoneBackfillerSpeed,
+                        'ms',
+                        status.milestones.minSeq === '1',
+                        historyRef.current.length >= 2
+                      )}
                     </span>
                   </div>
-                  {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && (
+                  {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && status.milestones.minSeq !== '1' && (
                     <div className="text-gray-500 text-xs mt-1">
                       ETA to seq 1: {formatEta(parseInt(status.milestones.minSeq, 10) - 1, speeds.milestoneBackfillerSpeed)}
                     </div>
@@ -678,8 +696,8 @@ export default function StatusPage() {
                   <div className="py-2">
                     <div className="flex justify-between items-center">
                       <span className="text-gray-400">Milestone Gap Filler</span>
-                      <span className="text-orange-400 font-mono">
-                        {formatSpeed(speeds.milestoneGapSpeed, 'ms')}
+                      <span className={`font-mono ${speeds.milestoneGapSpeed ? 'text-orange-400' : 'text-gray-400'}`}>
+                        {formatSpeed(speeds.milestoneGapSpeed, 'ms', false, historyRef.current.length >= 2)}
                       </span>
                     </div>
                     {speeds.milestoneGapSpeed && (

@@ -126,6 +126,7 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
   // Only process recent blocks in uncompressed chunks
   // TimescaleDB compressed chunks have a decompression limit that prevents bulk updates
   // New blocks get finality via MilestonePoller; this handles any stragglers in uncompressed chunks
+  // IMPORTANT: timestamp filter must be in UPDATE clause to avoid scanning compressed chunks
   const result = await query<{ count: string }>(
     `WITH to_update AS (
        SELECT block_number
@@ -151,6 +152,7 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
        WHERE m.start_block <= br.max_block AND m.end_block >= br.min_block
          AND b.block_number BETWEEN m.start_block AND m.end_block
          AND b.finalized = FALSE
+         AND b.timestamp >= $1
          AND b.block_number >= br.min_block AND b.block_number <= br.max_block
        RETURNING 1
      )
