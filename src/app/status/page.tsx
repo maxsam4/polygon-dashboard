@@ -101,7 +101,6 @@ function formatNumber(num: number): string {
 interface HistoricalData {
   timestamp: number;
   minBlock: string | null;
-  unfinalizedInRange: number;
   totalBlocks: number;
   minMilestoneSeq: string | null;
   totalMilestones: number;
@@ -112,7 +111,6 @@ interface HistoricalData {
 
 interface SpeedStats {
   backfillerSpeed: number | null;      // blocks/sec (going backwards)
-  reconcilerSpeed: number | null;       // blocks/sec (unfinalized decreasing)
   blockGapSpeed: number | null;         // blocks/sec (gap filling)
   milestoneBackfillerSpeed: number | null; // milestones/sec
   milestoneGapSpeed: number | null;     // milestones/sec
@@ -122,7 +120,6 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
   if (history.length < 2) {
     return {
       backfillerSpeed: null,
-      reconcilerSpeed: null,
       blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
       milestoneGapSpeed: null,
@@ -136,7 +133,6 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
   if (timeDiffSec < 1) {
     return {
       backfillerSpeed: null,
-      reconcilerSpeed: null,
       blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
       milestoneGapSpeed: null,
@@ -151,12 +147,6 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     if (newMin < oldMin) {
       backfillerSpeed = Number(oldMin - newMin) / timeDiffSec;
     }
-  }
-
-  // Reconciler speed: how fast unfinalized is decreasing
-  let reconcilerSpeed: number | null = null;
-  if (oldest.unfinalizedInRange > newest.unfinalizedInRange) {
-    reconcilerSpeed = (oldest.unfinalizedInRange - newest.unfinalizedInRange) / timeDiffSec;
   }
 
   // Block gap speed: how fast gap size is decreasing
@@ -183,7 +173,6 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
 
   return {
     backfillerSpeed,
-    reconcilerSpeed,
     blockGapSpeed,
     milestoneBackfillerSpeed,
     milestoneGapSpeed,
@@ -312,7 +301,6 @@ export default function StatusPage() {
   const [loading, setLoading] = useState(true);
   const [speeds, setSpeeds] = useState<SpeedStats>({
     backfillerSpeed: null,
-    reconcilerSpeed: null,
     blockGapSpeed: null,
     milestoneBackfillerSpeed: null,
     milestoneGapSpeed: null,
@@ -331,7 +319,6 @@ export default function StatusPage() {
       const historyEntry: HistoricalData = {
         timestamp: Date.now(),
         minBlock: data.blocks.min,
-        unfinalizedInRange: data.blocks.pendingUnfinalized,
         totalBlocks: data.blocks.total,
         minMilestoneSeq: data.milestones.minSeq,
         totalMilestones: data.milestones.total,
@@ -612,10 +599,10 @@ export default function StatusPage() {
                   }
                 </div>
 
-                {/* Backfiller */}
+                {/* Blocks Backfiller */}
                 <div className="py-2 border-b border-gray-700">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Backfiller</span>
+                    <span className="text-gray-400">Blocks Backfiller</span>
                     <span className={`font-mono ${status.blocks.min === '0' ? 'text-green-400' : 'text-blue-400'}`}>
                       {formatSpeed(
                         speeds.backfillerSpeed,
@@ -628,27 +615,6 @@ export default function StatusPage() {
                   {speeds.backfillerSpeed && status.blocks.min && status.blocks.min !== '0' && (
                     <div className="text-gray-500 text-xs mt-1">
                       ETA to block 0: {formatEta(parseInt(status.blocks.min, 10), speeds.backfillerSpeed)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Reconciler */}
-                <div className="py-2 border-b border-gray-700">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Reconciler</span>
-                    <span className={`font-mono ${status.blocks.pendingUnfinalized === 0 ? 'text-green-400' : speeds.reconcilerSpeed ? 'text-green-400' : 'text-gray-400'}`}>
-                      {formatSpeed(
-                        speeds.reconcilerSpeed,
-                        'blk',
-                        status.blocks.pendingUnfinalized === 0,
-                        historyRef.current.length >= 2
-                      )}
-                    </span>
-                  </div>
-                  {speeds.reconcilerSpeed && status.blocks.pendingUnfinalized > 0 && (
-                    <div className="text-gray-500 text-xs mt-1">
-                      ETA: {formatEta(status.blocks.pendingUnfinalized, speeds.reconcilerSpeed)}
-                      <span className="ml-2">({formatNumber(status.blocks.pendingUnfinalized)} remaining)</span>
                     </div>
                   )}
                 </div>
