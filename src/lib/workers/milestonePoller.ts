@@ -6,6 +6,7 @@ import {
 } from '@/lib/queries/milestones';
 import { Milestone } from '@/lib/types';
 import { sleep } from '@/lib/utils';
+import { insertGap } from '@/lib/queries/gaps';
 
 const POLL_INTERVAL_MS = 2000; // 2 seconds
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
@@ -71,11 +72,17 @@ export class MilestonePoller {
       return 0;
     }
 
-    // If gap is too large, skip to near the tip and let backfiller handle
+    // If gap is too large, skip to near the tip and let gapfiller handle
     if (gap > MAX_GAP) {
       const skippedFrom = this.lastSequenceId + 1;
+      const skippedTo = currentCount - MAX_GAP - 1;
       this.lastSequenceId = currentCount - MAX_GAP;
-      console.log(`[MilestonePoller] Gap too large (${gap} milestones), skipping ${skippedFrom} to ${this.lastSequenceId} for backfiller`);
+
+      // Record gap for gapfiller
+      if (skippedTo >= skippedFrom) {
+        await insertGap('milestone', BigInt(skippedFrom), BigInt(skippedTo), 'milestone_poller');
+      }
+      console.log(`[MilestonePoller] Gap too large (${gap} milestones), recorded gap ${skippedFrom}-${skippedTo} for gapfiller`);
     }
 
     // Calculate batch to fetch
