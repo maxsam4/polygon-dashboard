@@ -138,7 +138,7 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
     const olderBlocks = await query<{ block_number: string }>(
       `SELECT block_number FROM blocks
        WHERE finalized = FALSE
-         AND timestamp < $2
+         AND timestamp < $1
        ORDER BY block_number DESC
        LIMIT 100`,
       [threshold]
