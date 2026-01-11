@@ -42,12 +42,21 @@ export class RpcClient {
     );
   }
 
+  get endpointCount(): number {
+    return this.urls.length;
+  }
+
   private get client(): PublicClient {
     return this.clients[this.currentIndex];
   }
 
   private rotateEndpoint(): void {
     this.currentIndex = (this.currentIndex + 1) % this.urls.length;
+  }
+
+  // Get client for a specific endpoint index (for parallel requests)
+  private getClientByIndex(index: number): PublicClient {
+    return this.clients[index % this.urls.length];
   }
 
   async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
@@ -81,6 +90,46 @@ export class RpcClient {
     );
   }
 
+  // Execute multiple calls in parallel across ALL endpoints
+  async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<T[]> {
+    const results: T[] = [];
+    const errors: Error[] = [];
+
+    // Distribute requests across endpoints
+    const promises = fns.map(async (fn, i) => {
+      const clientIndex = i % this.urls.length;
+      let lastError: Error | undefined;
+
+      // Try with retries
+      for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
+        try {
+          return await fn(this.getClientByIndex(clientIndex + retry));
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          if (retry < this.retryConfig.maxRetries) {
+            await sleep(this.retryConfig.delayMs);
+          }
+        }
+      }
+      throw lastError;
+    });
+
+    const settled = await Promise.allSettled(promises);
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      } else {
+        errors.push(result.reason);
+      }
+    }
+
+    if (errors.length > 0 && results.length === 0) {
+      throw new RpcExhaustedError(`All parallel RPC calls failed`, errors[0]);
+    }
+
+    return results;
+  }
+
   async getLatestBlockNumber(): Promise<bigint> {
     return this.call((client) => client.getBlockNumber());
   }
@@ -95,6 +144,44 @@ export class RpcClient {
     return this.call((client) =>
       client.getBlock({ blockNumber, includeTransactions: true })
     );
+  }
+
+  // Fetch multiple blocks in parallel across all endpoints
+  async getBlocksWithTransactions(blockNumbers: bigint[]): Promise<Map<bigint, Awaited<ReturnType<typeof this.getBlockWithTransactions>>>> {
+    const results = new Map<bigint, Awaited<ReturnType<typeof this.getBlockWithTransactions>>>();
+
+    const fns = blockNumbers.map((blockNumber) => (client: PublicClient) =>
+      client.getBlock({ blockNumber, includeTransactions: true })
+    );
+
+    const blocks = await this.callParallel(fns);
+
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i]) {
+        results.set(blockNumbers[i], blocks[i]);
+      }
+    }
+
+    return results;
+  }
+
+  // Fetch multiple blocks (without transactions) in parallel
+  async getBlocks(blockNumbers: bigint[]): Promise<Map<bigint, Awaited<ReturnType<typeof this.getBlock>>>> {
+    const results = new Map<bigint, Awaited<ReturnType<typeof this.getBlock>>>();
+
+    const fns = blockNumbers.map((blockNumber) => (client: PublicClient) =>
+      client.getBlock({ blockNumber, includeTransactions: false })
+    );
+
+    const blocks = await this.callParallel(fns);
+
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i]) {
+        results.set(blockNumbers[i], blocks[i]);
+      }
+    }
+
+    return results;
   }
 }
 

@@ -4,6 +4,23 @@
 
 Real-time Polygon blockchain analytics dashboard tracking gas prices, finality times, MGAS/s, and TPS.
 
+## CRITICAL: Database Safety Rules
+
+**NEVER reset, drop, or truncate database tables.** The database contains weeks/months of historical blockchain data that takes significant time to backfill.
+
+### Forbidden Actions
+- `docker compose down -v` (deletes volumes)
+- `DROP TABLE` or `TRUNCATE TABLE`
+- Recreating the database container from scratch
+- Any action that loses existing data
+
+### Safe Migration Practices
+- Use `CREATE TABLE IF NOT EXISTS` for new tables
+- Use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for new columns
+- Migrations must be additive and idempotent
+- Test migrations on a backup/copy before production
+- Never modify init.sql expecting it to affect existing databases
+
 ## Development Workflow
 
 ### After Making Changes
@@ -53,6 +70,8 @@ docker compose exec -T db psql -U polygon -d polygon_dashboard < docker/migratio
 - **MilestonePoller**: Polls for new milestones from Heimdall
 - **MilestoneBackfiller**: Fills historical milestones
 - **FinalityReconciler**: Matches blocks to milestones every 10s
+- **GapAnalyzer**: Detects gaps in blocks, milestones, and finality data (runs every 5 min)
+- **Gapfiller**: Fills detected gaps from the gaps table
 
 ### Finality Tracking (Reconciliation Model)
 

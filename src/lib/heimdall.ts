@@ -102,6 +102,49 @@ export class HeimdallClient {
     return this.parseMilestone(response, sequenceId);
   }
 
+  // Fetch multiple milestones in parallel across all endpoints
+  async getMilestones(sequenceIds: number[]): Promise<Milestone[]> {
+    const results: Milestone[] = [];
+
+    // Distribute requests across endpoints for true parallelism
+    const promises = sequenceIds.map(async (seqId, i) => {
+      const endpointIndex = i % this.urls.length;
+      let lastError: Error | undefined;
+
+      for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
+        try {
+          const baseUrl = this.urls[(endpointIndex + retry) % this.urls.length];
+          const url = `${baseUrl}/milestones/${seqId}`;
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          const data = (await response.json()) as HeimdallMilestoneResponse;
+          return this.parseMilestone(data, seqId);
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          if (retry < this.retryConfig.maxRetries) {
+            await sleep(this.retryConfig.delayMs);
+          }
+        }
+      }
+      throw lastError;
+    });
+
+    const settled = await Promise.allSettled(promises);
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      }
+    }
+
+    return results;
+  }
+
+  get endpointCount(): number {
+    return this.urls.length;
+  }
+
   async getMilestoneCount(): Promise<number> {
     const response = await this.fetch<HeimdallCountResponse>('/milestones/count');
     return parseInt(response.count, 10);

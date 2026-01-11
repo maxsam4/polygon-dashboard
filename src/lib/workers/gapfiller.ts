@@ -54,7 +54,7 @@ export class Gapfiller {
     this.running = true;
 
     console.log('[Gapfiller] Starting gap filler');
-    await this.fill();
+    this.fill();
   }
 
   stop(): void {

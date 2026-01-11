@@ -8,16 +8,15 @@ import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
+const BASE_BATCH_SIZE = 50; // Base batch size, multiplied by endpoint count
 
 export class Backfiller {
   private running = false;
   private targetBlock: bigint;
-  private batchSize: number;
   private delayMs: number;
 
-  constructor(targetBlock: bigint, batchSize = 100, delayMs = 100) {
+  constructor(targetBlock: bigint, delayMs = 100) {
     this.targetBlock = targetBlock;
-    this.batchSize = batchSize;
     this.delayMs = delayMs;
   }
 
@@ -26,7 +25,7 @@ export class Backfiller {
     this.running = true;
 
     console.log(`[Backfiller] Starting backfill to block ${this.targetBlock}`);
-    await this.backfill();
+    this.backfill();
   }
 
   stop(): void {
@@ -34,6 +33,9 @@ export class Backfiller {
   }
 
   private async backfill(): Promise<void> {
+    const rpc = getRpcClient();
+    console.log(`[Backfiller] Using ${rpc.endpointCount} RPC endpoints`);
+
     while (this.running) {
       try {
         const lowestBlock = await getLowestBlockNumber();
@@ -51,11 +53,11 @@ export class Backfiller {
           return;
         }
 
-        await this.processBatch(lowestBlock);
+        await this.processBatch(rpc, lowestBlock);
         await sleep(this.delayMs);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
-          console.error('[Backfiller] RPC exhausted, waiting 5 minutes...');
+          console.error('[Backfiller] RPC exhausted, waiting...');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[Backfiller] Error:', error);
@@ -65,70 +67,76 @@ export class Backfiller {
     }
   }
 
-  private async processBatch(currentLowest: bigint): Promise<void> {
-    const rpc = getRpcClient();
-
-    const startBlock = currentLowest - BigInt(this.batchSize);
+  private async processBatch(rpc: ReturnType<typeof getRpcClient>, currentLowest: bigint): Promise<void> {
+    // Scale batch size by endpoint count for better parallelism
+    const batchSize = BASE_BATCH_SIZE * rpc.endpointCount;
+    const startBlock = currentLowest - BigInt(batchSize);
     const endBlock = currentLowest - 1n;
     const targetStart = startBlock < this.targetBlock ? this.targetBlock : startBlock;
 
-    console.log(`[Backfiller] Processing blocks ${targetStart} to ${endBlock}`);
+    const blockCount = Number(endBlock - targetStart) + 1;
+    console.log(`[Backfiller] Fetching blocks ${targetStart} to ${endBlock} (batch of ${blockCount})`);
 
-    const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
-
-    // Fetch all blocks in parallel for speed
+    // Build list of block numbers to fetch
     const blockNumbers: bigint[] = [];
-    for (let blockNum = endBlock; blockNum >= targetStart; blockNum--) {
+    for (let blockNum = targetStart; blockNum <= endBlock; blockNum++) {
       blockNumbers.push(blockNum);
     }
 
-    // Process in smaller parallel chunks to avoid overwhelming RPC
-    const chunkSize = 10;
-    for (let i = 0; i < blockNumbers.length; i += chunkSize) {
-      const chunk = blockNumbers.slice(i, i + chunkSize);
+    // Also need previous blocks for block time calculation
+    const prevBlockNumbers = blockNumbers.map(n => n - 1n).filter(n => n >= 0n);
 
-      const blockPromises = chunk.map(async (blockNum) => {
-        const block = await rpc.getBlockWithTransactions(blockNum);
+    // Fetch all blocks in parallel across all endpoints
+    const [blocksMap, prevBlocksMap] = await Promise.all([
+      rpc.getBlocksWithTransactions(blockNumbers),
+      rpc.getBlocks(prevBlockNumbers),
+    ]);
 
-        // Get previous block for block time calculation
-        let previousTimestamp: bigint | undefined;
-        if (blockNum > 0n) {
-          const prevBlock = await rpc.getBlock(blockNum - 1n);
+    const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
+
+    for (const blockNum of blockNumbers) {
+      const block = blocksMap.get(blockNum);
+      if (!block) continue;
+
+      // Get previous block timestamp for block time calculation
+      let previousTimestamp: bigint | undefined;
+      if (blockNum > 0n) {
+        const prevBlock = prevBlocksMap.get(blockNum - 1n);
+        if (prevBlock) {
           previousTimestamp = prevBlock.timestamp;
         }
+      }
 
-        const metrics = calculateBlockMetrics(block, previousTimestamp);
+      const metrics = calculateBlockMetrics(block, previousTimestamp);
 
-        return {
-          blockNumber: blockNum,
-          timestamp: new Date(Number(block.timestamp) * 1000),
-          blockHash: block.hash,
-          parentHash: block.parentHash,
-          gasUsed: block.gasUsed,
-          gasLimit: block.gasLimit,
-          baseFeeGwei: metrics.baseFeeGwei,
-          minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-          maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-          avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
-          medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
-          totalBaseFeeGwei: metrics.totalBaseFeeGwei,
-          totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
-          txCount: block.transactions.length,
-          blockTimeSec: metrics.blockTimeSec,
-          mgasPerSec: metrics.mgasPerSec,
-          tps: metrics.tps,
-          finalized: false, // Will be updated later by milestone poller
-          finalizedAt: null,
-          milestoneId: null,
-          timeToFinalitySec: null,
-        };
+      blocks.push({
+        blockNumber: blockNum,
+        timestamp: new Date(Number(block.timestamp) * 1000),
+        blockHash: block.hash,
+        parentHash: block.parentHash,
+        gasUsed: block.gasUsed,
+        gasLimit: block.gasLimit,
+        baseFeeGwei: metrics.baseFeeGwei,
+        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+        totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+        txCount: block.transactions.length,
+        blockTimeSec: metrics.blockTimeSec,
+        mgasPerSec: metrics.mgasPerSec,
+        tps: metrics.tps,
+        finalized: false,
+        finalizedAt: null,
+        milestoneId: null,
+        timeToFinalitySec: null,
       });
-
-      const chunkBlocks = await Promise.all(blockPromises);
-      blocks.push(...chunkBlocks);
     }
 
-    await insertBlocksBatch(blocks);
-    console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
+    if (blocks.length > 0) {
+      await insertBlocksBatch(blocks);
+      console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
+    }
   }
 }

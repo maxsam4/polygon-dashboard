@@ -1,10 +1,11 @@
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
-import { insertMilestone, getLowestSequenceId } from '@/lib/queries/milestones';
+import { insertMilestonesBatch, getLowestSequenceId } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
+import { Milestone } from '@/lib/types';
 
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
-const DELAY_MS = 500;
-const BATCH_SIZE = 50; // Process 50 milestones at a time
+const DELAY_MS = 200; // Reduced delay since we're batching
+const BASE_BATCH_SIZE = 100; // Base batch size, multiplied by endpoint count
 
 export class MilestoneBackfiller {
   private running = false;
@@ -20,7 +21,7 @@ export class MilestoneBackfiller {
     this.running = true;
 
     console.log(`[MilestoneBackfiller] Starting backfill to block ${this.targetBlock}`);
-    await this.backfill();
+    this.backfill();
   }
 
   stop(): void {
@@ -44,7 +45,7 @@ export class MilestoneBackfiller {
             const count = await heimdall.getMilestoneCount();
             this.currentSequenceId = count;
           }
-          console.log(`[MilestoneBackfiller] Starting from sequence ID ${this.currentSequenceId}`);
+          console.log(`[MilestoneBackfiller] Starting from sequence ID ${this.currentSequenceId} (${heimdall.endpointCount} endpoints)`);
         }
 
         if (this.currentSequenceId < 1) {
@@ -57,7 +58,7 @@ export class MilestoneBackfiller {
         await sleep(DELAY_MS);
       } catch (error) {
         if (error instanceof HeimdallExhaustedError) {
-          console.error('[MilestoneBackfiller] Heimdall exhausted, waiting 5 minutes...');
+          console.error('[MilestoneBackfiller] Heimdall exhausted, waiting...');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[MilestoneBackfiller] Error:', error);
@@ -70,42 +71,53 @@ export class MilestoneBackfiller {
   private async processBatch(heimdall: ReturnType<typeof getHeimdallClient>): Promise<void> {
     if (this.currentSequenceId === null) return;
 
+    // Scale batch size by endpoint count for better parallelism
+    const batchSize = BASE_BATCH_SIZE * heimdall.endpointCount;
     const endId = this.currentSequenceId;
-    const startId = Math.max(1, endId - BATCH_SIZE + 1);
+    const startId = Math.max(1, endId - batchSize + 1);
 
-    console.log(`[MilestoneBackfiller] Fetching milestones ${startId} to ${endId}`);
+    console.log(`[MilestoneBackfiller] Fetching milestones ${startId} to ${endId} (batch of ${endId - startId + 1})`);
 
-    // Fetch and store milestones - reconciliation will handle block finality
-    for (let seqId = endId; seqId >= startId && this.running; seqId--) {
-      try {
-        const milestone = await heimdall.getMilestone(seqId);
+    // Build list of sequence IDs to fetch
+    const seqIds: number[] = [];
+    for (let seqId = startId; seqId <= endId; seqId++) {
+      seqIds.push(seqId);
+    }
 
-        // Stop if we've reached milestones before target block
-        if (milestone.endBlock < this.targetBlock) {
-          console.log(`[MilestoneBackfiller] Reached target block ${this.targetBlock}, stopping backfill`);
-          this.running = false;
-          return;
-        }
+    // Fetch all milestones in parallel across all endpoints
+    const milestones = await heimdall.getMilestones(seqIds);
 
-        // Store the milestone - reconciler will match blocks later
-        await insertMilestone({
-          milestoneId: milestone.milestoneId,
-          sequenceId: milestone.sequenceId,
-          startBlock: milestone.startBlock,
-          endBlock: milestone.endBlock,
-          hash: milestone.hash,
-          proposer: milestone.proposer,
-          timestamp: milestone.timestamp,
-        });
+    if (milestones.length === 0) {
+      console.warn('[MilestoneBackfiller] No milestones fetched, retrying...');
+      return;
+    }
 
-        console.log(
-          `[MilestoneBackfiller] Stored milestone seq=${seqId} (blocks ${milestone.startBlock}-${milestone.endBlock})`
-        );
+    // Sort by sequence ID descending to check target block
+    milestones.sort((a, b) => a.sequenceId - b.sequenceId);
 
-        await sleep(100); // Small delay between milestones
-      } catch (error) {
-        console.error(`[MilestoneBackfiller] Error fetching milestone seq=${seqId}:`, error);
-      }
+    // Check if any milestone is before target block
+    const beforeTarget = milestones.filter(m => m.endBlock < this.targetBlock);
+    const toInsert = milestones.filter(m => m.endBlock >= this.targetBlock);
+
+    if (beforeTarget.length > 0) {
+      console.log(`[MilestoneBackfiller] Reached target block ${this.targetBlock}, stopping backfill`);
+      this.running = false;
+    }
+
+    // Batch insert all valid milestones
+    if (toInsert.length > 0) {
+      const milestoneData: Milestone[] = toInsert.map(m => ({
+        milestoneId: m.milestoneId,
+        sequenceId: m.sequenceId,
+        startBlock: m.startBlock,
+        endBlock: m.endBlock,
+        hash: m.hash,
+        proposer: m.proposer,
+        timestamp: m.timestamp,
+      }));
+
+      await insertMilestonesBatch(milestoneData);
+      console.log(`[MilestoneBackfiller] Stored ${toInsert.length} milestones (seq ${startId}-${endId})`);
     }
 
     this.currentSequenceId = startId - 1;
