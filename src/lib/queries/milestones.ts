@@ -105,15 +105,24 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile range - process up to 500 blocks per run
-// Keep small due to TimescaleDB decompression limits on compressed chunks
-const RECONCILE_RANGE = 500;
+// Reconcile range - process up to 1000 blocks per run
+// Higher limit OK when targeting uncompressed chunks via timestamp filter
+const RECONCILE_RANGE = 1000;
 
 // Mutex to prevent concurrent reconciliation
 let reconciliationInProgress = false;
 
+// Timestamp threshold - only process blocks newer than this to avoid compressed chunks
+// TimescaleDB compresses chunks older than ~2 weeks, so we process recent data first
+function getCompressionThreshold(): Date {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - 10); // 10 days ago
+  return threshold;
+}
+
 // Single optimized reconciliation query
 // Uses partial index on (finalized, block_number) WHERE finalized = FALSE
+// Targets uncompressed chunks first via timestamp filter to avoid decompression limits
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
   // Prevent concurrent reconciliation queries from stacking up
   if (reconciliationInProgress) {
@@ -122,17 +131,52 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
 
   reconciliationInProgress = true;
   try {
-    // Step 1: Get a batch of unfinalized block numbers (uses partial index)
+    const threshold = getCompressionThreshold();
+
+    // Step 1: Get a batch of unfinalized block numbers from recent (uncompressed) chunks
     const unfinalizedBlocks = await query<{ block_number: string }>(
       `SELECT block_number FROM blocks
        WHERE finalized = FALSE
+         AND timestamp >= $2
        ORDER BY block_number DESC
        LIMIT $1`,
-      [RECONCILE_RANGE]
+      [RECONCILE_RANGE, threshold]
     );
 
     if (unfinalizedBlocks.length === 0) {
-      return 0;
+      // No recent unfinalized blocks - try older blocks with smaller batch
+      const olderBlocks = await query<{ block_number: string }>(
+        `SELECT block_number FROM blocks
+         WHERE finalized = FALSE
+           AND timestamp < $2
+         ORDER BY block_number DESC
+         LIMIT 100`,
+        [threshold]
+      );
+
+      if (olderBlocks.length === 0) {
+        return 0;
+      }
+
+      const blockNumbers = olderBlocks.map(b => b.block_number);
+      const result = await query<{ count: string }>(
+        `WITH updated AS (
+           UPDATE blocks b
+           SET
+             finalized = TRUE,
+             finalized_at = m.timestamp,
+             milestone_id = m.milestone_id,
+             time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+             updated_at = NOW()
+           FROM milestones m
+           WHERE b.block_number BETWEEN m.start_block AND m.end_block
+             AND b.block_number = ANY($1::bigint[])
+           RETURNING 1
+         )
+         SELECT COUNT(*) as count FROM updated`,
+        [blockNumbers]
+      );
+      return parseInt(result[0]?.count ?? '0', 10);
     }
 
     // Step 2: Update only these specific blocks
