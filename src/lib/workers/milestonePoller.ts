@@ -29,8 +29,19 @@ export class MilestonePoller {
     initWorkerStatus(WORKER_NAME);
     updateWorkerState(WORKER_NAME, 'running');
 
-    // Initialize from database - get highest sequence ID we have
-    this.lastSequenceId = await getHighestSequenceId();
+    // Initialize from database with retry logic for temporary connection issues
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        this.lastSequenceId = await getHighestSequenceId();
+        break;
+      } catch (error) {
+        console.warn(`[MilestonePoller] Failed to get highest sequence ID (attempt ${attempt + 1}/3):`, error);
+        if (attempt < 2) {
+          await sleep(1000);
+        }
+        // On final failure, continue with null - will bootstrap from Heimdall
+      }
+    }
     console.log(`[MilestonePoller] Starting from sequence ID ${this.lastSequenceId ?? 'none'}`);
 
     this.poll();
