@@ -8,6 +8,7 @@ import {
 } from '@/lib/queries/blocks';
 import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
+import { insertGap } from '@/lib/queries/gaps';
 
 const POLL_INTERVAL_MS = 2000;
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
@@ -64,11 +65,17 @@ export class LivePoller {
       return;
     }
 
-    // If gap is too large, skip to near the tip and let backfiller handle the gap
+    // If gap is too large, skip to near the tip and let gapfiller handle the gap
     if (gap > BigInt(MAX_GAP)) {
       const skippedFrom = this.lastProcessedBlock + 1n;
+      const skippedTo = latestBlockNumber - BigInt(MAX_GAP) - 1n;
       this.lastProcessedBlock = latestBlockNumber - BigInt(MAX_GAP);
-      console.log(`[LivePoller] Gap too large (${gap} blocks), skipping ${skippedFrom} to ${this.lastProcessedBlock} for backfiller`);
+
+      // Record gap for gapfiller
+      if (skippedTo >= skippedFrom) {
+        await insertGap('block', skippedFrom, skippedTo, 'live_poller');
+      }
+      console.log(`[LivePoller] Gap too large (${gap} blocks), recorded gap ${skippedFrom}-${skippedTo} for gapfiller`);
     }
 
     // Process blocks in batches
