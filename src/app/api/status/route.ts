@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { query, queryOne } from '@/lib/db';
+import { queryOne } from '@/lib/db';
 import { areWorkersRunning } from '@/lib/workers';
+import { getPendingGaps, getGapStats, getDataCoverage } from '@/lib/queries/gaps';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,12 +20,6 @@ interface MilestoneStats {
   min_start_block: string | null;
   max_end_block: string | null;
   total_count: string;
-}
-
-interface GapInfo {
-  gap_start: string;
-  gap_end: string;
-  gap_size: string;
 }
 
 export async function GET() {
@@ -52,65 +47,25 @@ export async function GET() {
       FROM milestones
     `);
 
-    // Find block gaps (missing blocks in sequence) - check last 10000 blocks
-    const blockGaps = await query<GapInfo>(`
-      WITH block_range AS (
-        SELECT generate_series(
-          GREATEST((SELECT MAX(block_number) - 10000 FROM blocks), (SELECT MIN(block_number) FROM blocks)),
-          (SELECT MAX(block_number) FROM blocks)
-        ) as block_number
-      ),
-      missing AS (
-        SELECT br.block_number
-        FROM block_range br
-        LEFT JOIN blocks b ON br.block_number = b.block_number
-        WHERE b.block_number IS NULL
-      ),
-      gaps AS (
-        SELECT
-          block_number,
-          block_number - ROW_NUMBER() OVER (ORDER BY block_number) as grp
-        FROM missing
-      )
-      SELECT
-        MIN(block_number)::text as gap_start,
-        MAX(block_number)::text as gap_end,
-        (MAX(block_number) - MIN(block_number) + 1)::text as gap_size
-      FROM gaps
-      GROUP BY grp
-      ORDER BY MIN(block_number) DESC
-      LIMIT 10
-    `);
+    // Get gaps from gaps table (fast!)
+    const [blockGaps, milestoneGaps, finalityGaps] = await Promise.all([
+      getPendingGaps('block', 20),
+      getPendingGaps('milestone', 20),
+      getPendingGaps('finality', 20),
+    ]);
 
-    // Find milestone gaps (missing sequence IDs) - check last 1000 milestones
-    const milestoneGaps = await query<GapInfo>(`
-      WITH milestone_range AS (
-        SELECT generate_series(
-          GREATEST((SELECT MAX(sequence_id) - 1000 FROM milestones), (SELECT MIN(sequence_id) FROM milestones)),
-          (SELECT MAX(sequence_id) FROM milestones)
-        ) as sequence_id
-      ),
-      missing AS (
-        SELECT mr.sequence_id
-        FROM milestone_range mr
-        LEFT JOIN milestones m ON mr.sequence_id = m.sequence_id
-        WHERE m.sequence_id IS NULL
-      ),
-      gaps AS (
-        SELECT
-          sequence_id,
-          sequence_id - ROW_NUMBER() OVER (ORDER BY sequence_id)::int as grp
-        FROM missing
-      )
-      SELECT
-        MIN(sequence_id)::text as gap_start,
-        MAX(sequence_id)::text as gap_end,
-        (MAX(sequence_id) - MIN(sequence_id) + 1)::text as gap_size
-      FROM gaps
-      GROUP BY grp
-      ORDER BY MIN(sequence_id) DESC
-      LIMIT 10
-    `);
+    // Get gap statistics
+    const [blockGapStats, milestoneGapStats, finalityGapStats] = await Promise.all([
+      getGapStats('block'),
+      getGapStats('milestone'),
+      getGapStats('finality'),
+    ]);
+
+    // Get data coverage
+    const [blockCoverage, milestoneCoverage] = await Promise.all([
+      getDataCoverage('blocks'),
+      getDataCoverage('milestones'),
+    ]);
 
     // Get reconciliation status
     const reconcileStats = await queryOne<{
@@ -149,10 +104,13 @@ export async function GET() {
         unfinalized: parseInt(reconcileStats?.total_unfinalized ?? '0', 10),
         unfinalizedInMilestoneRange: parseInt(reconcileStats?.unfinalized_in_milestone_range ?? '0', 10),
         gaps: blockGaps.map(g => ({
-          start: g.gap_start,
-          end: g.gap_end,
-          size: parseInt(g.gap_size, 10),
+          start: g.startValue.toString(),
+          end: g.endValue.toString(),
+          size: g.gapSize,
+          source: g.source,
+          createdAt: g.createdAt.toISOString(),
         })),
+        gapStats: blockGapStats,
         latest: latestBlock ? {
           blockNumber: latestBlock.block_number,
           timestamp: latestBlock.timestamp.toISOString(),
@@ -166,15 +124,40 @@ export async function GET() {
         maxEndBlock: milestoneStats?.max_end_block ?? null,
         total: parseInt(milestoneStats?.total_count ?? '0', 10),
         gaps: milestoneGaps.map(g => ({
-          start: g.gap_start,
-          end: g.gap_end,
-          size: parseInt(g.gap_size, 10),
+          start: g.startValue.toString(),
+          end: g.endValue.toString(),
+          size: g.gapSize,
+          source: g.source,
+          createdAt: g.createdAt.toISOString(),
         })),
+        gapStats: milestoneGapStats,
         latest: latestMilestone ? {
           sequenceId: latestMilestone.sequence_id,
           endBlock: latestMilestone.end_block,
           timestamp: latestMilestone.timestamp.toISOString(),
           age: Math.floor((Date.now() - latestMilestone.timestamp.getTime()) / 1000),
+        } : null,
+      },
+      finality: {
+        gaps: finalityGaps.map(g => ({
+          start: g.startValue.toString(),
+          end: g.endValue.toString(),
+          size: g.gapSize,
+          source: g.source,
+          createdAt: g.createdAt.toISOString(),
+        })),
+        gapStats: finalityGapStats,
+      },
+      coverage: {
+        blocks: blockCoverage ? {
+          lowWaterMark: blockCoverage.lowWaterMark.toString(),
+          highWaterMark: blockCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: blockCoverage.lastAnalyzedAt?.toISOString() ?? null,
+        } : null,
+        milestones: milestoneCoverage ? {
+          lowWaterMark: milestoneCoverage.lowWaterMark.toString(),
+          highWaterMark: milestoneCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
         } : null,
       },
     };
