@@ -80,15 +80,15 @@ export async function insertGap(
   endValue: bigint,
   source: string
 ): Promise<void> {
+  // Note: gap_size is a GENERATED column, computed automatically
   await query(
-    `INSERT INTO gaps (gap_type, start_value, end_value, gap_size, source)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO gaps (gap_type, start_value, end_value, source)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (gap_type, start_value, end_value) DO NOTHING`,
     [
       gapType,
       startValue.toString(),
       endValue.toString(),
-      Number(endValue - startValue + 1n),
       source,
     ]
   );
@@ -113,7 +113,7 @@ export async function getPendingGaps(
 export async function claimGap(gapId: number): Promise<boolean> {
   const result = await query<{ id: number }>(
     `UPDATE gaps
-     SET status = 'filling', updated_at = NOW()
+     SET status = 'filling'
      WHERE id = $1 AND status = 'pending'
      RETURNING id`,
     [gapId]
@@ -125,7 +125,7 @@ export async function claimGap(gapId: number): Promise<boolean> {
 export async function markGapFilled(gapId: number): Promise<void> {
   await query(
     `UPDATE gaps
-     SET status = 'filled', filled_at = NOW(), updated_at = NOW()
+     SET status = 'filled', filled_at = NOW()
      WHERE id = $1`,
     [gapId]
   );
@@ -142,14 +142,14 @@ export async function shrinkGap(
     return;
   }
 
+  // Note: gap_size is a GENERATED column, computed automatically from start/end values
   await query(
     `UPDATE gaps
-     SET start_value = $1, end_value = $2, gap_size = $3, updated_at = NOW()
-     WHERE id = $4`,
+     SET start_value = $1, end_value = $2, status = 'pending'
+     WHERE id = $3`,
     [
       newStartValue.toString(),
       newEndValue.toString(),
-      Number(newEndValue - newStartValue + 1n),
       gapId,
     ]
   );
@@ -159,7 +159,7 @@ export async function shrinkGap(
 export async function releaseGap(gapId: number): Promise<void> {
   await query(
     `UPDATE gaps
-     SET status = 'pending', updated_at = NOW()
+     SET status = 'pending'
      WHERE id = $1`,
     [gapId]
   );
