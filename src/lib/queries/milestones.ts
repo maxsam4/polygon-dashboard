@@ -119,13 +119,13 @@ function getCompressionThreshold(): Date {
 // Single optimized reconciliation query
 // Uses direct UPDATE with subquery for better performance than ANY() array
 // Only processes recent (uncompressed) blocks - compressed chunks can't be efficiently updated
-// Historical blocks in compressed chunks need separate decompression handling
+// Finality data for blocks in compressed chunks is not tracked (acceptable data loss)
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
   const threshold = getCompressionThreshold();
 
   // Only process recent blocks in uncompressed chunks
   // TimescaleDB compressed chunks have a decompression limit that prevents bulk updates
-  // The MilestonePoller handles new blocks as milestones arrive
+  // New blocks get finality via MilestonePoller; this handles any stragglers in uncompressed chunks
   const result = await query<{ count: string }>(
     `WITH to_update AS (
        SELECT block_number

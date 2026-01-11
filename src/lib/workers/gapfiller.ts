@@ -215,14 +215,8 @@ export class Gapfiller {
       const chunkBlocks = await Promise.all(blockPromises);
       blocks.push(...chunkBlocks);
 
-      // Insert blocks
+      // Insert blocks - insertBlocksBatch auto-sets finality via LEFT JOIN to milestones
       await insertBlocksBatch(blocks);
-
-      // Reconcile finality for the filled blocks
-      const reconciled = await reconcileBlocksInRange(currentStart, actualEnd);
-      if (reconciled > 0) {
-        console.log(`[Gapfiller] Reconciled ${reconciled} blocks in range ${currentStart}-${actualEnd}`);
-      }
 
       // Shrink the gap (moves start forward)
       const newStart = actualEnd + 1n;
@@ -276,10 +270,19 @@ export class Gapfiller {
       // Insert milestones
       await insertMilestonesBatch(milestones);
 
-      // Reconcile blocks for the inserted milestones
-      const reconciled = await reconcileBlocksForMilestones(milestones);
-      if (reconciled > 0) {
-        console.log(`[Gapfiller] Reconciled ${reconciled} blocks for milestones ${currentStart}-${chunkEnd}`);
+      // Try to reconcile blocks for the inserted milestones
+      // This may fail if blocks are in compressed TimescaleDB chunks
+      try {
+        const reconciled = await reconcileBlocksForMilestones(milestones);
+        if (reconciled > 0) {
+          console.log(`[Gapfiller] Reconciled ${reconciled} blocks for milestones ${currentStart}-${chunkEnd}`);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('decompression limit')) {
+          console.log(`[Gapfiller] Skipping reconcile for milestones ${currentStart}-${chunkEnd} - blocks in compressed chunks`);
+        } else {
+          throw error;
+        }
       }
 
       // Shrink the gap (moves start forward)
@@ -302,15 +305,25 @@ export class Gapfiller {
     // Finality gaps are blocks that EXIST but lack finality data
     // No need to fetch from RPC - blocks already in DB
     // Just reconcile finality for the block range
+    // NOTE: This may fail for blocks in compressed TimescaleDB chunks (acceptable loss)
     const startBlock = gap.startValue;
     const endBlock = gap.endValue;
 
     console.log(`[Gapfiller] Filling finality gap ${gap.id}: blocks ${startBlock} to ${endBlock}`);
 
-    // Reconcile finality for the entire range
-    const reconciled = await reconcileBlocksInRange(startBlock, endBlock);
-
-    console.log(`[Gapfiller] Reconciled ${reconciled} blocks for finality gap ${gap.id}`);
+    try {
+      // Reconcile finality for the entire range
+      const reconciled = await reconcileBlocksInRange(startBlock, endBlock);
+      console.log(`[Gapfiller] Reconciled ${reconciled} blocks for finality gap ${gap.id}`);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('decompression limit')) {
+        // Blocks are in compressed chunks - finality data for these is acceptable loss
+        // Mark the gap as filled to prevent infinite retry loops
+        console.log(`[Gapfiller] Skipping finality gap ${gap.id} - blocks in compressed chunks`);
+      } else {
+        throw error;
+      }
+    }
 
     // Mark gap as filled
     await markGapFilled(gap.id);

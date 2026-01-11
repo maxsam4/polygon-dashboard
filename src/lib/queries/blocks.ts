@@ -148,7 +148,9 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
 export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updatedAt'>[]): Promise<void> {
   if (blocks.length === 0) return;
 
-  // Build multi-value INSERT for better performance (single round-trip vs N round-trips)
+  // Simple batch insert - finality is handled separately by FinalityReconciler
+  // for uncompressed chunks. We don't do milestone lookup here to avoid
+  // adding dependencies when milestones may not exist yet.
   const values: string[] = [];
   const params: unknown[] = [];
   const PARAMS_PER_BLOCK = 21;
