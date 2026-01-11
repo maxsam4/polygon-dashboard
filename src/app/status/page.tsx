@@ -7,6 +7,20 @@ interface Gap {
   start: string;
   end: string;
   size: number;
+  source: string;
+  createdAt: string;
+}
+
+interface GapStats {
+  pendingCount: number;
+  totalPendingSize: number;
+  fillingCount: number;
+}
+
+interface Coverage {
+  lowWaterMark: string;
+  highWaterMark: string;
+  lastAnalyzedAt: string | null;
 }
 
 interface StatusData {
@@ -22,6 +36,7 @@ interface StatusData {
     unfinalized: number;
     unfinalizedInMilestoneRange: number;
     gaps: Gap[];
+    gapStats: GapStats;
     latest: {
       blockNumber: string;
       timestamp: string;
@@ -35,6 +50,7 @@ interface StatusData {
     maxEndBlock: string | null;
     total: number;
     gaps: Gap[];
+    gapStats: GapStats;
     latest: {
       sequenceId: string;
       endBlock: string;
@@ -42,12 +58,26 @@ interface StatusData {
       age: number;
     } | null;
   };
+  finality: {
+    gaps: Gap[];
+    gapStats: GapStats;
+  };
+  coverage: {
+    blocks: Coverage | null;
+    milestones: Coverage | null;
+  };
 }
 
 function formatAge(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function formatTimeAgo(isoString: string | null): string {
+  if (!isoString) return 'Never';
+  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+  return formatAge(seconds) + ' ago';
 }
 
 function formatNumber(num: number): string {
@@ -79,6 +109,39 @@ function StatRow({ label, value, warning }: { label: string; value: string | num
       <span className="text-gray-400">{label}</span>
       <span className={warning ? 'text-yellow-400 font-medium' : 'text-gray-200'}>{value}</span>
     </div>
+  );
+}
+
+function GapCard({ title, gaps, gapStats, unitLabel }: { title: string; gaps: Gap[]; gapStats: GapStats; unitLabel: string }) {
+  return (
+    <Card title={title}>
+      <div className="mb-3 text-sm">
+        <span className={gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
+          {gapStats.pendingCount} pending
+        </span>
+        {gapStats.fillingCount > 0 && (
+          <span className="text-blue-400 ml-3">{gapStats.fillingCount} filling</span>
+        )}
+        {gapStats.totalPendingSize > 0 && (
+          <span className="text-gray-500 ml-3">({formatNumber(gapStats.totalPendingSize)} total {unitLabel})</span>
+        )}
+      </div>
+      {gaps.length === 0 ? (
+        <div className="text-green-400">No gaps detected</div>
+      ) : (
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {gaps.map((gap, i) => (
+            <div key={i} className="flex justify-between items-center py-1 border-b border-gray-700 last:border-0">
+              <div>
+                <span className="text-gray-400">{gap.start} - {gap.end}</span>
+                <span className="text-gray-600 text-xs ml-2">({gap.source})</span>
+              </div>
+              <span className="text-yellow-400">{formatNumber(gap.size)} {unitLabel}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -178,37 +241,98 @@ export default function StatusPage() {
               </div>
             </Card>
 
-            {/* Block Gaps */}
-            <Card title="Block Gaps (last 10k blocks)">
-              {status.blocks.gaps.length === 0 ? (
-                <div className="text-green-400">No gaps detected</div>
-              ) : (
-                <div className="space-y-2">
-                  {status.blocks.gaps.map((gap, i) => (
-                    <div key={i} className="flex justify-between items-center py-1 border-b border-gray-700 last:border-0">
-                      <span className="text-gray-400">{gap.start} - {gap.end}</span>
-                      <span className="text-yellow-400">{formatNumber(gap.size)} blocks</span>
+            {/* Data Coverage */}
+            <Card title="Data Coverage (Validated Ranges)">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-gray-400 text-sm mb-1 font-medium">Blocks</div>
+                  {status.coverage.blocks ? (
+                    <div className="space-y-1">
+                      <StatRow label="Low Water Mark" value={status.coverage.blocks.lowWaterMark} />
+                      <StatRow label="High Water Mark" value={status.coverage.blocks.highWaterMark} />
+                      <StatRow label="Last Analyzed" value={formatTimeAgo(status.coverage.blocks.lastAnalyzedAt)} />
                     </div>
-                  ))}
+                  ) : (
+                    <div className="text-gray-500">Not analyzed yet</div>
+                  )}
                 </div>
-              )}
+                <div>
+                  <div className="text-gray-400 text-sm mb-1 font-medium">Milestones</div>
+                  {status.coverage.milestones ? (
+                    <div className="space-y-1">
+                      <StatRow label="Low Water Mark" value={status.coverage.milestones.lowWaterMark} />
+                      <StatRow label="High Water Mark" value={status.coverage.milestones.highWaterMark} />
+                      <StatRow label="Last Analyzed" value={formatTimeAgo(status.coverage.milestones.lastAnalyzedAt)} />
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">Not analyzed yet</div>
+                  )}
+                </div>
+              </div>
             </Card>
 
-            {/* Milestone Gaps */}
-            <Card title="Milestone Gaps (last 1k milestones)">
-              {status.milestones.gaps.length === 0 ? (
-                <div className="text-green-400">No gaps detected</div>
-              ) : (
-                <div className="space-y-2">
-                  {status.milestones.gaps.map((gap, i) => (
-                    <div key={i} className="flex justify-between items-center py-1 border-b border-gray-700 last:border-0">
-                      <span className="text-gray-400">Seq {gap.start} - {gap.end}</span>
-                      <span className="text-yellow-400">{formatNumber(gap.size)} milestones</span>
-                    </div>
-                  ))}
+            {/* Gap Statistics */}
+            <Card title="Gap Statistics">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-gray-700">
+                  <span className="text-gray-400">Block Gaps</span>
+                  <div className="text-right">
+                    <span className={status.blocks.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
+                      {status.blocks.gapStats.pendingCount} pending
+                    </span>
+                    {status.blocks.gapStats.fillingCount > 0 && (
+                      <span className="text-blue-400 ml-2">({status.blocks.gapStats.fillingCount} filling)</span>
+                    )}
+                  </div>
                 </div>
-              )}
+                <div className="flex justify-between items-center py-2 border-b border-gray-700">
+                  <span className="text-gray-400">Milestone Gaps</span>
+                  <div className="text-right">
+                    <span className={status.milestones.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
+                      {status.milestones.gapStats.pendingCount} pending
+                    </span>
+                    {status.milestones.gapStats.fillingCount > 0 && (
+                      <span className="text-blue-400 ml-2">({status.milestones.gapStats.fillingCount} filling)</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-gray-400">Finality Gaps</span>
+                  <div className="text-right">
+                    <span className={status.finality.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
+                      {status.finality.gapStats.pendingCount} pending
+                    </span>
+                    {status.finality.gapStats.fillingCount > 0 && (
+                      <span className="text-blue-400 ml-2">({status.finality.gapStats.fillingCount} filling)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </Card>
+
+            {/* Block Gaps */}
+            <GapCard
+              title="Block Gaps"
+              gaps={status.blocks.gaps}
+              gapStats={status.blocks.gapStats}
+              unitLabel="blocks"
+            />
+
+            {/* Milestone Gaps */}
+            <GapCard
+              title="Milestone Gaps"
+              gaps={status.milestones.gaps}
+              gapStats={status.milestones.gapStats}
+              unitLabel="milestones"
+            />
+
+            {/* Finality Gaps */}
+            <GapCard
+              title="Pending Finality Gaps"
+              gaps={status.finality.gaps}
+              gapStats={status.finality.gapStats}
+              unitLabel="blocks"
+            />
 
             {/* Sync Status */}
             <Card title="Sync Status">
@@ -271,15 +395,22 @@ export default function StatusPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Block Gaps</span>
                   <StatusBadge
-                    ok={status.blocks.gaps.length === 0}
-                    label={status.blocks.gaps.length > 0 ? `${status.blocks.gaps.length} gaps` : 'None'}
+                    ok={status.blocks.gapStats.pendingCount === 0}
+                    label={status.blocks.gapStats.pendingCount > 0 ? `${status.blocks.gapStats.pendingCount} pending` : 'None'}
                   />
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Milestone Gaps</span>
                   <StatusBadge
-                    ok={status.milestones.gaps.length === 0}
-                    label={status.milestones.gaps.length > 0 ? `${status.milestones.gaps.length} gaps` : 'None'}
+                    ok={status.milestones.gapStats.pendingCount === 0}
+                    label={status.milestones.gapStats.pendingCount > 0 ? `${status.milestones.gapStats.pendingCount} pending` : 'None'}
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-400">Finality Gaps</span>
+                  <StatusBadge
+                    ok={status.finality.gapStats.pendingCount === 0}
+                    label={status.finality.gapStats.pendingCount > 0 ? `${status.finality.gapStats.pendingCount} pending` : 'None'}
                   />
                 </div>
               </div>
