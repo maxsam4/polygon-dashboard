@@ -118,13 +118,15 @@ function getCompressionThreshold(): Date {
 
 // Single optimized reconciliation query
 // Uses direct UPDATE with subquery for better performance than ANY() array
-// Processes BOTH recent and older blocks in each call to ensure catch-up
+// Only processes recent (uncompressed) blocks - compressed chunks can't be efficiently updated
+// Historical blocks in compressed chunks need separate decompression handling
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
   const threshold = getCompressionThreshold();
-  let totalCount = 0;
 
-  // First: process recent blocks (higher priority)
-  const recentResult = await query<{ count: string }>(
+  // Only process recent blocks in uncompressed chunks
+  // TimescaleDB compressed chunks have a decompression limit that prevents bulk updates
+  // The MilestonePoller handles new blocks as milestones arrive
+  const result = await query<{ count: string }>(
     `WITH to_update AS (
        SELECT block_number
        FROM blocks
@@ -155,44 +157,8 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
      SELECT COUNT(*) as count FROM updated`,
     [threshold, RECONCILE_RANGE]
   );
-  totalCount += parseInt(recentResult[0]?.count ?? '0', 10);
 
-  // Second: ALSO process older blocks (for catch-up)
-  // This ensures we make progress on backlog even when new blocks keep coming
-  const olderResult = await query<{ count: string }>(
-    `WITH to_update AS (
-       SELECT block_number
-       FROM blocks
-       WHERE finalized = FALSE
-         AND timestamp < $1
-       ORDER BY block_number DESC
-       LIMIT $2
-     ),
-     block_range AS (
-       SELECT MIN(block_number) as min_block, MAX(block_number) as max_block
-       FROM to_update
-     ),
-     updated AS (
-       UPDATE blocks b
-       SET
-         finalized = TRUE,
-         finalized_at = m.timestamp,
-         milestone_id = m.milestone_id,
-         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-         updated_at = NOW()
-       FROM milestones m, block_range br
-       WHERE m.start_block <= br.max_block AND m.end_block >= br.min_block
-         AND b.block_number BETWEEN m.start_block AND m.end_block
-         AND b.finalized = FALSE
-         AND b.block_number >= br.min_block AND b.block_number <= br.max_block
-       RETURNING 1
-     )
-     SELECT COUNT(*) as count FROM updated`,
-    [threshold, RECONCILE_RANGE]
-  );
-  totalCount += parseInt(olderResult[0]?.count ?? '0', 10);
-
-  return totalCount;
+  return parseInt(result[0]?.count ?? '0', 10);
 }
 
 // Reconcile blocks for a specific milestone
