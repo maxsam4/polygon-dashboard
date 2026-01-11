@@ -109,9 +109,6 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
 // Higher limit OK when targeting uncompressed chunks via timestamp filter
 const RECONCILE_RANGE = 1000;
 
-// Advisory lock ID for reconciliation (arbitrary unique number)
-const RECONCILE_LOCK_ID = 12345678;
-
 // Timestamp threshold - only process blocks newer than this to avoid compressed chunks
 // TimescaleDB compresses chunks older than ~2 weeks, so we process recent data first
 function getCompressionThreshold(): Date {
@@ -120,81 +117,38 @@ function getCompressionThreshold(): Date {
   return threshold;
 }
 
-// Try to acquire advisory lock, returns true if acquired
-async function tryAcquireReconcileLock(): Promise<boolean> {
-  const result = await queryOne<{ acquired: boolean }>(
-    `SELECT pg_try_advisory_lock($1) as acquired`,
-    [RECONCILE_LOCK_ID]
-  );
-  return result?.acquired ?? false;
-}
-
-// Release advisory lock
-async function releaseReconcileLock(): Promise<void> {
-  await query(`SELECT pg_advisory_unlock($1)`, [RECONCILE_LOCK_ID]);
-}
-
 // Single optimized reconciliation query
 // Uses partial index on (finalized, block_number) WHERE finalized = FALSE
 // Targets uncompressed chunks first via timestamp filter to avoid decompression limits
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
-  // Try to acquire database-level lock to prevent concurrent reconciliation
-  const acquired = await tryAcquireReconcileLock();
-  if (!acquired) {
-    return 0; // Another reconciliation is in progress
-  }
+  const threshold = getCompressionThreshold();
 
-  try {
-    const threshold = getCompressionThreshold();
+  // Step 1: Get a batch of unfinalized block numbers from recent (uncompressed) chunks
+  const unfinalizedBlocks = await query<{ block_number: string }>(
+    `SELECT block_number FROM blocks
+     WHERE finalized = FALSE
+       AND timestamp >= $2
+     ORDER BY block_number DESC
+     LIMIT $1`,
+    [RECONCILE_RANGE, threshold]
+  );
 
-    // Step 1: Get a batch of unfinalized block numbers from recent (uncompressed) chunks
-    const unfinalizedBlocks = await query<{ block_number: string }>(
+  if (unfinalizedBlocks.length === 0) {
+    // No recent unfinalized blocks - try older blocks with smaller batch
+    const olderBlocks = await query<{ block_number: string }>(
       `SELECT block_number FROM blocks
        WHERE finalized = FALSE
-         AND timestamp >= $2
+         AND timestamp < $2
        ORDER BY block_number DESC
-       LIMIT $1`,
-      [RECONCILE_RANGE, threshold]
+       LIMIT 100`,
+      [threshold]
     );
 
-    if (unfinalizedBlocks.length === 0) {
-      // No recent unfinalized blocks - try older blocks with smaller batch
-      const olderBlocks = await query<{ block_number: string }>(
-        `SELECT block_number FROM blocks
-         WHERE finalized = FALSE
-           AND timestamp < $2
-         ORDER BY block_number DESC
-         LIMIT 100`,
-        [threshold]
-      );
-
-      if (olderBlocks.length === 0) {
-        return 0;
-      }
-
-      const blockNumbers = olderBlocks.map(b => b.block_number);
-      const result = await query<{ count: string }>(
-        `WITH updated AS (
-           UPDATE blocks b
-           SET
-             finalized = TRUE,
-             finalized_at = m.timestamp,
-             milestone_id = m.milestone_id,
-             time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-             updated_at = NOW()
-           FROM milestones m
-           WHERE b.block_number BETWEEN m.start_block AND m.end_block
-             AND b.block_number = ANY($1::bigint[])
-           RETURNING 1
-         )
-         SELECT COUNT(*) as count FROM updated`,
-        [blockNumbers]
-      );
-      return parseInt(result[0]?.count ?? '0', 10);
+    if (olderBlocks.length === 0) {
+      return 0;
     }
 
-    // Step 2: Update only these specific blocks
-    const blockNumbers = unfinalizedBlocks.map(b => b.block_number);
+    const blockNumbers = olderBlocks.map(b => b.block_number);
     const result = await query<{ count: string }>(
       `WITH updated AS (
          UPDATE blocks b
@@ -213,9 +167,28 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
       [blockNumbers]
     );
     return parseInt(result[0]?.count ?? '0', 10);
-  } finally {
-    await releaseReconcileLock();
   }
+
+  // Step 2: Update only these specific blocks
+  const blockNumbers = unfinalizedBlocks.map(b => b.block_number);
+  const result = await query<{ count: string }>(
+    `WITH updated AS (
+       UPDATE blocks b
+       SET
+         finalized = TRUE,
+         finalized_at = m.timestamp,
+         milestone_id = m.milestone_id,
+         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+         updated_at = NOW()
+       FROM milestones m
+       WHERE b.block_number BETWEEN m.start_block AND m.end_block
+         AND b.block_number = ANY($1::bigint[])
+       RETURNING 1
+     )
+     SELECT COUNT(*) as count FROM updated`,
+    [blockNumbers]
+  );
+  return parseInt(result[0]?.count ?? '0', 10);
 }
 
 // Reconcile blocks for a specific milestone
@@ -245,48 +218,38 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
 }
 
 // Reconcile blocks for multiple milestones in a single query
-// Uses database-level advisory lock shared with reconcileUnfinalizedBlocks
+// Called by Gapfiller when filling milestone gaps
 export async function reconcileBlocksForMilestones(milestones: Milestone[]): Promise<number> {
   if (milestones.length === 0) return 0;
 
-  // Try to acquire database-level lock to prevent concurrent reconciliation
-  const acquired = await tryAcquireReconcileLock();
-  if (!acquired) {
-    return 0; // Another reconciliation is in progress
-  }
+  // Find the overall block range
+  const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
+  const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
 
-  try {
-    // Find the overall block range
-    const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
-    const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+  // Get the specific milestone IDs we care about
+  const milestoneIds = milestones.map(m => m.milestoneId.toString());
 
-    // Get the specific milestone IDs we care about
-    const milestoneIds = milestones.map(m => m.milestoneId.toString());
-
-    // Use a single query that joins ONLY with the specific milestones we inserted
-    const result = await query<{ count: string }>(
-      `WITH updated AS (
-        UPDATE blocks b
-        SET
-          finalized = TRUE,
-          finalized_at = m.timestamp,
-          milestone_id = m.milestone_id,
-          time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-          updated_at = NOW()
-        FROM milestones m
-        WHERE b.block_number BETWEEN m.start_block AND m.end_block
-          AND b.finalized = FALSE
-          AND b.block_number BETWEEN $1 AND $2
-          AND m.milestone_id = ANY($3::bigint[])
-        RETURNING 1
-      )
-      SELECT COUNT(*) as count FROM updated`,
-      [minBlock.toString(), maxBlock.toString(), milestoneIds]
-    );
-    return parseInt(result[0]?.count ?? '0', 10);
-  } finally {
-    await releaseReconcileLock();
-  }
+  // Use a single query that joins ONLY with the specific milestones we inserted
+  const result = await query<{ count: string }>(
+    `WITH updated AS (
+      UPDATE blocks b
+      SET
+        finalized = TRUE,
+        finalized_at = m.timestamp,
+        milestone_id = m.milestone_id,
+        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+        updated_at = NOW()
+      FROM milestones m
+      WHERE b.block_number BETWEEN m.start_block AND m.end_block
+        AND b.finalized = FALSE
+        AND b.block_number BETWEEN $1 AND $2
+        AND m.milestone_id = ANY($3::bigint[])
+      RETURNING 1
+    )
+    SELECT COUNT(*) as count FROM updated`,
+    [minBlock.toString(), maxBlock.toString(), milestoneIds]
+  );
+  return parseInt(result[0]?.count ?? '0', 10);
 }
 
 interface MilestoneWithStatsRow extends MilestoneRow {
