@@ -92,11 +92,11 @@ export async function GET() {
 
     // Get latest block and milestone timestamps
     const latestBlock = await queryOne<{ block_number: string; timestamp: Date }>(`
-      SELECT block_number::text, timestamp FROM blocks ORDER BY block_number DESC LIMIT 1
+      SELECT block_number::text, timestamp FROM blocks ORDER BY block_number::bigint DESC LIMIT 1
     `);
 
     const latestMilestone = await queryOne<{ sequence_id: string; end_block: string; timestamp: Date }>(`
-      SELECT sequence_id::text, end_block::text, timestamp FROM milestones ORDER BY sequence_id DESC LIMIT 1
+      SELECT sequence_id::text, end_block::text, timestamp FROM milestones ORDER BY sequence_id::integer DESC LIMIT 1
     `);
 
     // Get individual worker statuses
