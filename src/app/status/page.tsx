@@ -46,7 +46,7 @@ interface StatusData {
     minFinalized: string | null;
     maxFinalized: string | null;
     unfinalized: number;
-    unfinalizedInMilestoneRange: number;
+    pendingUnfinalized: number;
     gaps: Gap[];
     gapStats: GapStats;
     latest: {
@@ -328,7 +328,7 @@ export default function StatusPage() {
       const historyEntry: HistoricalData = {
         timestamp: Date.now(),
         minBlock: data.blocks.min,
-        unfinalizedInRange: data.blocks.unfinalizedInMilestoneRange,
+        unfinalizedInRange: data.blocks.pendingUnfinalized,
         totalBlocks: data.blocks.total,
         minMilestoneSeq: data.milestones.minSeq,
         totalMilestones: data.milestones.total,
@@ -403,9 +403,9 @@ export default function StatusPage() {
                 <StatRow label="Time Range" value={formatDateRange(status.blocks.minTimestamp, status.blocks.maxTimestamp)} />
                 <StatRow label="Finalized" value={formatNumber(status.blocks.finalized)} />
                 <StatRow
-                  label="Unfinalized (in milestone range)"
-                  value={formatNumber(status.blocks.unfinalizedInMilestoneRange)}
-                  warning={status.blocks.unfinalizedInMilestoneRange > 100}
+                  label="Pending Unfinalized"
+                  value={formatNumber(status.blocks.pendingUnfinalized)}
+                  warning={status.blocks.pendingUnfinalized > 100}
                 />
                 <StatRow label="Total Unfinalized" value={formatNumber(status.blocks.unfinalized)} />
               </div>
@@ -632,10 +632,10 @@ export default function StatusPage() {
                       {formatSpeed(speeds.reconcilerSpeed, 'blk')}
                     </span>
                   </div>
-                  {speeds.reconcilerSpeed && status.blocks.unfinalizedInMilestoneRange > 0 && (
+                  {speeds.reconcilerSpeed && status.blocks.pendingUnfinalized > 0 && (
                     <div className="text-gray-500 text-xs mt-1">
-                      ETA: {formatEta(status.blocks.unfinalizedInMilestoneRange, speeds.reconcilerSpeed)}
-                      <span className="ml-2">({formatNumber(status.blocks.unfinalizedInMilestoneRange)} remaining)</span>
+                      ETA: {formatEta(status.blocks.pendingUnfinalized, speeds.reconcilerSpeed)}
+                      <span className="ml-2">({formatNumber(status.blocks.pendingUnfinalized)} remaining)</span>
                     </div>
                   )}
                 </div>

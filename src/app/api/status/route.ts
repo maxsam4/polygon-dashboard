@@ -75,20 +75,25 @@ export async function GET() {
       getDataCoverage('milestones'),
     ]);
 
-    // Get reconciliation status
+    // Get reconciliation status - only count uncompressed (recent) blocks as pending
+    // Blocks in compressed chunks can't be efficiently updated, so they're not "pending"
+    const compressionThreshold = new Date();
+    compressionThreshold.setDate(compressionThreshold.getDate() - 10); // 10 days ago
+
     const reconcileStats = await queryOne<{
-      unfinalized_in_milestone_range: string;
+      pending_unfinalized: string;
       total_unfinalized: string;
     }>(`
       SELECT
         COUNT(*) FILTER (
           WHERE finalized = false
+          AND timestamp >= $1
           AND block_number >= (SELECT COALESCE(MIN(start_block), 0) FROM milestones)
           AND block_number <= (SELECT COALESCE(MAX(end_block), 0) FROM milestones)
-        )::text as unfinalized_in_milestone_range,
+        )::text as pending_unfinalized,
         COUNT(*) FILTER (WHERE finalized = false)::text as total_unfinalized
       FROM blocks
-    `);
+    `, [compressionThreshold]);
 
     // Get latest block and milestone timestamps
     const latestBlock = await queryOne<{ block_number: string; timestamp: Date }>(`
@@ -123,7 +128,7 @@ export async function GET() {
         minFinalized: blockStats?.min_finalized ?? null,
         maxFinalized: blockStats?.max_finalized ?? null,
         unfinalized: parseInt(reconcileStats?.total_unfinalized ?? '0', 10),
-        unfinalizedInMilestoneRange: parseInt(reconcileStats?.unfinalized_in_milestone_range ?? '0', 10),
+        pendingUnfinalized: parseInt(reconcileStats?.pending_unfinalized ?? '0', 10),
         gaps: blockGaps.map(g => ({
           start: g.startValue.toString(),
           end: g.endValue.toString(),

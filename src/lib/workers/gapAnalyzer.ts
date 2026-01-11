@@ -222,15 +222,21 @@ export class GapAnalyzer {
     const minStart = BigInt(milestoneCoverage.min_start);
     const maxEnd = BigInt(milestoneCoverage.max_end);
 
-    // Find unfinalized blocks within milestone coverage range
+    // Only detect finality gaps in uncompressed chunks (recent data)
+    // Compressed chunks can't be efficiently updated, so we ignore them
+    const compressionThreshold = new Date();
+    compressionThreshold.setDate(compressionThreshold.getDate() - 10); // 10 days ago
+
+    // Find unfinalized blocks within milestone coverage range AND in uncompressed chunks
     // These are blocks that exist but haven't been reconciled with milestones
     const unfinalizedBlocks = await query<{ block_number: string }>(
       `SELECT block_number::text FROM blocks
        WHERE finalized = FALSE
          AND block_number BETWEEN $1 AND $2
+         AND timestamp >= $3
        ORDER BY block_number
-       LIMIT $3`,
-      [minStart.toString(), maxEnd.toString(), BATCH_SIZE]
+       LIMIT $4`,
+      [minStart.toString(), maxEnd.toString(), compressionThreshold, BATCH_SIZE]
     );
 
     if (unfinalizedBlocks.length === 0) {
@@ -249,7 +255,7 @@ export class GapAnalyzer {
     }
 
     if (gapsInserted > 0) {
-      console.log(`[GapAnalyzer] Found ${gapsInserted} finality gap(s) covering ${unfinalizedBlocks.length} blocks`);
+      console.log(`[GapAnalyzer] Found ${gapsInserted} finality gap(s) covering ${unfinalizedBlocks.length} blocks (uncompressed only)`);
     }
   }
 
