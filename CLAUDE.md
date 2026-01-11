@@ -4,6 +4,10 @@
 
 Real-time Polygon blockchain analytics dashboard tracking gas prices, finality times, MGAS/s, and TPS.
 
+## Production Deployment
+
+**See `prod.md` for production server details and deployment commands.** This file contains SSH access, deployment scripts, and server-specific notes. It is gitignored for security.
+
 ## CRITICAL: Database Safety Rules
 
 **NEVER reset, drop, or truncate database tables.** The database contains weeks/months of historical blockchain data that takes significant time to backfill.
