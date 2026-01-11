@@ -164,7 +164,9 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
 }
 
 // Reconcile blocks for a specific milestone
+// Only processes recent blocks to enable chunk exclusion on compressed chunks
 export async function reconcileBlocksForMilestone(milestone: Milestone): Promise<number> {
+  const threshold = getCompressionThreshold();
   const result = await query<{ count: string }>(
     `WITH updated AS (
       UPDATE blocks
@@ -176,6 +178,7 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
         updated_at = NOW()
       WHERE block_number BETWEEN $3 AND $4
         AND finalized = FALSE
+        AND timestamp >= $5
       RETURNING 1
     )
     SELECT COUNT(*) as count FROM updated`,
@@ -184,6 +187,7 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
       milestone.milestoneId.toString(),
       milestone.startBlock.toString(),
       milestone.endBlock.toString(),
+      threshold,
     ]
   );
   return parseInt(result[0]?.count ?? '0', 10);
@@ -191,15 +195,18 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
 
 // Reconcile blocks for multiple milestones in a single query
 // Called by Gapfiller when filling milestone gaps
+// Only processes recent blocks (within compression threshold) to avoid seq scans on compressed chunks
 export async function reconcileBlocksForMilestones(milestones: Milestone[]): Promise<number> {
   if (milestones.length === 0) return 0;
 
   // Find the overall block range
   const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
   const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+  const threshold = getCompressionThreshold();
 
-  // Use efficient query with milestone range filter (avoids scanning all milestones)
-  // The range filter m.start_block <= $2 AND m.end_block >= $1 limits milestone scan
+  // Use efficient query with milestone range filter and timestamp filter
+  // The timestamp filter enables chunk exclusion for compressed chunks
+  // Without it, PostgreSQL seq scans all chunks looking for matching blocks
   const result = await query<{ count: string }>(
     `WITH updated AS (
       UPDATE blocks b
@@ -214,10 +221,11 @@ export async function reconcileBlocksForMilestones(milestones: Milestone[]): Pro
         AND b.block_number BETWEEN m.start_block AND m.end_block
         AND b.finalized = FALSE
         AND b.block_number BETWEEN $1 AND $2
+        AND b.timestamp >= $3
       RETURNING 1
     )
     SELECT COUNT(*) as count FROM updated`,
-    [minBlock.toString(), maxBlock.toString()]
+    [minBlock.toString(), maxBlock.toString(), threshold]
   );
   return parseInt(result[0]?.count ?? '0', 10);
 }
