@@ -65,6 +65,26 @@ export async function insertMilestone(milestone: Milestone): Promise<void> {
   );
 }
 
+export async function insertMilestonesBatch(milestones: Milestone[]): Promise<void> {
+  if (milestones.length === 0) return;
+
+  // Build bulk insert with UNNEST for efficiency
+  const milestoneIds = milestones.map(m => m.milestoneId.toString());
+  const sequenceIds = milestones.map(m => m.sequenceId);
+  const startBlocks = milestones.map(m => m.startBlock.toString());
+  const endBlocks = milestones.map(m => m.endBlock.toString());
+  const hashes = milestones.map(m => m.hash);
+  const proposers = milestones.map(m => m.proposer);
+  const timestamps = milestones.map(m => m.timestamp);
+
+  await query(
+    `INSERT INTO milestones (milestone_id, sequence_id, start_block, end_block, hash, proposer, timestamp)
+     SELECT * FROM UNNEST($1::bigint[], $2::int[], $3::bigint[], $4::bigint[], $5::text[], $6::text[], $7::timestamptz[])
+     ON CONFLICT (milestone_id) DO NOTHING`,
+    [milestoneIds, sequenceIds, startBlocks, endBlocks, hashes, proposers, timestamps]
+  );
+}
+
 export async function getLowestSequenceId(): Promise<number | null> {
   const row = await queryOne<{ min: number }>(`SELECT MIN(sequence_id) as min FROM milestones`);
   return row?.min ?? null;
@@ -216,6 +236,37 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
       milestone.startBlock.toString(),
       milestone.endBlock.toString(),
     ]
+  );
+  return parseInt(result[0]?.count ?? '0', 10);
+}
+
+// Reconcile blocks for multiple milestones in a single query
+export async function reconcileBlocksForMilestones(milestones: Milestone[]): Promise<number> {
+  if (milestones.length === 0) return 0;
+
+  // Find the overall block range
+  const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
+  const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+
+  // Use a single query that joins with our milestones table
+  // Since we just inserted these milestones, they're in the DB
+  const result = await query<{ count: string }>(
+    `WITH updated AS (
+      UPDATE blocks b
+      SET
+        finalized = TRUE,
+        finalized_at = m.timestamp,
+        milestone_id = m.milestone_id,
+        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+        updated_at = NOW()
+      FROM milestones m
+      WHERE b.block_number BETWEEN m.start_block AND m.end_block
+        AND b.finalized = FALSE
+        AND b.block_number BETWEEN $1 AND $2
+      RETURNING 1
+    )
+    SELECT COUNT(*) as count FROM updated`,
+    [minBlock.toString(), maxBlock.toString()]
   );
   return parseInt(result[0]?.count ?? '0', 10);
 }
