@@ -7,7 +7,7 @@ import {
 import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2500; // 2.5 seconds
-const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
+const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 
 export class MilestonePoller {
   private running = false;

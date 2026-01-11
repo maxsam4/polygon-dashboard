@@ -7,14 +7,12 @@ export type { Block as ViemBlock } from 'viem';
 
 interface RetryConfig {
   maxRetries: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
+  delayMs: number; // Fixed delay between retries (no exponential backoff)
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 5,
-  baseDelayMs: 1000,
-  maxDelayMs: 60000,
+  maxRetries: 3, // Try each endpoint 3 times
+  delayMs: 500,  // 500ms between retry rounds
 };
 
 export class RpcExhaustedError extends Error {
@@ -52,33 +50,31 @@ export class RpcClient {
     this.currentIndex = (this.currentIndex + 1) % this.urls.length;
   }
 
-  private calculateBackoff(retry: number): number {
-    const exponentialDelay = this.retryConfig.baseDelayMs * Math.pow(2, retry);
-    const jitter = Math.random() * 0.3 * exponentialDelay;
-    return Math.min(exponentialDelay + jitter, this.retryConfig.maxDelayMs);
-  }
-
   async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
     let lastError: Error | undefined;
 
+    // Try each endpoint up to maxRetries rounds
     for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
       for (let attempt = 0; attempt < this.urls.length; attempt++) {
         try {
           return await fn(this.client);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          console.warn(`RPC ${this.urls[this.currentIndex]} failed: ${lastError.message}`);
+          // Only log occasionally to avoid spam
+          if (attempt === 0 && retry === 0) {
+            console.warn(`RPC ${this.urls[this.currentIndex]} failed: ${lastError.message}, rotating...`);
+          }
           this.rotateEndpoint();
         }
       }
 
+      // Small fixed delay between retry rounds
       if (retry < this.retryConfig.maxRetries) {
-        const delay = this.calculateBackoff(retry);
-        console.warn(`All endpoints failed. Retry ${retry + 1}/${this.retryConfig.maxRetries} in ${delay}ms...`);
-        await sleep(delay);
+        await sleep(this.retryConfig.delayMs);
       }
     }
 
+    // Throw error but callers should handle gracefully and retry
     throw new RpcExhaustedError(
       `All RPC endpoints failed after ${this.retryConfig.maxRetries} retries`,
       lastError

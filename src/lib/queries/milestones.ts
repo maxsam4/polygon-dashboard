@@ -85,8 +85,38 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile all unfinalized blocks that have a matching milestone
-export async function reconcileUnfinalizedBlocks(): Promise<number> {
+// Reconcile range - check ±100 blocks from finalized boundaries
+const RECONCILE_RANGE = 100;
+
+// Reconcile live blocks (newest) - checks around the highest finalized block
+async function reconcileLiveBlocks(): Promise<number> {
+  const boundaries = await queryOne<{ max_finalized: string | null }>(
+    `SELECT MAX(block_number) as max_finalized FROM blocks WHERE finalized = TRUE`
+  );
+
+  const milestoneCoverage = await queryOne<{ max_end: string | null }>(
+    `SELECT MAX(end_block) as max_end FROM milestones`
+  );
+
+  if (!milestoneCoverage?.max_end) {
+    return 0;
+  }
+
+  const milestoneMax = BigInt(milestoneCoverage.max_end);
+  let lowerBound: bigint;
+  let upperBound: bigint;
+
+  if (!boundaries?.max_finalized) {
+    // No finalized blocks yet, start from latest milestone
+    upperBound = milestoneMax;
+    lowerBound = milestoneMax - BigInt(RECONCILE_RANGE);
+  } else {
+    const maxFinalized = BigInt(boundaries.max_finalized);
+    lowerBound = maxFinalized - BigInt(RECONCILE_RANGE);
+    upperBound = maxFinalized + BigInt(RECONCILE_RANGE);
+    if (upperBound > milestoneMax) upperBound = milestoneMax;
+  }
+
   const result = await query<{ count: string }>(
     `WITH updated AS (
       UPDATE blocks b
@@ -99,11 +129,69 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
       FROM milestones m
       WHERE b.block_number BETWEEN m.start_block AND m.end_block
         AND b.finalized = FALSE
+        AND b.block_number BETWEEN $1 AND $2
       RETURNING 1
     )
-    SELECT COUNT(*) as count FROM updated`
+    SELECT COUNT(*) as count FROM updated`,
+    [lowerBound.toString(), upperBound.toString()]
   );
   return parseInt(result[0]?.count ?? '0', 10);
+}
+
+// Reconcile backfill blocks (oldest) - checks around the lowest finalized block
+async function reconcileBackfillBlocks(): Promise<number> {
+  const boundaries = await queryOne<{ min_finalized: string | null }>(
+    `SELECT MIN(block_number) as min_finalized FROM blocks WHERE finalized = TRUE`
+  );
+
+  const milestoneCoverage = await queryOne<{ min_start: string | null }>(
+    `SELECT MIN(start_block) as min_start FROM milestones`
+  );
+
+  if (!milestoneCoverage?.min_start || !boundaries?.min_finalized) {
+    // Need at least one finalized block to backfill from
+    return 0;
+  }
+
+  const milestoneMin = BigInt(milestoneCoverage.min_start);
+  const minFinalized = BigInt(boundaries.min_finalized);
+
+  // Check blocks BELOW the minimum finalized block
+  let lowerBound = minFinalized - BigInt(RECONCILE_RANGE);
+  if (lowerBound < milestoneMin) lowerBound = milestoneMin;
+  const upperBound = minFinalized;
+
+  // Don't run if we've reached milestone coverage limit
+  if (lowerBound >= minFinalized) {
+    return 0;
+  }
+
+  const result = await query<{ count: string }>(
+    `WITH updated AS (
+      UPDATE blocks b
+      SET
+        finalized = TRUE,
+        finalized_at = m.timestamp,
+        milestone_id = m.milestone_id,
+        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+        updated_at = NOW()
+      FROM milestones m
+      WHERE b.block_number BETWEEN m.start_block AND m.end_block
+        AND b.finalized = FALSE
+        AND b.block_number BETWEEN $1 AND $2
+      RETURNING 1
+    )
+    SELECT COUNT(*) as count FROM updated`,
+    [lowerBound.toString(), upperBound.toString()]
+  );
+  return parseInt(result[0]?.count ?? '0', 10);
+}
+
+// Main reconciliation function - runs both live and backfill reconciliation
+export async function reconcileUnfinalizedBlocks(): Promise<number> {
+  const liveCount = await reconcileLiveBlocks();
+  const backfillCount = await reconcileBackfillBlocks();
+  return liveCount + backfillCount;
 }
 
 // Reconcile blocks for a specific milestone
@@ -187,10 +275,16 @@ export async function getMilestonesPaginated(
   };
 }
 
-// Get count of unfinalized blocks
+// Get count of unfinalized blocks within milestone coverage (for logging)
 export async function getUnfinalizedBlockCount(): Promise<number> {
+  // Only count unfinalized blocks that are within milestone coverage range
+  // to avoid scanning millions of blocks outside milestone range
   const result = await queryOne<{ count: string }>(
-    'SELECT COUNT(*) as count FROM blocks WHERE finalized = FALSE'
+    `SELECT COUNT(*) as count
+     FROM blocks b
+     WHERE b.finalized = FALSE
+       AND b.block_number >= (SELECT COALESCE(MIN(start_block), 0) FROM milestones)
+       AND b.block_number <= (SELECT COALESCE(MAX(end_block), 0) FROM milestones)`
   );
   return parseInt(result?.count ?? '0', 10);
 }

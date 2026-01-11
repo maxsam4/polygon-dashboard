@@ -10,7 +10,7 @@ import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2000;
-const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
+const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 const BATCH_SIZE = parseInt(process.env.LIVE_POLLER_BATCH_SIZE ?? '100', 10);
 const CATCHUP_BATCH_SIZE = parseInt(process.env.LIVE_POLLER_CATCHUP_BATCH_SIZE ?? '50', 10);
 

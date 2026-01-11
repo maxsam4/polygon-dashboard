@@ -2,7 +2,7 @@ import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import { insertMilestone, getLowestSequenceId } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
 
-const EXHAUSTED_RETRY_MS = 5 * 60 * 1000; // 5 minutes
+const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 const DELAY_MS = 500;
 const BATCH_SIZE = 50; // Process 50 milestones at a time
 
