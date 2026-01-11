@@ -13,6 +13,7 @@ export function Nav() {
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
     { href: '/export', label: 'Export' },
+    { href: '/status', label: 'Status' },
   ];
 
   return (

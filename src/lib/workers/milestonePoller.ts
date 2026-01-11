@@ -9,8 +9,8 @@ import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2000; // 2 seconds
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
-const BATCH_SIZE = 20; // Fetch 20 milestones in parallel
-const CATCHUP_BATCH_SIZE = 50; // Larger batches when catching up
+const MAX_GAP = 60; // If gap > 60 milestones, skip to latest and let backfiller handle
+const BATCH_SIZE = 20; // Fetch up to 20 milestones in parallel
 
 export class MilestonePoller {
   private running = false;
@@ -36,7 +36,7 @@ export class MilestonePoller {
       try {
         const processed = await this.checkNewMilestones();
         // If we processed a full batch, there might be more - don't wait
-        if (processed < CATCHUP_BATCH_SIZE) {
+        if (processed < BATCH_SIZE) {
           await sleep(POLL_INTERVAL_MS);
         }
       } catch (error) {
@@ -71,18 +71,21 @@ export class MilestonePoller {
       return 0;
     }
 
-    // Determine batch size based on gap
-    const batchSize = gap > BATCH_SIZE ? CATCHUP_BATCH_SIZE : BATCH_SIZE;
-    const endSeqId = Math.min(this.lastSequenceId + batchSize, currentCount);
-    const startSeqId = this.lastSequenceId + 1;
+    // If gap is too large, skip to near the tip and let backfiller handle
+    if (gap > MAX_GAP) {
+      const skippedFrom = this.lastSequenceId + 1;
+      this.lastSequenceId = currentCount - MAX_GAP;
+      console.log(`[MilestonePoller] Gap too large (${gap} milestones), skipping ${skippedFrom} to ${this.lastSequenceId} for backfiller`);
+    }
 
-    console.log(`[MilestonePoller] Fetching milestones ${startSeqId} to ${endSeqId} (gap: ${gap})`);
+    // Calculate batch to fetch
+    const remainingGap = currentCount - this.lastSequenceId;
+    const batchSize = Math.min(remainingGap, BATCH_SIZE);
+    const startSeqId = this.lastSequenceId + 1;
+    const endSeqId = this.lastSequenceId + batchSize;
 
     // Fetch milestones in parallel
-    const seqIds = [];
-    for (let i = startSeqId; i <= endSeqId; i++) {
-      seqIds.push(i);
-    }
+    const seqIds = Array.from({ length: batchSize }, (_, i) => startSeqId + i);
 
     const fetchPromises = seqIds.map(async (seqId) => {
       try {
@@ -109,13 +112,10 @@ export class MilestonePoller {
     // Reconcile blocks for all milestones in batch
     const reconciled = await reconcileBlocksForMilestones(milestones);
 
-    // Update lastSequenceId to the highest successfully fetched
-    const maxFetched = Math.max(...milestones.map(m => m.sequenceId));
-
-    // Only advance if we got all milestones up to maxFetched without gaps
+    // Update lastSequenceId - advance to highest contiguous sequence
     const fetchedSet = new Set(milestones.map(m => m.sequenceId));
     let newLastSeqId = this.lastSequenceId;
-    for (let i = startSeqId; i <= maxFetched; i++) {
+    for (let i = startSeqId; i <= endSeqId; i++) {
       if (fetchedSet.has(i)) {
         newLastSeqId = i;
       } else {

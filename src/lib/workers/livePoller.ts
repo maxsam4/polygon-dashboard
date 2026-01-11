@@ -11,8 +11,8 @@ import { sleep } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 2000;
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
-const BATCH_SIZE = parseInt(process.env.LIVE_POLLER_BATCH_SIZE ?? '100', 10);
-const CATCHUP_BATCH_SIZE = parseInt(process.env.LIVE_POLLER_CATCHUP_BATCH_SIZE ?? '50', 10);
+const MAX_GAP = 30; // If gap > 30 blocks, skip to latest and let backfiller handle
+const BATCH_SIZE = 10; // Process up to 10 blocks at a time when slightly behind
 
 export class LivePoller {
   private running = false;
@@ -58,104 +58,99 @@ export class LivePoller {
       this.lastProcessedBlock = latestBlockNumber - 1n;
     }
 
-    const blocksToProcess = latestBlockNumber - this.lastProcessedBlock;
+    const gap = latestBlockNumber - this.lastProcessedBlock;
 
-    if (blocksToProcess <= 0n) {
+    if (gap <= 0n) {
       return;
     }
 
-    // If we're more than BATCH_SIZE blocks behind, use batch processing
-    if (blocksToProcess > BigInt(BATCH_SIZE)) {
-      await this.processBatch(latestBlockNumber);
+    // If gap is too large, skip to near the tip and let backfiller handle the gap
+    if (gap > BigInt(MAX_GAP)) {
+      const skippedFrom = this.lastProcessedBlock + 1n;
+      this.lastProcessedBlock = latestBlockNumber - BigInt(MAX_GAP);
+      console.log(`[LivePoller] Gap too large (${gap} blocks), skipping ${skippedFrom} to ${this.lastProcessedBlock} for backfiller`);
+    }
+
+    // Process blocks in batches
+    const blocksToProcess = Number(latestBlockNumber - this.lastProcessedBlock);
+    const batchSize = Math.min(blocksToProcess, BATCH_SIZE);
+
+    if (batchSize > 1) {
+      await this.processBatch(this.lastProcessedBlock + 1n, this.lastProcessedBlock + BigInt(batchSize));
     } else {
-      // Process blocks sequentially when at tip
-      for (let blockNum = this.lastProcessedBlock + 1n; blockNum <= latestBlockNumber; blockNum++) {
-        await this.processBlock(blockNum);
-        this.lastProcessedBlock = blockNum;
-      }
+      // Process single block
+      await this.processBlock(this.lastProcessedBlock + 1n);
+      this.lastProcessedBlock = this.lastProcessedBlock + 1n;
     }
   }
 
-  private async processBatch(latestBlockNumber: bigint): Promise<void> {
-    const startBlock = this.lastProcessedBlock! + 1n;
-    const endBlock = startBlock + BigInt(CATCHUP_BATCH_SIZE) - 1n;
-    const targetBlock = endBlock < latestBlockNumber ? endBlock : latestBlockNumber;
-    const blocksToFetch = Number(targetBlock - startBlock) + 1;
-
-    console.log(`[LivePoller] Catching up: processing blocks ${startBlock} to ${targetBlock} (${blocksToFetch} blocks, ${latestBlockNumber - targetBlock} behind)`);
-
+  private async processBatch(startBlock: bigint, endBlock: bigint): Promise<void> {
+    const blocksToFetch = Number(endBlock - startBlock) + 1;
     const rpc = getRpcClient();
     const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
 
-    // Fetch blocks in parallel
     const blockNumbers = Array.from(
       { length: blocksToFetch },
       (_, i) => startBlock + BigInt(i)
     );
 
-    // Process in smaller parallel batches to avoid overwhelming RPC
-    const parallelBatchSize = 10;
-    for (let i = 0; i < blockNumbers.length; i += parallelBatchSize) {
-      const batch = blockNumbers.slice(i, i + parallelBatchSize);
+    // Fetch all blocks in parallel
+    const blockPromises = blockNumbers.map(async (blockNumber) => {
+      try {
+        const block = await rpc.getBlockWithTransactions(blockNumber);
 
-      const blockPromises = batch.map(async (blockNumber) => {
-        try {
-          const block = await rpc.getBlockWithTransactions(blockNumber);
-
-          // Get previous block timestamp
-          let previousTimestamp: bigint | undefined;
-          if (blockNumber > 0n) {
-            const prevBlock = await getBlockByNumber(blockNumber - 1n);
-            if (prevBlock) {
-              previousTimestamp = BigInt(Math.floor(prevBlock.timestamp.getTime() / 1000));
-            } else {
-              const prevBlockRpc = await rpc.getBlock(blockNumber - 1n);
-              previousTimestamp = prevBlockRpc.timestamp;
-            }
+        // Get previous block timestamp
+        let previousTimestamp: bigint | undefined;
+        if (blockNumber > 0n) {
+          const prevBlock = await getBlockByNumber(blockNumber - 1n);
+          if (prevBlock) {
+            previousTimestamp = BigInt(Math.floor(prevBlock.timestamp.getTime() / 1000));
+          } else {
+            const prevBlockRpc = await rpc.getBlock(blockNumber - 1n);
+            previousTimestamp = prevBlockRpc.timestamp;
           }
-
-          const metrics = calculateBlockMetrics(block, previousTimestamp);
-          const blockTimestamp = new Date(Number(block.timestamp) * 1000);
-
-          return {
-            blockNumber,
-            timestamp: blockTimestamp,
-            blockHash: block.hash,
-            parentHash: block.parentHash,
-            gasUsed: block.gasUsed,
-            gasLimit: block.gasLimit,
-            baseFeeGwei: metrics.baseFeeGwei,
-            minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-            maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-            avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
-            medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
-            totalBaseFeeGwei: metrics.totalBaseFeeGwei,
-            totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
-            txCount: block.transactions.length,
-            blockTimeSec: metrics.blockTimeSec,
-            mgasPerSec: metrics.mgasPerSec,
-            tps: metrics.tps,
-            finalized: false,
-            finalizedAt: null,
-            milestoneId: null,
-            timeToFinalitySec: null,
-          };
-        } catch (error) {
-          console.error(`[LivePoller] Error fetching block ${blockNumber}:`, error);
-          return null;
         }
-      });
 
-      const results = await Promise.all(blockPromises);
-      blocks.push(...results.filter((b): b is NonNullable<typeof b> => b !== null));
-    }
+        const metrics = calculateBlockMetrics(block, previousTimestamp);
+        const blockTimestamp = new Date(Number(block.timestamp) * 1000);
+
+        return {
+          blockNumber,
+          timestamp: blockTimestamp,
+          blockHash: block.hash,
+          parentHash: block.parentHash,
+          gasUsed: block.gasUsed,
+          gasLimit: block.gasLimit,
+          baseFeeGwei: metrics.baseFeeGwei,
+          minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+          maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+          avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+          medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+          totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+          totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+          txCount: block.transactions.length,
+          blockTimeSec: metrics.blockTimeSec,
+          mgasPerSec: metrics.mgasPerSec,
+          tps: metrics.tps,
+          finalized: false,
+          finalizedAt: null,
+          milestoneId: null,
+          timeToFinalitySec: null,
+        };
+      } catch {
+        console.error(`[LivePoller] Error fetching block ${blockNumber}`);
+        return null;
+      }
+    });
+
+    const results = await Promise.all(blockPromises);
+    blocks.push(...results.filter((b): b is NonNullable<typeof b> => b !== null));
 
     if (blocks.length > 0) {
-      // Sort by block number to ensure correct order
       blocks.sort((a, b) => Number(a.blockNumber - b.blockNumber));
       await insertBlocksBatch(blocks);
       this.lastProcessedBlock = blocks[blocks.length - 1].blockNumber;
-      console.log(`[LivePoller] Batch inserted ${blocks.length} blocks, now at ${this.lastProcessedBlock}`);
+      console.log(`[LivePoller] Inserted ${blocks.length} blocks (${startBlock}-${this.lastProcessedBlock})`);
     }
   }
 
