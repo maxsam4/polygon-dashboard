@@ -1,8 +1,8 @@
 import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
 
-const ACTIVE_INTERVAL_MS = 500;   // 500ms when actively reconciling
-const IDLE_INTERVAL_MS = 5000;    // 5 seconds when no work
+const ACTIVE_INTERVAL_MS = 2000;  // 2s when actively reconciling (MilestonePoller handles new blocks)
+const IDLE_INTERVAL_MS = 10000;   // 10 seconds when no work
 
 export class FinalityReconciler {
   private running = false;

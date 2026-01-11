@@ -105,9 +105,9 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile range - process up to 1000 blocks per run
-// Higher limit OK when targeting uncompressed chunks via timestamp filter
-const RECONCILE_RANGE = 1000;
+// Reconcile range - process up to 200 blocks per run
+// Smaller batches for faster queries; MilestonePoller handles new blocks immediately
+const RECONCILE_RANGE = 200;
 
 // Timestamp threshold - only process blocks newer than this to avoid compressed chunks
 // TimescaleDB compresses chunks older than ~2 weeks, so we process recent data first
