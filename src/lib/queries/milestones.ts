@@ -105,8 +105,9 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile range - process up to 5000 blocks per run
-const RECONCILE_RANGE = 5000;
+// Reconcile range - process up to 500 blocks per run
+// Keep small due to TimescaleDB decompression limits on compressed chunks
+const RECONCILE_RANGE = 500;
 
 // Mutex to prevent concurrent reconciliation
 let reconciliationInProgress = false;
