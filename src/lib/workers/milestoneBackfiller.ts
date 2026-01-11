@@ -6,16 +6,17 @@ import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError
 
 const WORKER_NAME = 'MilestoneBackfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
-const DELAY_MS = 200; // Reduced delay since we're batching
 const BASE_BATCH_SIZE = 100; // Base batch size, multiplied by endpoint count
 
 export class MilestoneBackfiller {
   private running = false;
   private targetBlock: bigint;
   private currentSequenceId: number | null = null;
+  private delayMs: number;
 
-  constructor(targetBlock: bigint) {
+  constructor(targetBlock: bigint, delayMs = 500) {
     this.targetBlock = targetBlock;
+    this.delayMs = delayMs;
   }
 
   async start(): Promise<void> {
@@ -65,7 +66,7 @@ export class MilestoneBackfiller {
         if (processed > 0) {
           updateWorkerRun(WORKER_NAME, processed);
         }
-        await sleep(DELAY_MS);
+        await sleep(this.delayMs);
       } catch (error) {
         if (error instanceof HeimdallExhaustedError) {
           console.error('[MilestoneBackfiller] Heimdall exhausted, waiting...');
