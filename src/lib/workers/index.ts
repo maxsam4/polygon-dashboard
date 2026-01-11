@@ -3,12 +3,16 @@ import { MilestonePoller } from './milestonePoller';
 import { Backfiller } from './backfiller';
 import { MilestoneBackfiller } from './milestoneBackfiller';
 import { FinalityReconciler } from './finalityReconciler';
+import { GapAnalyzer } from './gapAnalyzer';
+import { Gapfiller } from './gapfiller';
 
 let livePoller: LivePoller | null = null;
 let milestonePoller: MilestonePoller | null = null;
 let backfiller: Backfiller | null = null;
 let milestoneBackfiller: MilestoneBackfiller | null = null;
 let finalityReconciler: FinalityReconciler | null = null;
+let gapAnalyzer: GapAnalyzer | null = null;
+let gapfiller: Gapfiller | null = null;
 let workersStarted = false;
 
 export function areWorkersRunning(): boolean {
@@ -35,6 +39,8 @@ export async function startWorkers(): Promise<void> {
   backfiller = new Backfiller(targetBlock, batchSize, delayMs);
   milestoneBackfiller = new MilestoneBackfiller(targetBlock);
   finalityReconciler = new FinalityReconciler();
+  gapAnalyzer = new GapAnalyzer();
+  gapfiller = new Gapfiller(delayMs);
 
   await Promise.all([
     livePoller.start(),
@@ -42,6 +48,8 @@ export async function startWorkers(): Promise<void> {
     backfiller.start(),
     milestoneBackfiller.start(),
     finalityReconciler.start(),
+    gapAnalyzer.start(),
+    gapfiller.start(),
   ]);
 
   workersStarted = true;
@@ -55,6 +63,8 @@ export function stopWorkers(): void {
   backfiller?.stop();
   milestoneBackfiller?.stop();
   finalityReconciler?.stop();
+  gapAnalyzer?.stop();
+  gapfiller?.stop();
 }
 
 // Handle graceful shutdown
