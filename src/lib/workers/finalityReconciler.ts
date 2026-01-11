@@ -3,8 +3,9 @@ import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
 const WORKER_NAME = 'FinalityReconciler';
-const ACTIVE_INTERVAL_MS = 2000;  // 2s when actively reconciling (MilestonePoller handles new blocks)
+const ACTIVE_INTERVAL_MS = 100;   // 100ms when actively reconciling for fast catch-up
 const IDLE_INTERVAL_MS = 10000;   // 10 seconds when no work
+const LOG_INTERVAL = 10;          // Log progress every N batches
 
 export class FinalityReconciler {
   private running = false;
@@ -26,6 +27,8 @@ export class FinalityReconciler {
 
   private async reconcile(): Promise<void> {
     let consecutiveEmpty = 0;
+    let batchCount = 0;
+    let totalReconciled = 0;
 
     while (this.running) {
       try {
@@ -34,24 +37,34 @@ export class FinalityReconciler {
 
         if (updated > 0) {
           consecutiveEmpty = 0;
+          batchCount++;
+          totalReconciled += updated;
           updateWorkerRun(WORKER_NAME, updated);
-          // Only log remaining count occasionally to reduce DB load
-          if (updated >= 100) {
+
+          // Log progress periodically to reduce log spam
+          if (batchCount % LOG_INTERVAL === 0) {
             const remaining = await getUnfinalizedBlockCount();
-            console.log(`[FinalityReconciler] Reconciled ${updated} blocks, ${remaining} still unfinalized`);
-          } else {
-            console.log(`[FinalityReconciler] Reconciled ${updated} blocks`);
+            console.log(`[FinalityReconciler] Reconciled ${totalReconciled} blocks in ${batchCount} batches, ${remaining} still unfinalized`);
+            totalReconciled = 0;
+            batchCount = 0;
           }
-          // More work likely available, run again quickly
+
+          // Continue immediately when there's work (no delay for fast catch-up)
           await sleep(ACTIVE_INTERVAL_MS);
         } else {
+          // Log final progress before going idle
+          if (totalReconciled > 0) {
+            console.log(`[FinalityReconciler] Reconciled ${totalReconciled} blocks in ${batchCount} batches`);
+            totalReconciled = 0;
+            batchCount = 0;
+          }
+
           consecutiveEmpty++;
           updateWorkerState(WORKER_NAME, 'idle');
-          // No work, wait longer
           await sleep(IDLE_INTERVAL_MS);
 
           // Periodically log status when idle
-          if (consecutiveEmpty % 12 === 0) { // Every minute when idle
+          if (consecutiveEmpty % 6 === 0) { // Every minute when idle
             const remaining = await getUnfinalizedBlockCount();
             if (remaining > 0) {
               console.log(`[FinalityReconciler] Idle but ${remaining} blocks still unfinalized (waiting for milestones)`);
