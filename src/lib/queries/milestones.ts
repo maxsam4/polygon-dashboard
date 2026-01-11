@@ -149,6 +149,8 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
     }
 
     const blockNumbers = olderBlocks.map(b => b.block_number);
+    const minBlock = blockNumbers[blockNumbers.length - 1]; // Already sorted DESC, last is smallest
+    const maxBlock = blockNumbers[0]; // First is largest
     const result = await query<{ count: string }>(
       `WITH updated AS (
          UPDATE blocks b
@@ -159,18 +161,21 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
            time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
            updated_at = NOW()
          FROM milestones m
-         WHERE b.block_number BETWEEN m.start_block AND m.end_block
+         WHERE m.start_block <= $2 AND m.end_block >= $3
+           AND b.block_number BETWEEN m.start_block AND m.end_block
            AND b.block_number = ANY($1::bigint[])
          RETURNING 1
        )
        SELECT COUNT(*) as count FROM updated`,
-      [blockNumbers]
+      [blockNumbers, maxBlock, minBlock]
     );
     return parseInt(result[0]?.count ?? '0', 10);
   }
 
   // Step 2: Update only these specific blocks
   const blockNumbers = unfinalizedBlocks.map(b => b.block_number);
+  const minBlock = blockNumbers[blockNumbers.length - 1]; // Already sorted DESC, last is smallest
+  const maxBlock = blockNumbers[0]; // First is largest
   const result = await query<{ count: string }>(
     `WITH updated AS (
        UPDATE blocks b
@@ -181,12 +186,13 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
          time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
          updated_at = NOW()
        FROM milestones m
-       WHERE b.block_number BETWEEN m.start_block AND m.end_block
+       WHERE m.start_block <= $2 AND m.end_block >= $3
+         AND b.block_number BETWEEN m.start_block AND m.end_block
          AND b.block_number = ANY($1::bigint[])
        RETURNING 1
      )
      SELECT COUNT(*) as count FROM updated`,
-    [blockNumbers]
+    [blockNumbers, maxBlock, minBlock]
   );
   return parseInt(result[0]?.count ?? '0', 10);
 }

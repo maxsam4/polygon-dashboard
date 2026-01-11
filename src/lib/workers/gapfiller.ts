@@ -32,7 +32,8 @@ async function reconcileBlocksInRange(startBlock: bigint, endBlock: bigint): Pro
         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
         updated_at = NOW()
       FROM milestones m
-      WHERE b.block_number BETWEEN m.start_block AND m.end_block
+      WHERE m.start_block <= $2 AND m.end_block >= $1
+        AND b.block_number BETWEEN m.start_block AND m.end_block
         AND b.finalized = FALSE
         AND b.block_number BETWEEN $1 AND $2
       RETURNING 1

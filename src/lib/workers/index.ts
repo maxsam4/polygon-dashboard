@@ -33,8 +33,8 @@ export async function startWorkers(): Promise<void> {
     return;
   }
   const targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK ?? '50000000');
-  const rpcDelayMs = parseInt(process.env.RPC_DELAY_MS ?? '250', 10);
-  const heimdallDelayMs = parseInt(process.env.HEIMDALL_DELAY_MS ?? '500', 10);
+  const rpcDelayMs = parseInt(process.env.RPC_DELAY_MS ?? '100', 10);
+  const heimdallDelayMs = parseInt(process.env.HEIMDALL_DELAY_MS ?? '200', 10);
 
   console.log('[Workers] Starting workers...');
   console.log(`[Workers] Backfill target: ${targetBlock}`);
