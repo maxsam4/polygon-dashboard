@@ -105,43 +105,58 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile range - process up to 2000 blocks per edge per run
-const RECONCILE_RANGE = 2000;
+// Reconcile range - process up to 5000 blocks per run
+const RECONCILE_RANGE = 5000;
 
-// Single optimized reconciliation query that handles both edges
-// Uses a LIMIT to avoid processing too many at once while still being efficient
+// Mutex to prevent concurrent reconciliation
+let reconciliationInProgress = false;
+
+// Single optimized reconciliation query
+// Uses partial index on (finalized, block_number) WHERE finalized = FALSE
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
-  // Single query that reconciles ALL unfinalized blocks within milestone coverage
-  // More efficient than two separate queries with boundary calculations
-  const result = await query<{ count: string }>(
-    `WITH
-     milestone_bounds AS (
-       SELECT MIN(start_block) as min_start, MAX(end_block) as max_end FROM milestones
-     ),
-     updated AS (
-       UPDATE blocks b
-       SET
-         finalized = TRUE,
-         finalized_at = m.timestamp,
-         milestone_id = m.milestone_id,
-         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-         updated_at = NOW()
-       FROM milestones m, milestone_bounds mb
-       WHERE b.block_number BETWEEN m.start_block AND m.end_block
-         AND b.finalized = FALSE
-         AND b.block_number BETWEEN mb.min_start AND mb.max_end
-         AND b.block_number IN (
-           SELECT block_number FROM blocks
-           WHERE finalized = FALSE
-             AND block_number BETWEEN mb.min_start AND mb.max_end
-           LIMIT $1
-         )
-       RETURNING 1
-     )
-     SELECT COUNT(*) as count FROM updated`,
-    [RECONCILE_RANGE]
-  );
-  return parseInt(result[0]?.count ?? '0', 10);
+  // Prevent concurrent reconciliation queries from stacking up
+  if (reconciliationInProgress) {
+    return 0;
+  }
+
+  reconciliationInProgress = true;
+  try {
+    // Step 1: Get a batch of unfinalized block numbers (uses partial index)
+    const unfinalizedBlocks = await query<{ block_number: string }>(
+      `SELECT block_number FROM blocks
+       WHERE finalized = FALSE
+       ORDER BY block_number DESC
+       LIMIT $1`,
+      [RECONCILE_RANGE]
+    );
+
+    if (unfinalizedBlocks.length === 0) {
+      return 0;
+    }
+
+    // Step 2: Update only these specific blocks
+    const blockNumbers = unfinalizedBlocks.map(b => b.block_number);
+    const result = await query<{ count: string }>(
+      `WITH updated AS (
+         UPDATE blocks b
+         SET
+           finalized = TRUE,
+           finalized_at = m.timestamp,
+           milestone_id = m.milestone_id,
+           time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+           updated_at = NOW()
+         FROM milestones m
+         WHERE b.block_number BETWEEN m.start_block AND m.end_block
+           AND b.block_number = ANY($1::bigint[])
+         RETURNING 1
+       )
+       SELECT COUNT(*) as count FROM updated`,
+      [blockNumbers]
+    );
+    return parseInt(result[0]?.count ?? '0', 10);
+  } finally {
+    reconciliationInProgress = false;
+  }
 }
 
 // Reconcile blocks for a specific milestone
@@ -171,34 +186,48 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
 }
 
 // Reconcile blocks for multiple milestones in a single query
+// Shares mutex with reconcileUnfinalizedBlocks to prevent concurrent reconciliation
 export async function reconcileBlocksForMilestones(milestones: Milestone[]): Promise<number> {
   if (milestones.length === 0) return 0;
 
-  // Find the overall block range
-  const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
-  const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+  // Prevent concurrent reconciliation queries from stacking up
+  if (reconciliationInProgress) {
+    return 0;
+  }
 
-  // Use a single query that joins with our milestones table
-  // Since we just inserted these milestones, they're in the DB
-  const result = await query<{ count: string }>(
-    `WITH updated AS (
-      UPDATE blocks b
-      SET
-        finalized = TRUE,
-        finalized_at = m.timestamp,
-        milestone_id = m.milestone_id,
-        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-        updated_at = NOW()
-      FROM milestones m
-      WHERE b.block_number BETWEEN m.start_block AND m.end_block
-        AND b.finalized = FALSE
-        AND b.block_number BETWEEN $1 AND $2
-      RETURNING 1
-    )
-    SELECT COUNT(*) as count FROM updated`,
-    [minBlock.toString(), maxBlock.toString()]
-  );
-  return parseInt(result[0]?.count ?? '0', 10);
+  reconciliationInProgress = true;
+  try {
+    // Find the overall block range
+    const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
+    const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+
+    // Get the specific milestone IDs we care about
+    const milestoneIds = milestones.map(m => m.milestoneId.toString());
+
+    // Use a single query that joins ONLY with the specific milestones we inserted
+    const result = await query<{ count: string }>(
+      `WITH updated AS (
+        UPDATE blocks b
+        SET
+          finalized = TRUE,
+          finalized_at = m.timestamp,
+          milestone_id = m.milestone_id,
+          time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+          updated_at = NOW()
+        FROM milestones m
+        WHERE b.block_number BETWEEN m.start_block AND m.end_block
+          AND b.finalized = FALSE
+          AND b.block_number BETWEEN $1 AND $2
+          AND m.milestone_id = ANY($3::bigint[])
+        RETURNING 1
+      )
+      SELECT COUNT(*) as count FROM updated`,
+      [minBlock.toString(), maxBlock.toString(), milestoneIds]
+    );
+    return parseInt(result[0]?.count ?? '0', 10);
+  } finally {
+    reconciliationInProgress = false;
+  }
 }
 
 interface MilestoneWithStatsRow extends MilestoneRow {
