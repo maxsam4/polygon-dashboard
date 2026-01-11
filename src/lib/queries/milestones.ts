@@ -118,12 +118,13 @@ function getCompressionThreshold(): Date {
 
 // Single optimized reconciliation query
 // Uses direct UPDATE with subquery for better performance than ANY() array
+// Processes BOTH recent and older blocks in each call to ensure catch-up
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
   const threshold = getCompressionThreshold();
+  let totalCount = 0;
 
-  // Single efficient query: find unfinalized blocks and update in one shot
-  // Uses block_number range to filter milestones efficiently
-  const result = await query<{ count: string }>(
+  // First: process recent blocks (higher priority)
+  const recentResult = await query<{ count: string }>(
     `WITH to_update AS (
        SELECT block_number
        FROM blocks
@@ -154,13 +155,10 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
      SELECT COUNT(*) as count FROM updated`,
     [threshold, RECONCILE_RANGE]
   );
+  totalCount += parseInt(recentResult[0]?.count ?? '0', 10);
 
-  const recentCount = parseInt(result[0]?.count ?? '0', 10);
-  if (recentCount > 0) {
-    return recentCount;
-  }
-
-  // No recent blocks - try older blocks
+  // Second: ALSO process older blocks (for catch-up)
+  // This ensures we make progress on backlog even when new blocks keep coming
   const olderResult = await query<{ count: string }>(
     `WITH to_update AS (
        SELECT block_number
@@ -192,8 +190,9 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
      SELECT COUNT(*) as count FROM updated`,
     [threshold, RECONCILE_RANGE]
   );
+  totalCount += parseInt(olderResult[0]?.count ?? '0', 10);
 
-  return parseInt(olderResult[0]?.count ?? '0', 10);
+  return totalCount;
 }
 
 // Reconcile blocks for a specific milestone
