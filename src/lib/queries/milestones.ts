@@ -109,8 +109,8 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
 // Higher limit OK when targeting uncompressed chunks via timestamp filter
 const RECONCILE_RANGE = 1000;
 
-// Mutex to prevent concurrent reconciliation
-let reconciliationInProgress = false;
+// Advisory lock ID for reconciliation (arbitrary unique number)
+const RECONCILE_LOCK_ID = 12345678;
 
 // Timestamp threshold - only process blocks newer than this to avoid compressed chunks
 // TimescaleDB compresses chunks older than ~2 weeks, so we process recent data first
@@ -120,16 +120,30 @@ function getCompressionThreshold(): Date {
   return threshold;
 }
 
+// Try to acquire advisory lock, returns true if acquired
+async function tryAcquireReconcileLock(): Promise<boolean> {
+  const result = await queryOne<{ acquired: boolean }>(
+    `SELECT pg_try_advisory_lock($1) as acquired`,
+    [RECONCILE_LOCK_ID]
+  );
+  return result?.acquired ?? false;
+}
+
+// Release advisory lock
+async function releaseReconcileLock(): Promise<void> {
+  await query(`SELECT pg_advisory_unlock($1)`, [RECONCILE_LOCK_ID]);
+}
+
 // Single optimized reconciliation query
 // Uses partial index on (finalized, block_number) WHERE finalized = FALSE
 // Targets uncompressed chunks first via timestamp filter to avoid decompression limits
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
-  // Prevent concurrent reconciliation queries from stacking up
-  if (reconciliationInProgress) {
-    return 0;
+  // Try to acquire database-level lock to prevent concurrent reconciliation
+  const acquired = await tryAcquireReconcileLock();
+  if (!acquired) {
+    return 0; // Another reconciliation is in progress
   }
 
-  reconciliationInProgress = true;
   try {
     const threshold = getCompressionThreshold();
 
@@ -200,7 +214,7 @@ export async function reconcileUnfinalizedBlocks(): Promise<number> {
     );
     return parseInt(result[0]?.count ?? '0', 10);
   } finally {
-    reconciliationInProgress = false;
+    await releaseReconcileLock();
   }
 }
 
@@ -231,16 +245,16 @@ export async function reconcileBlocksForMilestone(milestone: Milestone): Promise
 }
 
 // Reconcile blocks for multiple milestones in a single query
-// Shares mutex with reconcileUnfinalizedBlocks to prevent concurrent reconciliation
+// Uses database-level advisory lock shared with reconcileUnfinalizedBlocks
 export async function reconcileBlocksForMilestones(milestones: Milestone[]): Promise<number> {
   if (milestones.length === 0) return 0;
 
-  // Prevent concurrent reconciliation queries from stacking up
-  if (reconciliationInProgress) {
-    return 0;
+  // Try to acquire database-level lock to prevent concurrent reconciliation
+  const acquired = await tryAcquireReconcileLock();
+  if (!acquired) {
+    return 0; // Another reconciliation is in progress
   }
 
-  reconciliationInProgress = true;
   try {
     // Find the overall block range
     const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
@@ -271,7 +285,7 @@ export async function reconcileBlocksForMilestones(milestones: Milestone[]): Pro
     );
     return parseInt(result[0]?.count ?? '0', 10);
   } finally {
-    reconciliationInProgress = false;
+    await releaseReconcileLock();
   }
 }
 
