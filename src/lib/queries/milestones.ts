@@ -105,113 +105,43 @@ export async function getHighestMilestoneId(): Promise<bigint | null> {
   return row?.max ? BigInt(row.max) : null;
 }
 
-// Reconcile range - check ±100 blocks from finalized boundaries
-const RECONCILE_RANGE = 100;
+// Reconcile range - process up to 2000 blocks per edge per run
+const RECONCILE_RANGE = 2000;
 
-// Reconcile live blocks (newest) - checks around the highest finalized block
-async function reconcileLiveBlocks(): Promise<number> {
-  const boundaries = await queryOne<{ max_finalized: string | null }>(
-    `SELECT MAX(block_number) as max_finalized FROM blocks WHERE finalized = TRUE`
-  );
-
-  const milestoneCoverage = await queryOne<{ max_end: string | null }>(
-    `SELECT MAX(end_block) as max_end FROM milestones`
-  );
-
-  if (!milestoneCoverage?.max_end) {
-    return 0;
-  }
-
-  const milestoneMax = BigInt(milestoneCoverage.max_end);
-  let lowerBound: bigint;
-  let upperBound: bigint;
-
-  if (!boundaries?.max_finalized) {
-    // No finalized blocks yet, start from latest milestone
-    upperBound = milestoneMax;
-    lowerBound = milestoneMax - BigInt(RECONCILE_RANGE);
-  } else {
-    const maxFinalized = BigInt(boundaries.max_finalized);
-    lowerBound = maxFinalized - BigInt(RECONCILE_RANGE);
-    upperBound = maxFinalized + BigInt(RECONCILE_RANGE);
-    if (upperBound > milestoneMax) upperBound = milestoneMax;
-  }
-
-  const result = await query<{ count: string }>(
-    `WITH updated AS (
-      UPDATE blocks b
-      SET
-        finalized = TRUE,
-        finalized_at = m.timestamp,
-        milestone_id = m.milestone_id,
-        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-        updated_at = NOW()
-      FROM milestones m
-      WHERE b.block_number BETWEEN m.start_block AND m.end_block
-        AND b.finalized = FALSE
-        AND b.block_number BETWEEN $1 AND $2
-      RETURNING 1
-    )
-    SELECT COUNT(*) as count FROM updated`,
-    [lowerBound.toString(), upperBound.toString()]
-  );
-  return parseInt(result[0]?.count ?? '0', 10);
-}
-
-// Reconcile backfill blocks (oldest) - checks around the lowest finalized block
-async function reconcileBackfillBlocks(): Promise<number> {
-  const boundaries = await queryOne<{ min_finalized: string | null }>(
-    `SELECT MIN(block_number) as min_finalized FROM blocks WHERE finalized = TRUE`
-  );
-
-  const milestoneCoverage = await queryOne<{ min_start: string | null }>(
-    `SELECT MIN(start_block) as min_start FROM milestones`
-  );
-
-  if (!milestoneCoverage?.min_start || !boundaries?.min_finalized) {
-    // Need at least one finalized block to backfill from
-    return 0;
-  }
-
-  const milestoneMin = BigInt(milestoneCoverage.min_start);
-  const minFinalized = BigInt(boundaries.min_finalized);
-
-  // Check blocks BELOW the minimum finalized block
-  let lowerBound = minFinalized - BigInt(RECONCILE_RANGE);
-  if (lowerBound < milestoneMin) lowerBound = milestoneMin;
-  const upperBound = minFinalized;
-
-  // Don't run if we've reached milestone coverage limit
-  if (lowerBound >= minFinalized) {
-    return 0;
-  }
-
-  const result = await query<{ count: string }>(
-    `WITH updated AS (
-      UPDATE blocks b
-      SET
-        finalized = TRUE,
-        finalized_at = m.timestamp,
-        milestone_id = m.milestone_id,
-        time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-        updated_at = NOW()
-      FROM milestones m
-      WHERE b.block_number BETWEEN m.start_block AND m.end_block
-        AND b.finalized = FALSE
-        AND b.block_number BETWEEN $1 AND $2
-      RETURNING 1
-    )
-    SELECT COUNT(*) as count FROM updated`,
-    [lowerBound.toString(), upperBound.toString()]
-  );
-  return parseInt(result[0]?.count ?? '0', 10);
-}
-
-// Main reconciliation function - runs both live and backfill reconciliation
+// Single optimized reconciliation query that handles both edges
+// Uses a LIMIT to avoid processing too many at once while still being efficient
 export async function reconcileUnfinalizedBlocks(): Promise<number> {
-  const liveCount = await reconcileLiveBlocks();
-  const backfillCount = await reconcileBackfillBlocks();
-  return liveCount + backfillCount;
+  // Single query that reconciles ALL unfinalized blocks within milestone coverage
+  // More efficient than two separate queries with boundary calculations
+  const result = await query<{ count: string }>(
+    `WITH
+     milestone_bounds AS (
+       SELECT MIN(start_block) as min_start, MAX(end_block) as max_end FROM milestones
+     ),
+     updated AS (
+       UPDATE blocks b
+       SET
+         finalized = TRUE,
+         finalized_at = m.timestamp,
+         milestone_id = m.milestone_id,
+         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
+         updated_at = NOW()
+       FROM milestones m, milestone_bounds mb
+       WHERE b.block_number BETWEEN m.start_block AND m.end_block
+         AND b.finalized = FALSE
+         AND b.block_number BETWEEN mb.min_start AND mb.max_end
+         AND b.block_number IN (
+           SELECT block_number FROM blocks
+           WHERE finalized = FALSE
+             AND block_number BETWEEN mb.min_start AND mb.max_end
+           LIMIT $1
+         )
+       RETURNING 1
+     )
+     SELECT COUNT(*) as count FROM updated`,
+    [RECONCILE_RANGE]
+  );
+  return parseInt(result[0]?.count ?? '0', 10);
 }
 
 // Reconcile blocks for a specific milestone

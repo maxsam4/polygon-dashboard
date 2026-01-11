@@ -1,7 +1,8 @@
 import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
 
-const RECONCILE_INTERVAL_MS = 10000; // 10 seconds
+const ACTIVE_INTERVAL_MS = 500;   // 500ms when actively reconciling
+const IDLE_INTERVAL_MS = 5000;    // 5 seconds when no work
 
 export class FinalityReconciler {
   private running = false;
@@ -19,17 +20,40 @@ export class FinalityReconciler {
   }
 
   private async reconcile(): Promise<void> {
+    let consecutiveEmpty = 0;
+
     while (this.running) {
       try {
         const updated = await reconcileUnfinalizedBlocks();
+
         if (updated > 0) {
-          const remaining = await getUnfinalizedBlockCount();
-          console.log(`[FinalityReconciler] Reconciled ${updated} blocks, ${remaining} still unfinalized`);
+          consecutiveEmpty = 0;
+          // Only log remaining count occasionally to reduce DB load
+          if (updated >= 100) {
+            const remaining = await getUnfinalizedBlockCount();
+            console.log(`[FinalityReconciler] Reconciled ${updated} blocks, ${remaining} still unfinalized`);
+          } else {
+            console.log(`[FinalityReconciler] Reconciled ${updated} blocks`);
+          }
+          // More work likely available, run again quickly
+          await sleep(ACTIVE_INTERVAL_MS);
+        } else {
+          consecutiveEmpty++;
+          // No work, wait longer
+          await sleep(IDLE_INTERVAL_MS);
+
+          // Periodically log status when idle
+          if (consecutiveEmpty % 12 === 0) { // Every minute when idle
+            const remaining = await getUnfinalizedBlockCount();
+            if (remaining > 0) {
+              console.log(`[FinalityReconciler] Idle but ${remaining} blocks still unfinalized (waiting for milestones)`);
+            }
+          }
         }
       } catch (error) {
         console.error('[FinalityReconciler] Error:', error);
+        await sleep(IDLE_INTERVAL_MS);
       }
-      await sleep(RECONCILE_INTERVAL_MS);
     }
   }
 }
