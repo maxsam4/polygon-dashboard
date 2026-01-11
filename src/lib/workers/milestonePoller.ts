@@ -7,6 +7,9 @@ import {
 import { Milestone } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+
+const WORKER_NAME = 'MilestonePoller';
 
 // Immediate reconciliation for new milestones (fast, targeted updates)
 // FinalityReconciler handles any missed blocks in background
@@ -23,6 +26,8 @@ export class MilestonePoller {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     // Initialize from database - get highest sequence ID we have
     this.lastSequenceId = await getHighestSequenceId();
@@ -33,12 +38,19 @@ export class MilestonePoller {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async poll(): Promise<void> {
     while (this.running) {
       try {
+        updateWorkerState(WORKER_NAME, 'running');
         const processed = await this.checkNewMilestones();
+        if (processed > 0) {
+          updateWorkerRun(WORKER_NAME, processed);
+        } else {
+          updateWorkerState(WORKER_NAME, 'idle');
+        }
         // If we processed a full batch, there might be more - don't wait
         if (processed < BATCH_SIZE) {
           await sleep(POLL_INTERVAL_MS);
@@ -46,9 +58,11 @@ export class MilestonePoller {
       } catch (error) {
         if (error instanceof HeimdallExhaustedError) {
           console.error('[MilestonePoller] Heimdall exhausted, retrying in 5s...');
+          updateWorkerError(WORKER_NAME, 'Heimdall exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[MilestonePoller] Error:', error);
+          updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
           await sleep(POLL_INTERVAL_MS);
         }
       }

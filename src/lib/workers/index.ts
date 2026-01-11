@@ -5,6 +5,11 @@ import { MilestoneBackfiller } from './milestoneBackfiller';
 import { FinalityReconciler } from './finalityReconciler';
 import { GapAnalyzer } from './gapAnalyzer';
 import { Gapfiller } from './gapfiller';
+import { getAllWorkerStatuses } from './workerStatus';
+import type { WorkerStatus } from './workerStatus';
+
+export { getAllWorkerStatuses };
+export type { WorkerStatus };
 
 // Use globalThis to share state across different module instances in Next.js bundling
 const globalState = globalThis as typeof globalThis & {

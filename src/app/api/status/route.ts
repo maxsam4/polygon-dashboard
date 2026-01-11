@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
-import { areWorkersRunning } from '@/lib/workers';
+import { areWorkersRunning, getAllWorkerStatuses } from '@/lib/workers';
 import { getPendingGaps, getGapStats, getDataCoverage } from '@/lib/queries/gaps';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic';
 interface BlockStats {
   min_block: string | null;
   max_block: string | null;
+  min_timestamp: Date | null;
+  max_timestamp: Date | null;
   total_count: string;
   finalized_count: string;
   min_finalized: string | null;
@@ -19,6 +21,8 @@ interface MilestoneStats {
   max_seq: string | null;
   min_start_block: string | null;
   max_end_block: string | null;
+  min_timestamp: Date | null;
+  max_timestamp: Date | null;
   total_count: string;
 }
 
@@ -29,6 +33,8 @@ export async function GET() {
       SELECT
         MIN(block_number)::text as min_block,
         MAX(block_number)::text as max_block,
+        MIN(timestamp) as min_timestamp,
+        MAX(timestamp) as max_timestamp,
         COUNT(*)::text as total_count,
         COUNT(*) FILTER (WHERE finalized = true)::text as finalized_count,
         MIN(block_number) FILTER (WHERE finalized = true)::text as min_finalized,
@@ -43,6 +49,8 @@ export async function GET() {
         MAX(sequence_id)::text as max_seq,
         MIN(start_block)::text as min_start_block,
         MAX(end_block)::text as max_end_block,
+        MIN(timestamp) as min_timestamp,
+        MAX(timestamp) as max_timestamp,
         COUNT(*)::text as total_count
       FROM milestones
     `);
@@ -91,12 +99,25 @@ export async function GET() {
       SELECT sequence_id::text, end_block::text, timestamp FROM milestones ORDER BY sequence_id DESC LIMIT 1
     `);
 
+    // Get individual worker statuses
+    const workerStatuses = getAllWorkerStatuses().map(ws => ({
+      name: ws.name,
+      state: ws.state,
+      lastRunAt: ws.lastRunAt?.toISOString() ?? null,
+      lastErrorAt: ws.lastErrorAt?.toISOString() ?? null,
+      lastError: ws.lastError,
+      itemsProcessed: ws.itemsProcessed,
+    }));
+
     const response = {
       workersRunning: areWorkersRunning(),
+      workerStatuses,
       timestamp: new Date().toISOString(),
       blocks: {
         min: blockStats?.min_block ?? null,
         max: blockStats?.max_block ?? null,
+        minTimestamp: blockStats?.min_timestamp?.toISOString() ?? null,
+        maxTimestamp: blockStats?.max_timestamp?.toISOString() ?? null,
         total: parseInt(blockStats?.total_count ?? '0', 10),
         finalized: parseInt(blockStats?.finalized_count ?? '0', 10),
         minFinalized: blockStats?.min_finalized ?? null,
@@ -122,6 +143,8 @@ export async function GET() {
         maxSeq: milestoneStats?.max_seq ?? null,
         minStartBlock: milestoneStats?.min_start_block ?? null,
         maxEndBlock: milestoneStats?.max_end_block ?? null,
+        minTimestamp: milestoneStats?.min_timestamp?.toISOString() ?? null,
+        maxTimestamp: milestoneStats?.max_timestamp?.toISOString() ?? null,
         total: parseInt(milestoneStats?.total_count ?? '0', 10),
         gaps: milestoneGaps.map(g => ({
           start: g.startValue.toString(),

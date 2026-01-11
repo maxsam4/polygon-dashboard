@@ -9,6 +9,9 @@ import {
 import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+
+const WORKER_NAME = 'LivePoller';
 
 const POLL_INTERVAL_MS = 2000;
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
@@ -22,6 +25,8 @@ export class LivePoller {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     // Initialize from database
     this.lastProcessedBlock = await getHighestBlockNumber();
@@ -32,26 +37,35 @@ export class LivePoller {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async poll(): Promise<void> {
     while (this.running) {
       try {
-        await this.processNewBlocks();
+        updateWorkerState(WORKER_NAME, 'running');
+        const processed = await this.processNewBlocks();
+        if (processed > 0) {
+          updateWorkerRun(WORKER_NAME, processed);
+        } else {
+          updateWorkerState(WORKER_NAME, 'idle');
+        }
         await sleep(POLL_INTERVAL_MS);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
           console.error('[LivePoller] RPC exhausted, waiting 5 minutes...');
+          updateWorkerError(WORKER_NAME, 'RPC exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[LivePoller] Error:', error);
+          updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
           await sleep(POLL_INTERVAL_MS);
         }
       }
     }
   }
 
-  private async processNewBlocks(): Promise<void> {
+  private async processNewBlocks(): Promise<number> {
     const rpc = getRpcClient();
     const latestBlockNumber = await rpc.getLatestBlockNumber();
 
@@ -62,7 +76,7 @@ export class LivePoller {
     const gap = latestBlockNumber - this.lastProcessedBlock;
 
     if (gap <= 0n) {
-      return;
+      return 0;
     }
 
     // If gap is too large, skip to near the tip and let gapfiller handle the gap
@@ -83,15 +97,16 @@ export class LivePoller {
     const batchSize = Math.min(blocksToProcess, BATCH_SIZE);
 
     if (batchSize > 1) {
-      await this.processBatch(this.lastProcessedBlock + 1n, this.lastProcessedBlock + BigInt(batchSize));
+      return await this.processBatch(this.lastProcessedBlock + 1n, this.lastProcessedBlock + BigInt(batchSize));
     } else {
       // Process single block
       await this.processBlock(this.lastProcessedBlock + 1n);
       this.lastProcessedBlock = this.lastProcessedBlock + 1n;
+      return 1;
     }
   }
 
-  private async processBatch(startBlock: bigint, endBlock: bigint): Promise<void> {
+  private async processBatch(startBlock: bigint, endBlock: bigint): Promise<number> {
     const blocksToFetch = Number(endBlock - startBlock) + 1;
     const rpc = getRpcClient();
     const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
@@ -158,7 +173,9 @@ export class LivePoller {
       await insertBlocksBatch(blocks);
       this.lastProcessedBlock = blocks[blocks.length - 1].blockNumber;
       console.log(`[LivePoller] Inserted ${blocks.length} blocks (${startBlock}-${this.lastProcessedBlock})`);
+      return blocks.length;
     }
+    return 0;
   }
 
   private async processBlock(blockNumber: bigint): Promise<void> {

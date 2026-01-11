@@ -1,6 +1,8 @@
 import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
+const WORKER_NAME = 'FinalityReconciler';
 const ACTIVE_INTERVAL_MS = 2000;  // 2s when actively reconciling (MilestonePoller handles new blocks)
 const IDLE_INTERVAL_MS = 10000;   // 10 seconds when no work
 
@@ -10,6 +12,8 @@ export class FinalityReconciler {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     console.log('[FinalityReconciler] Starting periodic reconciliation');
     this.reconcile();
@@ -17,6 +21,7 @@ export class FinalityReconciler {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async reconcile(): Promise<void> {
@@ -24,10 +29,12 @@ export class FinalityReconciler {
 
     while (this.running) {
       try {
+        updateWorkerState(WORKER_NAME, 'running');
         const updated = await reconcileUnfinalizedBlocks();
 
         if (updated > 0) {
           consecutiveEmpty = 0;
+          updateWorkerRun(WORKER_NAME, updated);
           // Only log remaining count occasionally to reduce DB load
           if (updated >= 100) {
             const remaining = await getUnfinalizedBlockCount();
@@ -39,6 +46,7 @@ export class FinalityReconciler {
           await sleep(ACTIVE_INTERVAL_MS);
         } else {
           consecutiveEmpty++;
+          updateWorkerState(WORKER_NAME, 'idle');
           // No work, wait longer
           await sleep(IDLE_INTERVAL_MS);
 
@@ -52,6 +60,7 @@ export class FinalityReconciler {
         }
       } catch (error) {
         console.error('[FinalityReconciler] Error:', error);
+        updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
         await sleep(IDLE_INTERVAL_MS);
       }
     }

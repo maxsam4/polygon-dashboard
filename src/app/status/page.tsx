@@ -23,12 +23,24 @@ interface Coverage {
   lastAnalyzedAt: string | null;
 }
 
+interface WorkerStatusData {
+  name: string;
+  state: 'running' | 'idle' | 'error' | 'stopped';
+  lastRunAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  itemsProcessed: number;
+}
+
 interface StatusData {
   workersRunning: boolean;
+  workerStatuses: WorkerStatusData[];
   timestamp: string;
   blocks: {
     min: string | null;
     max: string | null;
+    minTimestamp: string | null;
+    maxTimestamp: string | null;
     total: number;
     finalized: number;
     minFinalized: string | null;
@@ -48,6 +60,8 @@ interface StatusData {
     maxSeq: string | null;
     minStartBlock: string | null;
     maxEndBlock: string | null;
+    minTimestamp: string | null;
+    maxTimestamp: string | null;
     total: number;
     gaps: Gap[];
     gapStats: GapStats;
@@ -84,12 +98,39 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+function formatDateRange(minTimestamp: string | null, maxTimestamp: string | null): string {
+  if (!minTimestamp || !maxTimestamp) return 'N/A';
+  const min = new Date(minTimestamp);
+  const max = new Date(maxTimestamp);
+  return `${min.toLocaleString()} - ${max.toLocaleString()}`;
+}
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={`px-2 py-1 rounded text-sm font-medium ${
       ok ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'
     }`}>
       {label}
+    </span>
+  );
+}
+
+function WorkerStateBadge({ state }: { state: WorkerStatusData['state'] }) {
+  const colors = {
+    running: 'bg-blue-900 text-blue-200',
+    idle: 'bg-green-900 text-green-200',
+    error: 'bg-red-900 text-red-200',
+    stopped: 'bg-gray-700 text-gray-300',
+  };
+  const labels = {
+    running: 'Running',
+    idle: 'Idle',
+    error: 'Error',
+    stopped: 'Stopped',
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[state]}`}>
+      {labels[state]}
     </span>
   );
 }
@@ -215,6 +256,7 @@ export default function StatusPage() {
                 />
                 <StatRow label="Total Blocks" value={formatNumber(status.blocks.total)} />
                 <StatRow label="Block Range" value={`${status.blocks.min ?? 'N/A'} - ${status.blocks.max ?? 'N/A'}`} />
+                <StatRow label="Time Range" value={formatDateRange(status.blocks.minTimestamp, status.blocks.maxTimestamp)} />
                 <StatRow label="Finalized" value={formatNumber(status.blocks.finalized)} />
                 <StatRow
                   label="Unfinalized (in milestone range)"
@@ -238,6 +280,7 @@ export default function StatusPage() {
                 <StatRow label="Total Milestones" value={formatNumber(status.milestones.total)} />
                 <StatRow label="Sequence Range" value={`${status.milestones.minSeq ?? 'N/A'} - ${status.milestones.maxSeq ?? 'N/A'}`} />
                 <StatRow label="Block Coverage" value={`${status.milestones.minStartBlock ?? 'N/A'} - ${status.milestones.maxEndBlock ?? 'N/A'}`} />
+                <StatRow label="Time Range" value={formatDateRange(status.milestones.minTimestamp, status.milestones.maxTimestamp)} />
               </div>
             </Card>
 
@@ -375,10 +418,6 @@ export default function StatusPage() {
             <Card title="Health Indicators">
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Workers</span>
-                  <StatusBadge ok={status.workersRunning} label={status.workersRunning ? 'OK' : 'Stopped'} />
-                </div>
-                <div className="flex justify-between items-center">
                   <span className="text-gray-400">Block Freshness</span>
                   <StatusBadge
                     ok={!status.blocks.latest || status.blocks.latest.age < 10}
@@ -413,6 +452,37 @@ export default function StatusPage() {
                     label={status.finality.gapStats.pendingCount > 0 ? `${status.finality.gapStats.pendingCount} pending` : 'None'}
                   />
                 </div>
+              </div>
+            </Card>
+
+            {/* Worker Health */}
+            <Card title="Worker Health">
+              <div className="space-y-2">
+                {status.workerStatuses.length === 0 ? (
+                  <div className="text-gray-500">No worker status data yet</div>
+                ) : (
+                  status.workerStatuses.map((worker) => (
+                    <div key={worker.name} className="py-2 border-b border-gray-700 last:border-0">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 font-medium">{worker.name}</span>
+                        <WorkerStateBadge state={worker.state} />
+                      </div>
+                      <div className="flex justify-between items-center mt-1 text-xs">
+                        <span className="text-gray-500">
+                          Last run: {worker.lastRunAt ? formatTimeAgo(worker.lastRunAt) : 'Never'}
+                        </span>
+                        <span className="text-gray-500">
+                          {formatNumber(worker.itemsProcessed)} processed
+                        </span>
+                      </div>
+                      {worker.state === 'error' && worker.lastError && (
+                        <div className="mt-1 text-xs text-red-400 truncate">
+                          Error: {worker.lastError}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
           </div>

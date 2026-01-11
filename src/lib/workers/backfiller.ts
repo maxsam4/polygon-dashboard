@@ -6,7 +6,9 @@ import {
 } from '@/lib/queries/blocks';
 import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
+const WORKER_NAME = 'Backfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 const BASE_BATCH_SIZE = 50; // Base batch size, multiplied by endpoint count
 
@@ -23,6 +25,8 @@ export class Backfiller {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     console.log(`[Backfiller] Starting backfill to block ${this.targetBlock}`);
     this.backfill();
@@ -30,6 +34,7 @@ export class Backfiller {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async backfill(): Promise<void> {
@@ -38,36 +43,44 @@ export class Backfiller {
 
     while (this.running) {
       try {
+        updateWorkerState(WORKER_NAME, 'running');
         const lowestBlock = await getLowestBlockNumber();
 
         if (lowestBlock === null) {
           // No blocks yet, wait for live poller to add some
           console.log('[Backfiller] No blocks in DB yet, waiting...');
+          updateWorkerState(WORKER_NAME, 'idle');
           await sleep(5000);
           continue;
         }
 
         if (lowestBlock <= this.targetBlock) {
           console.log('[Backfiller] Backfill complete!');
+          updateWorkerState(WORKER_NAME, 'idle');
           this.running = false;
           return;
         }
 
-        await this.processBatch(rpc, lowestBlock);
+        const processed = await this.processBatch(rpc, lowestBlock);
+        if (processed > 0) {
+          updateWorkerRun(WORKER_NAME, processed);
+        }
         await sleep(this.delayMs);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
           console.error('[Backfiller] RPC exhausted, waiting...');
+          updateWorkerError(WORKER_NAME, 'RPC exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[Backfiller] Error:', error);
+          updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
           await sleep(5000);
         }
       }
     }
   }
 
-  private async processBatch(rpc: ReturnType<typeof getRpcClient>, currentLowest: bigint): Promise<void> {
+  private async processBatch(rpc: ReturnType<typeof getRpcClient>, currentLowest: bigint): Promise<number> {
     // Scale batch size by endpoint count for better parallelism
     const batchSize = BASE_BATCH_SIZE * rpc.endpointCount;
     const startBlock = currentLowest - BigInt(batchSize);
@@ -137,6 +150,8 @@ export class Backfiller {
     if (blocks.length > 0) {
       await insertBlocksBatch(blocks);
       console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
+      return blocks.length;
     }
+    return 0;
   }
 }

@@ -14,7 +14,9 @@ import {
 import { Block, Milestone } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { query } from '@/lib/db';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
+const WORKER_NAME = 'Gapfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds
 const CHUNK_SIZE = 10; // Process gaps in chunks of 10
 
@@ -52,6 +54,8 @@ export class Gapfiller {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     console.log('[Gapfiller] Starting gap filler');
     this.fill();
@@ -59,41 +63,50 @@ export class Gapfiller {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async fill(): Promise<void> {
     while (this.running) {
       try {
+        updateWorkerState(WORKER_NAME, 'running');
         // Try to fill gaps in priority order: block, milestone, finality
         const filledBlock = await this.fillNextGap('block');
         if (filledBlock) {
+          updateWorkerRun(WORKER_NAME, 1);
           await sleep(this.delayMs);
           continue;
         }
 
         const filledMilestone = await this.fillNextGap('milestone');
         if (filledMilestone) {
+          updateWorkerRun(WORKER_NAME, 1);
           await sleep(this.delayMs);
           continue;
         }
 
         const filledFinality = await this.fillNextGap('finality');
         if (filledFinality) {
+          updateWorkerRun(WORKER_NAME, 1);
           await sleep(this.delayMs);
           continue;
         }
 
         // No gaps to fill, wait before checking again
+        updateWorkerState(WORKER_NAME, 'idle');
         await sleep(EXHAUSTED_RETRY_MS);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
           console.error('[Gapfiller] RPC exhausted, waiting...');
+          updateWorkerError(WORKER_NAME, 'RPC exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else if (error instanceof HeimdallExhaustedError) {
           console.error('[Gapfiller] Heimdall exhausted, waiting...');
+          updateWorkerError(WORKER_NAME, 'Heimdall exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {
           console.error('[Gapfiller] Error:', error);
+          updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
           await sleep(EXHAUSTED_RETRY_MS);
         }
       }

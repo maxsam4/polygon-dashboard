@@ -1,7 +1,9 @@
 import { query, queryOne } from '@/lib/db';
-import { insertGap, getDataCoverage, upsertDataCoverage, updateWaterMarks } from '@/lib/queries/gaps';
+import { insertGap, getDataCoverage, upsertDataCoverage, updateWaterMarks, updateLastAnalyzedAt } from '@/lib/queries/gaps';
 import { sleep } from '@/lib/utils';
+import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
+const WORKER_NAME = 'GapAnalyzer';
 const ANALYZE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const ERROR_RETRY_MS = 60 * 1000; // 1 minute
 const BATCH_SIZE = 10000; // Validate up to 10k items per direction per run
@@ -19,6 +21,8 @@ export class GapAnalyzer {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    initWorkerStatus(WORKER_NAME);
+    updateWorkerState(WORKER_NAME, 'running');
 
     console.log('[GapAnalyzer] Starting gap analysis');
     this.analyze();
@@ -26,16 +30,21 @@ export class GapAnalyzer {
 
   stop(): void {
     this.running = false;
+    updateWorkerState(WORKER_NAME, 'stopped');
   }
 
   private async analyze(): Promise<void> {
     while (this.running) {
       try {
+        updateWorkerState(WORKER_NAME, 'running');
         await this.runAnalysis();
+        updateWorkerRun(WORKER_NAME, 1);
         this.firstRun = false;
+        updateWorkerState(WORKER_NAME, 'idle');
         await sleep(ANALYZE_INTERVAL_MS);
       } catch (error) {
         console.error('[GapAnalyzer] Error:', error);
+        updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
         await sleep(ERROR_RETRY_MS);
       }
     }
@@ -118,6 +127,9 @@ export class GapAnalyzer {
       await updateWaterMarks('blocks', scanStart, coverage.highWaterMark);
     }
 
+    // Update last analyzed timestamp
+    await updateLastAnalyzedAt('blocks');
+
     if (gapsFound > 0) {
       console.log(`[GapAnalyzer] Found ${gapsFound} block gap(s)`);
     }
@@ -187,6 +199,9 @@ export class GapAnalyzer {
       // Update low water mark
       await updateWaterMarks('milestones', scanStart, coverage.highWaterMark);
     }
+
+    // Update last analyzed timestamp
+    await updateLastAnalyzedAt('milestones');
 
     if (gapsFound > 0) {
       console.log(`[GapAnalyzer] Found ${gapsFound} milestone gap(s)`);

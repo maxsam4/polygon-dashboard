@@ -205,6 +205,16 @@ export async function updateWaterMarks(
   );
 }
 
+// 9b. Update last_analyzed_at timestamp
+export async function updateLastAnalyzedAt(id: string): Promise<void> {
+  await query(
+    `UPDATE data_coverage
+     SET last_analyzed_at = NOW(), updated_at = NOW()
+     WHERE id = $1`,
+    [id]
+  );
+}
+
 // 10. Get gap statistics for status page
 export async function getGapStats(gapType: Gap['gapType']): Promise<GapStats> {
   const result = await queryOne<{
