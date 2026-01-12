@@ -52,6 +52,8 @@ interface ChartRow {
   total_gas_price_max: number;
   total_base_fee_sum: number;
   total_priority_fee_sum: number;
+  gas_used_sum: number;
+  gas_limit_sum: number;
   mgas_per_sec: number;
   tps: number;
   finality_avg: number | null;
@@ -108,6 +110,8 @@ export async function getChartData(
     },
     totalBaseFeeSum: row.total_base_fee_sum ?? 0,
     totalPriorityFeeSum: row.total_priority_fee_sum ?? 0,
+    gasUsedSum: row.gas_used_sum ?? 0,
+    gasLimitSum: row.gas_limit_sum ?? 0,
     mgasPerSec: row.mgas_per_sec ?? 0,
     tps: row.tps ?? 0,
     finalityAvg: row.finality_avg,
@@ -164,6 +168,8 @@ async function getChartDataFromSource(
         MAX(base_fee_gwei + max_priority_fee_gwei) AS total_gas_price_max,
         SUM(total_base_fee_gwei) AS total_base_fee_sum,
         SUM(total_priority_fee_gwei) AS total_priority_fee_sum,
+        SUM(gas_used) AS gas_used_sum,
+        SUM(gas_limit) AS gas_limit_sum,
         SUM(gas_used)::DOUBLE PRECISION / NULLIF(SUM(block_time_sec), 0) / 1000000 AS mgas_per_sec,
         SUM(tx_count)::DOUBLE PRECISION / NULLIF(SUM(block_time_sec), 0) AS tps,
         AVG(time_to_finality_sec) FILTER (WHERE finalized) AS finality_avg,
@@ -206,6 +212,8 @@ async function getChartDataFromSource(
         total_gas_price_max,
         total_base_fee_sum,
         total_priority_fee_sum,
+        gas_used_sum,
+        gas_limit_sum,
         gas_used_sum::DOUBLE PRECISION / NULLIF(block_time_sum, 0) / 1000000 AS mgas_per_sec,
         tx_count_sum::DOUBLE PRECISION / NULLIF(block_time_sum, 0) AS tps,
         finality_avg,
@@ -242,6 +250,8 @@ async function getChartDataFromSource(
       MAX(total_gas_price_max) AS total_gas_price_max,
       SUM(total_base_fee_sum) AS total_base_fee_sum,
       SUM(total_priority_fee_sum) AS total_priority_fee_sum,
+      SUM(gas_used_sum) AS gas_used_sum,
+      SUM(gas_limit_sum) AS gas_limit_sum,
       SUM(gas_used_sum)::DOUBLE PRECISION / NULLIF(SUM(block_time_sum), 0) / 1000000 AS mgas_per_sec,
       SUM(tx_count_sum)::DOUBLE PRECISION / NULLIF(SUM(block_time_sum), 0) AS tps,
       SUM(finality_avg * finalized_count) / NULLIF(SUM(finalized_count), 0) AS finality_avg,

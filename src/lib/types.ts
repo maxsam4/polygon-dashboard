@@ -94,6 +94,8 @@ export interface ChartDataPoint {
   total: { avg: number; min: number; max: number };
   totalBaseFeeSum: number;
   totalPriorityFeeSum: number;
+  gasUsedSum: number;
+  gasLimitSum: number;
   mgasPerSec: number;
   tps: number;
   finalityAvg: number | null;

@@ -23,7 +23,7 @@ import {
 
 interface FullChartProps {
   title: string;
-  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee';
+  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee' | 'totalFee' | 'blockLimit' | 'blockLimitUtilization';
   showCumulative?: boolean;
 }
 
@@ -43,8 +43,8 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const seriesRefs = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const { theme } = useTheme();
 
-  const [timeRange, setTimeRange] = useState('1H');
-  const [bucketSize, setBucketSize] = useState('1m');
+  const [timeRange, setTimeRange] = useState('1D');
+  const [bucketSize, setBucketSize] = useState('15m');
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
   const timeRangeRef = useRef(timeRange);
@@ -107,30 +107,36 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   };
 
   const [seriesOptions, setSeriesOptions] = useState(() => {
+    const colors = CHART_COLOR_PALETTE;
     if (metric === 'gas') {
       return [
-        { key: 'base', label: 'Base', enabled: true },
-        { key: 'medianPriority', label: 'Median Priority', enabled: true },
-        { key: 'minPriority', label: 'Min Priority', enabled: false },
-        { key: 'maxPriority', label: 'Max Priority', enabled: false },
-        { key: 'total', label: 'Total', enabled: false },
+        { key: 'base', label: 'Base', enabled: true, color: colors[0] },
+        { key: 'medianPriority', label: 'Median Priority', enabled: true, color: colors[1] },
+        { key: 'minPriority', label: 'Min Priority', enabled: false, color: colors[2] },
+        { key: 'maxPriority', label: 'Max Priority', enabled: false, color: colors[3] },
+        { key: 'total', label: 'Total', enabled: false, color: colors[4] },
       ];
     }
-    if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {
+    if (metric === 'totalBaseFee' || metric === 'totalPriorityFee' || metric === 'totalFee') {
       if (showCumulative) {
         return [
-          { key: 'cumulative', label: 'Cumulative', enabled: true },
-          { key: 'perBucket', label: 'Per Period', enabled: false },
+          { key: 'cumulative', label: 'Cumulative', enabled: true, color: colors[0] },
+          { key: 'perBucket', label: 'Per Period', enabled: false, color: colors[1] },
         ];
       }
       return [
-        { key: 'perBucket', label: 'Per Period', enabled: true },
+        { key: 'perBucket', label: 'Per Period', enabled: true, color: colors[0] },
+      ];
+    }
+    if (metric === 'blockLimit' || metric === 'blockLimitUtilization') {
+      return [
+        { key: 'value', label: metric === 'blockLimit' ? 'Block Limit' : 'Utilization %', enabled: true, color: colors[0] },
       ];
     }
     return [
-      { key: 'avg', label: 'Avg', enabled: true },
-      { key: 'min', label: 'Min', enabled: false },
-      { key: 'max', label: 'Max', enabled: false },
+      { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
+      { key: 'min', label: 'Min', enabled: false, color: colors[1] },
+      { key: 'max', label: 'Max', enabled: false, color: colors[2] },
     ];
   });
 
@@ -255,12 +261,10 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
 
-    const colors = CHART_COLOR_PALETTE;
-
     seriesOptions
       .filter((opt) => opt.enabled)
-      .forEach((opt, index) => {
-        const color = colors[index % colors.length];
+      .forEach((opt) => {
+        const color = opt.color || CHART_COLOR_PALETTE[0];
         let seriesData: LineData<UTCTimestamp>[];
 
         if (metric === 'gas') {
@@ -301,6 +305,28 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           } else {
             seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
           }
+        } else if (metric === 'totalFee') {
+          if (opt.key === 'cumulative') {
+            let cumulative = 0;
+            seriesData = data.map((d) => {
+              cumulative += d.totalBaseFeeSum + d.totalPriorityFeeSum;
+              return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
+            });
+          } else {
+            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: (d.totalBaseFeeSum + d.totalPriorityFeeSum) / GWEI_PER_POL }));
+          }
+        } else if (metric === 'blockLimit') {
+          // Show average block limit per bucket (in millions of gas)
+          seriesData = data.map((d) => ({
+            time: d.timestamp as UTCTimestamp,
+            value: d.gasLimitSum / (d.blockEnd - d.blockStart + 1) / 1_000_000,
+          }));
+        } else if (metric === 'blockLimitUtilization') {
+          // Show gas utilization percentage
+          seriesData = data.map((d) => ({
+            time: d.timestamp as UTCTimestamp,
+            value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
+          }));
         } else {
           seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
@@ -308,7 +334,6 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         const series = chartRef.current!.addSeries(LineSeries, {
           color,
           lineWidth: 2,
-          title: opt.label,
           priceScaleId: 'left',
         });
 
@@ -340,6 +365,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     }
     if (metric === 'totalPriorityFee') {
       return data.reduce((sum, d) => sum + d.totalPriorityFeeSum, 0);
+    }
+    if (metric === 'totalFee') {
+      return data.reduce((sum, d) => sum + d.totalBaseFeeSum + d.totalPriorityFeeSum, 0);
     }
     return null;
   })();

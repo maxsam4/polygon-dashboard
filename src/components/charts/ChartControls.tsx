@@ -5,7 +5,7 @@ interface ChartControlsProps {
   onTimeRangeChange: (range: string) => void;
   bucketSize: string;
   onBucketSizeChange: (size: string) => void;
-  seriesOptions: { key: string; label: string; enabled: boolean }[];
+  seriesOptions: { key: string; label: string; enabled: boolean; color?: string }[];
   onSeriesToggle: (key: string) => void;
   customStartTime: string;
   customEndTime: string;
@@ -61,19 +61,27 @@ export function ChartControls({
           ))}
         </select>
 
-        <div className="flex gap-2">
-          {seriesOptions.map((option) => (
-            <label key={option.key} className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={option.enabled}
-                onChange={() => onSeriesToggle(option.key)}
-                className="rounded"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
+        {seriesOptions.length > 0 && (
+          <div className="flex gap-3">
+            {seriesOptions.map((option) => (
+              <label key={option.key} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={option.enabled}
+                  onChange={() => onSeriesToggle(option.key)}
+                  className="rounded"
+                />
+                {option.color && (
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: option.color }}
+                  />
+                )}
+                <span className={option.enabled ? '' : 'text-gray-400'}>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {timeRange === 'Custom' && (
