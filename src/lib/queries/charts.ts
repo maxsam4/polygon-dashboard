@@ -1,5 +1,5 @@
 import { query } from '../db';
-import { ChartDataPoint } from '../types';
+import { ChartDataPoint, MilestoneChartDataPoint } from '../types';
 
 type BucketSize = '2s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
 
@@ -59,6 +59,9 @@ interface ChartRow {
   finality_avg: number | null;
   finality_min: number | null;
   finality_max: number | null;
+  block_time_avg: number | null;
+  block_time_min: number | null;
+  block_time_max: number | null;
 }
 
 /**
@@ -117,6 +120,9 @@ export async function getChartData(
     finalityAvg: row.finality_avg,
     finalityMin: row.finality_min,
     finalityMax: row.finality_max,
+    blockTimeAvg: row.block_time_avg,
+    blockTimeMin: row.block_time_min,
+    blockTimeMax: row.block_time_max,
   }));
 
   return { data, total };
@@ -174,7 +180,10 @@ async function getChartDataFromSource(
         SUM(tx_count)::DOUBLE PRECISION / NULLIF(SUM(block_time_sec), 0) AS tps,
         AVG(time_to_finality_sec) FILTER (WHERE finalized) AS finality_avg,
         MIN(time_to_finality_sec) FILTER (WHERE finalized) AS finality_min,
-        MAX(time_to_finality_sec) FILTER (WHERE finalized) AS finality_max
+        MAX(time_to_finality_sec) FILTER (WHERE finalized) AS finality_max,
+        AVG(block_time_sec) AS block_time_avg,
+        MIN(block_time_sec) AS block_time_min,
+        MAX(block_time_sec) AS block_time_max
       FROM blocks
       WHERE timestamp >= $2 AND timestamp <= $3
       GROUP BY bucket
@@ -218,7 +227,10 @@ async function getChartDataFromSource(
         tx_count_sum::DOUBLE PRECISION / NULLIF(block_time_sum, 0) AS tps,
         finality_avg,
         finality_min,
-        finality_max
+        finality_max,
+        block_time_sum::DOUBLE PRECISION / NULLIF(block_count, 0) AS block_time_avg,
+        NULL::double precision AS block_time_min,
+        NULL::double precision AS block_time_max
       FROM ${table}
       WHERE bucket >= $1 AND bucket <= $2
       ORDER BY bucket
@@ -256,7 +268,10 @@ async function getChartDataFromSource(
       SUM(tx_count_sum)::DOUBLE PRECISION / NULLIF(SUM(block_time_sum), 0) AS tps,
       SUM(finality_avg * finalized_count) / NULLIF(SUM(finalized_count), 0) AS finality_avg,
       MIN(finality_min) AS finality_min,
-      MAX(finality_max) AS finality_max
+      MAX(finality_max) AS finality_max,
+      SUM(block_time_sum)::DOUBLE PRECISION / NULLIF(SUM(block_count), 0) AS block_time_avg,
+      NULL::double precision AS block_time_min,
+      NULL::double precision AS block_time_max
     FROM ${table}
     WHERE bucket >= $2 AND bucket <= $3
     GROUP BY time_bucket($1::interval, bucket)
@@ -264,4 +279,67 @@ async function getChartDataFromSource(
     LIMIT $4 OFFSET $5`,
     [interval, fromTime, toTime, limit, offset]
   );
+}
+
+interface MilestoneChartRow {
+  bucket: Date;
+  milestone_count: string;
+  block_time_avg: number | null;
+  block_time_min: number | null;
+  block_time_max: number | null;
+}
+
+/**
+ * Get Heimdall milestone block time chart data.
+ * Calculates time between consecutive milestones using LAG window function.
+ */
+export async function getMilestoneChartData(
+  fromTime: Date,
+  toTime: Date,
+  bucketSize: BucketSize,
+  page = 1,
+  limit = 500
+): Promise<{ data: MilestoneChartDataPoint[]; total: number }> {
+  const interval = BUCKET_INTERVALS[bucketSize];
+  const offset = (page - 1) * limit;
+
+  // Calculate milestone block times and aggregate into buckets
+  const rows = await query<MilestoneChartRow>(
+    `WITH milestone_times AS (
+      SELECT
+        milestone_id,
+        sequence_id,
+        timestamp,
+        EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (ORDER BY sequence_id))) AS block_time_sec
+      FROM milestones
+      WHERE timestamp >= $2 AND timestamp <= $3
+    )
+    SELECT
+      time_bucket($1::interval, timestamp) AS bucket,
+      COUNT(*) AS milestone_count,
+      AVG(block_time_sec) AS block_time_avg,
+      MIN(block_time_sec) AS block_time_min,
+      MAX(block_time_sec) AS block_time_max
+    FROM milestone_times
+    WHERE block_time_sec IS NOT NULL
+    GROUP BY bucket
+    ORDER BY bucket
+    LIMIT $4 OFFSET $5`,
+    [interval, fromTime, toTime, limit, offset]
+  );
+
+  const timeRangeMs = toTime.getTime() - fromTime.getTime();
+  const bucketMs = getBucketMs(bucketSize);
+  const total = Math.ceil(timeRangeMs / bucketMs);
+
+  const data: MilestoneChartDataPoint[] = rows.map((row) => ({
+    timestamp: Math.floor(new Date(row.bucket).getTime() / 1000),
+    milestoneId: 0, // Not applicable for aggregated data
+    sequenceId: parseInt(row.milestone_count, 10),
+    blockTimeAvg: row.block_time_avg !== null ? parseFloat(String(row.block_time_avg)) : null,
+    blockTimeMin: row.block_time_min !== null ? parseFloat(String(row.block_time_min)) : null,
+    blockTimeMax: row.block_time_max !== null ? parseFloat(String(row.block_time_max)) : null,
+  }));
+
+  return { data, total };
 }

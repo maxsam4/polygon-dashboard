@@ -12,7 +12,7 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
-import { ChartDataPoint } from '@/lib/types';
+import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
 import { formatPol } from '@/lib/utils';
 import {
   GWEI_PER_POL,
@@ -23,7 +23,7 @@ import {
 
 interface FullChartProps {
   title: string;
-  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee' | 'totalFee' | 'blockLimit' | 'blockLimitUtilization';
+  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee' | 'totalFee' | 'blockLimit' | 'blockLimitUtilization' | 'borBlockTime' | 'heimdallBlockTime';
   showCumulative?: boolean;
 }
 
@@ -45,7 +45,8 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   const [timeRange, setTimeRange] = useState('1D');
   const [bucketSize, setBucketSize] = useState('15m');
-  const [data, setData] = useState<ChartDataPoint[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [data, setData] = useState<any[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
   const timeRangeRef = useRef(timeRange);
 
@@ -133,6 +134,13 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         { key: 'value', label: metric === 'blockLimit' ? 'Block Limit' : 'Utilization %', enabled: true, color: colors[0] },
       ];
     }
+    if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
+      return [
+        { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
+        { key: 'min', label: 'Min', enabled: false, color: colors[1] },
+        { key: 'max', label: 'Max', enabled: false, color: colors[2] },
+      ];
+    }
     return [
       { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
       { key: 'min', label: 'Min', enabled: false, color: colors[1] },
@@ -154,15 +162,18 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     }
 
     try {
+      const endpoint = metric === 'heimdallBlockTime'
+        ? '/api/milestone-chart-data'
+        : '/api/chart-data';
       const response = await fetch(
-        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
+        `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
       );
       const json = await response.json();
       setData(json.data || []);
     } catch (error) {
       console.error('Failed to fetch chart data:', error);
     }
-  }, [timeRange, bucketSize, appliedCustomRange]);
+  }, [timeRange, bucketSize, appliedCustomRange, metric]);
 
   useEffect(() => {
     fetchData();
@@ -205,6 +216,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       localization: {
         timeFormatter: (timestamp: number) => formatTooltipTime(timestamp),
         priceFormatter: (price: number) => {
+          if (price === null || price === undefined || isNaN(price)) {
+            return '-';
+          }
           if (metric === 'totalBaseFee' || metric === 'totalPriorityFee') {
             return price.toLocaleString('en-US', {
               minimumFractionDigits: 2,
@@ -327,6 +341,17 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             time: d.timestamp as UTCTimestamp,
             value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
           }));
+        } else if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
+          // Show block time (time between consecutive blocks/milestones)
+          seriesData = data
+            .filter((d: ChartDataPoint | MilestoneChartDataPoint) => d.blockTimeAvg !== null)
+            .map((d: ChartDataPoint | MilestoneChartDataPoint) => {
+              const value =
+                opt.key === 'avg' ? d.blockTimeAvg! :
+                opt.key === 'min' ? (d.blockTimeMin ?? d.blockTimeAvg!) :
+                (d.blockTimeMax ?? d.blockTimeAvg!);
+              return { time: d.timestamp as UTCTimestamp, value };
+            });
         } else {
           seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }

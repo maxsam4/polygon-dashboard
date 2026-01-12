@@ -101,4 +101,16 @@ export interface ChartDataPoint {
   finalityAvg: number | null;
   finalityMin: number | null;
   finalityMax: number | null;
+  blockTimeAvg: number | null;
+  blockTimeMin: number | null;
+  blockTimeMax: number | null;
+}
+
+export interface MilestoneChartDataPoint {
+  timestamp: number;
+  milestoneId: number;
+  sequenceId: number;
+  blockTimeAvg: number | null;
+  blockTimeMin: number | null;
+  blockTimeMax: number | null;
 }

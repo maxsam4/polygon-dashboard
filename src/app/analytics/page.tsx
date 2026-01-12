@@ -26,6 +26,12 @@ export default function AnalyticsPage() {
           />
         </div>
 
+        {/* Block Time Charts - for detecting downtime and performance issues */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <FullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
+          <FullChart title="Milestone Time (seconds)" metric="heimdallBlockTime" />
+        </div>
+
         {/* Standard charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <FullChart title="Gas Price (gwei)" metric="gas" />
