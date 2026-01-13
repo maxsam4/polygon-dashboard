@@ -9,6 +9,7 @@ import {
   UTCTimestamp,
   LineSeries,
   SeriesType,
+  MouseEventParams,
 } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
@@ -41,6 +42,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const { theme } = useTheme();
 
   const [timeRange, setTimeRange] = useState('1D');
@@ -56,6 +58,15 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
   const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Tooltip state
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [tooltipContent, setTooltipContent] = useState<{
+    time: string;
+    blockRange?: string;
+    values: { label: string; value: string; color: string }[];
+  } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
   // Auto-update bucket when time range changes
   const handleTimeRangeChange = (range: string) => {
@@ -147,6 +158,150 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       { key: 'max', label: 'Max', enabled: false, color: colors[2] },
     ];
   });
+
+  // Format full datetime for tooltip
+  const formatFullDateTime = (timestamp: number): string => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString([], {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  // Get block range text for tooltip
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getBlockRangeInfo = (dataPoint: any): { display: string; copyValue: string } | undefined => {
+    if (metric === 'borBlockTime' && dataPoint.blockStart !== undefined && dataPoint.blockEnd !== undefined) {
+      const start = dataPoint.blockStart;
+      const end = dataPoint.blockEnd;
+      // If start equals end (single block), just show and copy that block
+      if (start === end) {
+        return {
+          display: `Block ${start.toLocaleString()}`,
+          copyValue: String(start),
+        };
+      }
+      return {
+        display: `Blocks ${start.toLocaleString()} - ${end.toLocaleString()}`,
+        copyValue: `${start}-${end}`,
+      };
+    } else if (metric === 'heimdallBlockTime' && dataPoint.milestoneId !== undefined) {
+      return {
+        display: `Milestone #${dataPoint.milestoneId.toLocaleString()}`,
+        copyValue: String(dataPoint.milestoneId),
+      };
+    }
+    return undefined;
+  };
+
+  // Current hovered data point for click handling
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hoveredDataPointRef = useRef<any>(null);
+
+  // Handle clicking on chart to copy block range
+  const handleChartClick = useCallback(() => {
+    if (!hoveredDataPointRef.current) return;
+
+    const blockInfo = getBlockRangeInfo(hoveredDataPointRef.current);
+    if (blockInfo) {
+      navigator.clipboard.writeText(blockInfo.copyValue).then(() => {
+        // Brief visual feedback - could be enhanced with a toast
+        const tooltip = tooltipRef.current;
+        if (tooltip) {
+          tooltip.style.backgroundColor = theme === 'dark' ? '#065f46' : '#d1fae5';
+          setTimeout(() => {
+            if (tooltip) {
+              tooltip.style.backgroundColor = '';
+            }
+          }, 200);
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metric, theme]);
+
+  // Handle crosshair move for custom tooltip
+  const handleCrosshairMove = useCallback((param: MouseEventParams) => {
+    if (!chartContainerRef.current || !param.time || !param.point) {
+      setTooltipVisible(false);
+      hoveredDataPointRef.current = null;
+      return;
+    }
+
+    const timestamp = param.time as number;
+    const dataPoint = data.find((d) => d.timestamp === timestamp);
+
+    if (!dataPoint) {
+      setTooltipVisible(false);
+      hoveredDataPointRef.current = null;
+      return;
+    }
+
+    hoveredDataPointRef.current = dataPoint;
+
+    // Build tooltip content
+    const values: { label: string; value: string; color: string }[] = [];
+
+    seriesOptions
+      .filter((opt) => opt.enabled)
+      .forEach((opt) => {
+        let value: number | null = null;
+
+        if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
+          if (opt.key === 'avg') value = dataPoint.blockTimeAvg;
+          else if (opt.key === 'min') value = dataPoint.blockTimeMin;
+          else if (opt.key === 'max') value = dataPoint.blockTimeMax;
+        } else if (metric === 'gas') {
+          if (opt.key === 'base') value = dataPoint.baseFee?.avg;
+          else if (opt.key === 'medianPriority') value = dataPoint.priorityFee?.median;
+          else if (opt.key === 'minPriority') value = dataPoint.priorityFee?.min;
+          else if (opt.key === 'maxPriority') value = dataPoint.priorityFee?.max;
+          else if (opt.key === 'total') value = dataPoint.total?.avg;
+        }
+
+        if (value !== null && value !== undefined) {
+          values.push({
+            label: opt.label,
+            value: value.toFixed(2) + (metric === 'borBlockTime' || metric === 'heimdallBlockTime' ? 's' : ' Gwei'),
+            color: opt.color,
+          });
+        }
+      });
+
+    // Build block range info
+    const blockInfo = getBlockRangeInfo(dataPoint);
+
+    setTooltipContent({
+      time: formatFullDateTime(timestamp),
+      blockRange: blockInfo?.display,
+      values,
+    });
+
+    // Position tooltip
+    const containerRect = chartContainerRef.current.getBoundingClientRect();
+    let x = param.point.x + 15;
+    let y = param.point.y - 10;
+
+    // Keep tooltip within bounds
+    const tooltipWidth = 220;
+    const tooltipHeight = 100;
+    if (x + tooltipWidth > containerRect.width) {
+      x = param.point.x - tooltipWidth - 15;
+    }
+    if (y + tooltipHeight > containerRect.height) {
+      y = containerRect.height - tooltipHeight;
+    }
+    if (y < 0) y = 0;
+
+    setTooltipPosition({ x, y });
+    setTooltipVisible(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, metric, seriesOptions]);
 
   const fetchData = useCallback(async () => {
     let fromTime: number;
@@ -267,6 +422,17 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       });
     }
   }, [theme]);
+
+  // Subscribe to crosshair move for custom tooltip
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    chartRef.current.subscribeCrosshairMove(handleCrosshairMove);
+
+    return () => {
+      chartRef.current?.unsubscribeCrosshairMove(handleCrosshairMove);
+    };
+  }, [handleCrosshairMove]);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
@@ -438,7 +604,45 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         onCustomEndTimeChange={setCustomEndTime}
         onApplyCustomRange={handleApplyCustomRange}
       />
-      <div ref={chartContainerRef} className="w-full mt-4 cursor-crosshair" title="Scroll to zoom, drag to pan" />
+      <div className="relative mt-4">
+        <div
+          ref={chartContainerRef}
+          className="w-full cursor-crosshair"
+          title="Scroll to zoom, drag to pan. Click to copy block range."
+          onClick={handleChartClick}
+        />
+        {tooltipVisible && tooltipContent && (
+          <div
+            ref={tooltipRef}
+            className="absolute pointer-events-none z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-sm transition-colors duration-200"
+            style={{
+              left: tooltipPosition.x,
+              top: tooltipPosition.y,
+              minWidth: '180px',
+            }}
+          >
+            <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+              {tooltipContent.time}
+            </div>
+            {tooltipContent.blockRange && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                {tooltipContent.blockRange}
+                <span className="ml-1 text-blue-500 dark:text-blue-400">(click to copy)</span>
+              </div>
+            )}
+            {tooltipContent.values.map((v, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: v.color }}
+                />
+                <span className="text-gray-600 dark:text-gray-300">{v.label}:</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{v.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
