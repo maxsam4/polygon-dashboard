@@ -38,3 +38,9 @@ prod.md
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# History of prompts used
+prompts.txt
+
+# worktrees
+.worktrees/
