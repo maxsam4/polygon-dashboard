@@ -8,6 +8,7 @@ import { Milestone } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+import { updateTableStats } from '@/lib/queries/stats';
 
 const WORKER_NAME = 'MilestonePoller';
 
@@ -89,6 +90,11 @@ export class MilestonePoller {
       this.lastSequenceId = currentCount;
       const latestMilestone = await heimdall.getLatestMilestone();
       await insertMilestonesBatch([latestMilestone]);
+
+      // Update stats cache with new milestone
+      const seqId = BigInt(latestMilestone.sequenceId);
+      await updateTableStats('milestones', seqId, seqId, 1);
+
       // Immediately reconcile blocks for this milestone
       const reconciled = await reconcileBlocksForMilestones([latestMilestone]);
       console.log(`[MilestonePoller] Initialized with milestone ${latestMilestone.milestoneId}, reconciled ${reconciled} blocks`);
@@ -144,6 +150,11 @@ export class MilestonePoller {
 
     // Insert all milestones in batch
     await insertMilestonesBatch(milestones);
+
+    // Update stats cache with batch min/max
+    const minSeqId = BigInt(milestones[0].sequenceId);
+    const maxSeqId = BigInt(milestones[milestones.length - 1].sequenceId);
+    await updateTableStats('milestones', minSeqId, maxSeqId, milestones.length);
 
     // Immediately reconcile blocks for these milestones (fast, targeted)
     const reconciled = await reconcileBlocksForMilestones(milestones);

@@ -45,8 +45,6 @@ interface StatusData {
     finalized: number;
     minFinalized: string | null;
     maxFinalized: string | null;
-    unfinalized: number;
-    pendingUnfinalized: number;
     gaps: Gap[];
     gapStats: GapStats;
     latest: {
@@ -319,6 +317,15 @@ export default function StatusPage() {
     message: string;
   } | null>(null);
 
+  // Scan block state
+  const [blockNumberInput, setBlockNumberInput] = useState('');
+  const [interestRateInput, setInterestRateInput] = useState('');
+  const [isScanningBlock, setIsScanningBlock] = useState(false);
+  const [scanBlockResult, setScanBlockResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/status');
@@ -381,6 +388,67 @@ export default function StatusPage() {
     }
   };
 
+  const handleScanBlock = async () => {
+    if (!blockNumberInput || isNaN(Number(blockNumberInput))) {
+      setScanBlockResult({
+        success: false,
+        message: 'Please enter a valid block number',
+      });
+      return;
+    }
+
+    if (!interestRateInput || isNaN(Number(interestRateInput))) {
+      setScanBlockResult({
+        success: false,
+        message: 'Please enter a valid interest rate',
+      });
+      return;
+    }
+
+    setIsScanningBlock(true);
+    setScanBlockResult(null);
+    try {
+      const response = await fetch('/api/inflation/scan-block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blockNumber: blockNumberInput,
+          interestPerYearLog2: interestRateInput,
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setScanBlockResult({
+          success: true,
+          message: result.duplicate
+            ? 'Rate already exists in database'
+            : 'New inflation rate added successfully!',
+        });
+        // Refresh status after adding new rate
+        if (!result.duplicate) {
+          fetchStatus();
+        }
+        // Clear inputs on success
+        setBlockNumberInput('');
+        setInterestRateInput('');
+        setBlockNumberInput('');
+      } else {
+        setScanBlockResult({
+          success: false,
+          message: result.error || 'Failed to scan block',
+        });
+      }
+    } catch {
+      setScanBlockResult({
+        success: false,
+        message: 'Failed to scan block',
+      });
+    } finally {
+      setIsScanningBlock(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-900">
       <Nav />
@@ -427,13 +495,7 @@ export default function StatusPage() {
                 <StatRow label="Total Blocks" value={formatNumber(status.blocks.total)} />
                 <StatRow label="Block Range" value={`${status.blocks.min ?? 'N/A'} - ${status.blocks.max ?? 'N/A'}`} />
                 <StatRow label="Time Range" value={formatDateRange(status.blocks.minTimestamp, status.blocks.maxTimestamp)} />
-                <StatRow label="Finalized" value={formatNumber(status.blocks.finalized)} />
-                <StatRow
-                  label="Pending Unfinalized"
-                  value={formatNumber(status.blocks.pendingUnfinalized)}
-                  warning={status.blocks.pendingUnfinalized > 100}
-                />
-                <StatRow label="Total Unfinalized" value={formatNumber(status.blocks.unfinalized)} />
+                <StatRow label="Finalized Blocks" value={formatNumber(status.blocks.finalized)} />
               </div>
             </Card>
 
@@ -715,7 +777,13 @@ export default function StatusPage() {
 
             {/* POL Inflation Rate */}
             <Card title="POL Inflation Rate">
-              <div className="space-y-1">
+              <div className="space-y-1 mb-4">
+                <StatRow
+                  label="Current Rate"
+                  value={status?.inflation?.latestRate
+                    ? `${(parseFloat(status.inflation.latestRate) / 1e18 * 100 / Math.log(2)).toFixed(2)}%`
+                    : 'N/A'}
+                />
                 <StatRow label="Stored Rates" value={status?.inflation?.rateCount ?? 'N/A'} />
                 <StatRow
                   label="Last Change"
@@ -724,18 +792,68 @@ export default function StatusPage() {
                     : 'Never'}
                 />
               </div>
-              <button
-                onClick={handleRefreshInflation}
-                disabled={isRefreshingInflation}
-                className="mt-4 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-              >
-                {isRefreshingInflation ? 'Checking...' : 'Check for New Rate'}
-              </button>
-              {inflationRefreshResult && (
-                <div className={`mt-2 text-sm ${inflationRefreshResult.updated ? 'text-green-400' : 'text-gray-500'}`}>
-                  {inflationRefreshResult.message}
+
+              {/* Check for New Rate */}
+              <div className="mb-4">
+                <button
+                  onClick={handleRefreshInflation}
+                  disabled={isRefreshingInflation}
+                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+                >
+                  {isRefreshingInflation ? 'Checking...' : 'Check for New Rate'}
+                </button>
+                {inflationRefreshResult && (
+                  <div className={`mt-2 text-sm ${inflationRefreshResult.updated ? 'text-green-400' : 'text-gray-500'}`}>
+                    {inflationRefreshResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Add New Inflation Rate */}
+              <div className="pt-4 border-t border-gray-700">
+                <label className="block text-gray-400 text-sm mb-2">
+                  Add New Inflation Rate Change
+                </label>
+                <p className="text-xs text-gray-500 mb-3">
+                  Enter the Ethereum block number and INTEREST_PER_YEAR_LOG2 value (in wei, e.g., 28569152196770890)
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={blockNumberInput}
+                    onChange={(e) => setBlockNumberInput(e.target.value)}
+                    placeholder="Block number (e.g., 22884776)"
+                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={interestRateInput}
+                    onChange={(e) => setInterestRateInput(e.target.value)}
+                    placeholder="Interest rate (e.g., 28569152196770890)"
+                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={handleScanBlock}
+                    disabled={isScanningBlock}
+                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
+                  >
+                    {isScanningBlock ? 'Adding...' : 'Add Rate'}
+                  </button>
                 </div>
-              )}
+                {scanBlockResult && (
+                  <div className={`mt-2 text-sm ${scanBlockResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {scanBlockResult.message}
+                  </div>
+                )}
+                <div className="mt-3 text-xs text-gray-500">
+                  <p className="font-medium mb-1">Known values:</p>
+                  <ul className="space-y-1 list-disc list-inside">
+                    <li>Initial (block 18426253): 42644337408493720</li>
+                    <li>Upgrade 1 (block 20678332): 35623909730721220</li>
+                    <li>Latest (block 22884776): 28569152196770890</li>
+                  </ul>
+                </div>
+              </div>
             </Card>
 
             {/* Worker Health */}

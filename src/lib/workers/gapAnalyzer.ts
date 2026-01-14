@@ -1,7 +1,9 @@
-import { query, queryOne } from '@/lib/db';
+import { query } from '@/lib/db';
 import { insertGap, getDataCoverage, upsertDataCoverage, updateWaterMarks, updateLastAnalyzedAt } from '@/lib/queries/gaps';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+import { getTableStats } from '@/lib/queries/stats';
+import { getMilestoneAggregates } from '@/lib/queries/aggregates';
 
 const WORKER_NAME = 'GapAnalyzer';
 const ANALYZE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -63,18 +65,16 @@ export class GapAnalyzer {
   }
 
   private async analyzeBlocks(): Promise<void> {
-    // Get min/max block_number from blocks table
-    const range = await queryOne<{ min_block: string; max_block: string }>(
-      `SELECT MIN(block_number)::text as min_block, MAX(block_number)::text as max_block FROM blocks`
-    );
+    // Use cached stats instead of expensive MIN/MAX query
+    const stats = await getTableStats('blocks');
 
-    if (!range || !range.min_block || !range.max_block) {
-      console.log('[GapAnalyzer] No blocks in database yet');
+    if (!stats) {
+      console.log('[GapAnalyzer] No block stats available yet');
       return;
     }
 
-    const minBlock = BigInt(range.min_block);
-    const maxBlock = BigInt(range.max_block);
+    const minBlock = stats.minValue;
+    const maxBlock = stats.maxValue;
 
     // Get or initialize data_coverage for 'blocks'
     let coverage = await getDataCoverage('blocks');
@@ -136,18 +136,16 @@ export class GapAnalyzer {
   }
 
   private async analyzeMilestones(): Promise<void> {
-    // Get min/max sequence_id from milestones table
-    const range = await queryOne<{ min_seq: string; max_seq: string }>(
-      `SELECT MIN(sequence_id)::text as min_seq, MAX(sequence_id)::text as max_seq FROM milestones`
-    );
+    // Use cached stats instead of expensive MIN/MAX query
+    const stats = await getTableStats('milestones');
 
-    if (!range || !range.min_seq || !range.max_seq) {
-      console.log('[GapAnalyzer] No milestones in database yet');
+    if (!stats) {
+      console.log('[GapAnalyzer] No milestone stats available yet');
       return;
     }
 
-    const minSeq = BigInt(range.min_seq);
-    const maxSeq = BigInt(range.max_seq);
+    const minSeq = stats.minValue;
+    const maxSeq = stats.maxValue;
 
     // Get or initialize data_coverage for 'milestones'
     let coverage = await getDataCoverage('milestones');
@@ -209,18 +207,16 @@ export class GapAnalyzer {
   }
 
   private async analyzeFinalityGaps(): Promise<void> {
-    // Get milestone coverage: the range of blocks covered by milestones
-    const milestoneCoverage = await queryOne<{ min_start: string; max_end: string }>(
-      `SELECT MIN(start_block)::text as min_start, MAX(end_block)::text as max_end FROM milestones`
-    );
+    // Use cached milestone aggregates instead of expensive MIN/MAX query
+    const milestoneAggregates = await getMilestoneAggregates();
 
-    if (!milestoneCoverage || !milestoneCoverage.min_start || !milestoneCoverage.max_end) {
+    if (!milestoneAggregates.minStartBlock || !milestoneAggregates.maxEndBlock) {
       console.log('[GapAnalyzer] No milestones in database, skipping finality gap analysis');
       return;
     }
 
-    const minStart = BigInt(milestoneCoverage.min_start);
-    const maxEnd = BigInt(milestoneCoverage.max_end);
+    const minStart = milestoneAggregates.minStartBlock;
+    const maxEnd = milestoneAggregates.maxEndBlock;
 
     // Only detect finality gaps in uncompressed chunks (recent data)
     // Compressed chunks can't be efficiently updated, so we ignore them

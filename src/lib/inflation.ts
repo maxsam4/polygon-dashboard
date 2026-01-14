@@ -1,179 +1,63 @@
-import { parseAbi } from 'viem';
-import { getEthRpcClient } from './ethRpc';
-import { POL_EMISSION_MANAGER_PROXY } from './constants';
-
-// ABI for the POL emission manager contract (only functions we need)
-const EMISSION_MANAGER_ABI = parseAbi([
-  'function INTEREST_PER_YEAR_LOG2() view returns (uint256)',
-  'function START_SUPPLY_1_4_0() view returns (uint256)',
-  'function getStartTimestamp() view returns (uint256)',
-  'event Upgraded(address indexed implementation)',
-]);
-
-export interface ContractInflationParams {
-  interestPerYearLog2: bigint;
-  startSupply: bigint;
-  startTimestamp: bigint;
-}
-
 /**
- * Read current inflation parameters from the contract
+ * Hardcoded historical inflation rate changes
+ * These represent the INTEREST_PER_YEAR_LOG2 values at different upgrade blocks
+ * User can add new entries via the status page UI
+ *
+ * IMPORTANT: Each period uses COMPOUNDED supply (not the original 10B)
+ * When the contract is upgraded, reinitialize() sets START_SUPPLY_1_4_0 = token.totalSupply()
+ * This means each period compounds on the previous period's ending supply.
+ *
+ * All values verified against on-chain data via archive node queries.
  */
-export async function readInflationParams(
-  blockNumber?: bigint
-): Promise<ContractInflationParams> {
-  const client = getEthRpcClient();
+const INITIAL_SUPPLY = 10000000000n * 1000000000000000000n; // 10 billion POL in wei
 
-  const [interestPerYearLog2, startSupply, startTimestamp] = await Promise.all([
-    client.readContract<bigint>({
-      address: POL_EMISSION_MANAGER_PROXY,
-      abi: EMISSION_MANAGER_ABI,
-      functionName: 'INTEREST_PER_YEAR_LOG2',
-      blockNumber,
-    }),
-    client.readContract<bigint>({
-      address: POL_EMISSION_MANAGER_PROXY,
-      abi: EMISSION_MANAGER_ABI,
-      functionName: 'START_SUPPLY_1_4_0',
-      blockNumber,
-    }),
-    client.readContract<bigint>({
-      address: POL_EMISSION_MANAGER_PROXY,
-      abi: EMISSION_MANAGER_ABI,
-      functionName: 'getStartTimestamp',
-      blockNumber,
-    }),
-  ]);
+export const KNOWN_INFLATION_RATES = [
+  {
+    blockNumber: 18426253n,
+    interestPerYearLog2: 42644337408493720n, // 0.04264433740849372e18 - Initial 4.26% rate
+    blockTimestamp: new Date('2023-10-25T09:06:23Z'),  // Actual block timestamp from chain
+    startSupply: INITIAL_SUPPLY, // Initial deployment: 10B POL (verified on-chain)
+    startTimestamp: 1698224783n, // Actual block timestamp from chain
+    implementationAddress: 'initial-deployment',
+  },
+  {
+    blockNumber: 20678332n,
+    interestPerYearLog2: 35623909730721220n, // 0.03562390973072122e18 - Reduced to 3.56%
+    blockTimestamp: new Date('2024-09-04T16:11:59Z'), // Actual block timestamp from chain
+    startSupply: 10248739753465028590240000886n, // Actual totalSupply at upgrade block (verified on-chain)
+    startTimestamp: 1725466319n, // Actual block timestamp from chain
+    implementationAddress: 'upgrade-1',
+  },
+  {
+    blockNumber: 22884776n,
+    interestPerYearLog2: 28569152196770890n, // 0.02856915219677089e18 - Reduced to 2.86%
+    blockTimestamp: new Date('2025-07-09T23:03:59Z'), // Actual block timestamp from chain
+    startSupply: 10466456329199769051012729173n, // Actual totalSupply at upgrade block (verified on-chain)
+    startTimestamp: 1752102239n, // Actual block timestamp from chain (current period)
+    implementationAddress: 'upgrade-2',
+  },
+] as const;
 
-  return { interestPerYearLog2, startSupply, startTimestamp };
-}
-
-/**
- * Get all Upgraded events from the proxy contract
- */
-export async function getUpgradeEvents(
-  fromBlock: bigint,
-  toBlock: bigint | 'latest' = 'latest'
-): Promise<Array<{ blockNumber: bigint; implementationAddress: string }>> {
-  const client = getEthRpcClient();
-
-  const logs = await client.getLogs({
-    address: POL_EMISSION_MANAGER_PROXY,
-    event: EMISSION_MANAGER_ABI[3], // Upgraded event
-    fromBlock,
-    toBlock,
-  });
-
-  return logs.map((log) => ({
-    blockNumber: log.blockNumber!,
-    implementationAddress: (log as unknown as { args: { implementation: string } }).args.implementation,
-  }));
-}
-
-/**
- * Get the deployment block of the proxy contract
- * This is approximately when POL migration happened
- */
-export async function getProxyDeploymentBlock(): Promise<bigint> {
-  // POL emission manager was deployed around block 18500000 (Oct 2023)
-  // We'll start searching from there
-  const APPROXIMATE_DEPLOYMENT = 18500000n;
-
-  const client = getEthRpcClient();
-
-  // Binary search to find first block where contract has code
-  let low = APPROXIMATE_DEPLOYMENT - 100000n;
-  let high = APPROXIMATE_DEPLOYMENT + 100000n;
-
-  while (low < high) {
-    const mid = (low + high) / 2n;
-    try {
-      await client.readContract<bigint>({
-        address: POL_EMISSION_MANAGER_PROXY,
-        abi: EMISSION_MANAGER_ABI,
-        functionName: 'getStartTimestamp',
-        blockNumber: mid,
-      });
-      high = mid;
-    } catch {
-      low = mid + 1n;
-    }
-  }
-
-  return low;
-}
-
-/**
- * Fetch all historical inflation rate changes
- */
-export async function fetchAllInflationRates(): Promise<Array<{
+export interface InflationRateEntry {
   blockNumber: bigint;
   blockTimestamp: Date;
   interestPerYearLog2: bigint;
   startSupply: bigint;
   startTimestamp: bigint;
   implementationAddress: string;
-}>> {
-  const client = getEthRpcClient();
-
-  // Get all upgrade events
-  const deploymentBlock = await getProxyDeploymentBlock();
-  const upgradeEvents = await getUpgradeEvents(deploymentBlock);
-
-  // Also include the initial deployment (may not have Upgraded event)
-  const allBlocks = new Set([deploymentBlock, ...upgradeEvents.map(e => e.blockNumber)]);
-
-  const results: Array<{
-    blockNumber: bigint;
-    blockTimestamp: Date;
-    interestPerYearLog2: bigint;
-    startSupply: bigint;
-    startTimestamp: bigint;
-    implementationAddress: string;
-  }> = [];
-
-  // Fetch params at each block
-  for (const blockNumber of Array.from(allBlocks).sort((a, b) => Number(a - b))) {
-    try {
-      const [params, block] = await Promise.all([
-        readInflationParams(blockNumber),
-        client.getBlock(blockNumber),
-      ]);
-
-      const upgradeEvent = upgradeEvents.find(e => e.blockNumber === blockNumber);
-
-      results.push({
-        blockNumber,
-        blockTimestamp: new Date(Number(block.timestamp) * 1000),
-        ...params,
-        implementationAddress: upgradeEvent?.implementationAddress || 'initial',
-      });
-    } catch (error) {
-      console.warn(`Failed to read params at block ${blockNumber}:`, error);
-    }
-  }
-
-  // Deduplicate by interestPerYearLog2 (keep first occurrence of each rate)
-  const seen = new Set<string>();
-  return results.filter(r => {
-    const key = r.interestPerYearLog2.toString();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 /**
- * Check if inflation rate has changed since last known rate
+ * Get all historical inflation rates (hardcoded + any added by user)
+ * Returns the hardcoded known rates for initial backfill
  */
-export async function checkForNewInflationRate(
-  lastKnownRate: bigint
-): Promise<{ changed: boolean; newParams?: ContractInflationParams }> {
-  const currentParams = await readInflationParams();
-
-  if (currentParams.interestPerYearLog2 !== lastKnownRate) {
-    return { changed: true, newParams: currentParams };
-  }
-
-  return { changed: false };
+export function getAllKnownInflationRates(): InflationRateEntry[] {
+  return KNOWN_INFLATION_RATES.map(rate => ({
+    blockNumber: rate.blockNumber,
+    blockTimestamp: rate.blockTimestamp,
+    interestPerYearLog2: rate.interestPerYearLog2,
+    startSupply: rate.startSupply,
+    startTimestamp: rate.startTimestamp,
+    implementationAddress: rate.implementationAddress,
+  }));
 }

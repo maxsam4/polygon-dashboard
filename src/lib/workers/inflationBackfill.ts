@@ -1,6 +1,5 @@
-import { fetchAllInflationRates } from '../inflation';
+import { getAllKnownInflationRates } from '../inflation';
 import {
-  hasInflationRates,
   insertInflationRate,
   getInflationRateCount,
 } from '../queries/inflation';
@@ -10,18 +9,16 @@ let lastBackfillError: string | null = null;
 
 /**
  * Run inflation rate backfill if needed
- * This should be called on application startup
+ * Inserts hardcoded historical inflation rates into the database
  */
 export async function runInflationBackfillIfNeeded(): Promise<{
   ran: boolean;
   count: number;
   error?: string;
 }> {
-  // Check if we already have data
-  const hasData = await hasInflationRates();
+  const count = await getInflationRateCount();
 
-  if (hasData) {
-    const count = await getInflationRateCount();
+  if (count > 0) {
     console.log(`Inflation backfill skipped: ${count} rates already in database`);
     return { ran: false, count };
   }
@@ -31,6 +28,7 @@ export async function runInflationBackfillIfNeeded(): Promise<{
 
 /**
  * Force run inflation backfill (for manual refresh)
+ * Inserts all hardcoded inflation rate values
  */
 export async function runInflationBackfill(): Promise<{
   ran: boolean;
@@ -45,10 +43,10 @@ export async function runInflationBackfill(): Promise<{
   lastBackfillError = null;
 
   try {
-    console.log('Starting inflation rate backfill from Ethereum mainnet...');
+    console.log('Starting inflation rate backfill from hardcoded values...');
 
-    const rates = await fetchAllInflationRates();
-    console.log(`Found ${rates.length} inflation rate changes`);
+    const rates = getAllKnownInflationRates();
+    console.log(`Found ${rates.length} hardcoded inflation rate changes`);
 
     for (const rate of rates) {
       await insertInflationRate(rate);

@@ -10,6 +10,7 @@ import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+import { updateTableStats } from '@/lib/queries/stats';
 
 const WORKER_NAME = 'LivePoller';
 
@@ -172,6 +173,12 @@ export class LivePoller {
       blocks.sort((a, b) => Number(a.blockNumber - b.blockNumber));
       await insertBlocksBatch(blocks);
       this.lastProcessedBlock = blocks[blocks.length - 1].blockNumber;
+
+      // Update stats cache with batch min/max
+      const minBlock = blocks[0].blockNumber;
+      const maxBlock = blocks[blocks.length - 1].blockNumber;
+      await updateTableStats('blocks', minBlock, maxBlock, blocks.length);
+
       console.log(`[LivePoller] Inserted ${blocks.length} blocks (${startBlock}-${this.lastProcessedBlock})`);
       return blocks.length;
     }
@@ -236,6 +243,10 @@ export class LivePoller {
     };
 
     await insertBlock(blockData);
+
+    // Update stats cache with new max
+    await updateTableStats('blocks', blockNumber, blockNumber, 1);
+
     console.log(`[LivePoller] Processed block ${blockNumber}`);
   }
 }

@@ -157,3 +157,26 @@ export interface InflationChartDataPoint {
   totalSupply: number;      // Total supply at bucket end
   supplyAtStart: number;    // Supply at start of time range (for % calc)
 }
+
+// Table statistics (materialized cache)
+export interface TableStats {
+  minValue: bigint;
+  maxValue: bigint;
+  totalCount: bigint;
+  finalizedCount: bigint | null;
+  minFinalized: bigint | null;
+  maxFinalized: bigint | null;
+  updatedAt: Date;
+}
+
+// Table statistics row from database (raw)
+export interface TableStatsRow {
+  table_name: string;
+  min_value: string;
+  max_value: string;
+  total_count: string;
+  finalized_count: string | null;
+  min_finalized: string | null;
+  max_finalized: string | null;
+  updated_at: Date;
+}

@@ -1,115 +1,62 @@
 import { NextResponse } from 'next/server';
-import { queryOne } from '@/lib/db';
+import { unstable_cache } from 'next/cache';
 import { areWorkersRunning, getAllWorkerStatuses } from '@/lib/workers';
 import { getPendingGaps, getGapStats, getDataCoverage } from '@/lib/queries/gaps';
 import { getInflationRateCount, getLatestInflationRate } from '@/lib/queries/inflation';
+import {
+  getBlockAggregates,
+  getMilestoneAggregates,
+  getLatestBlock,
+  getLatestMilestone,
+} from '@/lib/queries/aggregates';
 
 export const dynamic = 'force-dynamic';
 
-interface BlockStats {
-  min_block: string | null;
-  max_block: string | null;
-  min_timestamp: Date | null;
-  max_timestamp: Date | null;
-  total_count: string;
-  finalized_count: string;
-  min_finalized: string | null;
-  max_finalized: string | null;
-}
+/**
+ * Cached aggregates: block/milestone stats, coverage, inflation
+ * Cache for 10 seconds to reduce load on compressed chunks
+ */
+const getCachedAggregates = unstable_cache(
+  async () => {
+    const [blockAggregates, milestoneAggregates, blockCoverage, milestoneCoverage, inflationCount, latestInflation] =
+      await Promise.all([
+        getBlockAggregates(),
+        getMilestoneAggregates(),
+        getDataCoverage('blocks'),
+        getDataCoverage('milestones'),
+        getInflationRateCount().catch(() => 0),
+        getLatestInflationRate().catch(() => null),
+      ]);
 
-interface MilestoneStats {
-  min_seq: string | null;
-  max_seq: string | null;
-  min_start_block: string | null;
-  max_end_block: string | null;
-  min_timestamp: Date | null;
-  max_timestamp: Date | null;
-  total_count: string;
-}
+    return {
+      blockAggregates,
+      milestoneAggregates,
+      coverage: { blockCoverage, milestoneCoverage },
+      inflation: { inflationCount, latestInflation },
+    };
+  },
+  ['status-aggregates'],
+  { revalidate: 10 }
+);
 
 export async function GET() {
   try {
-    // Get block statistics
-    const blockStats = await queryOne<BlockStats>(`
-      SELECT
-        MIN(block_number)::text as min_block,
-        MAX(block_number)::text as max_block,
-        MIN(timestamp) as min_timestamp,
-        MAX(timestamp) as max_timestamp,
-        COUNT(*)::text as total_count,
-        COUNT(*) FILTER (WHERE finalized = true)::text as finalized_count,
-        MIN(block_number) FILTER (WHERE finalized = true)::text as min_finalized,
-        MAX(block_number) FILTER (WHERE finalized = true)::text as max_finalized
-      FROM blocks
-    `);
+    // Fetch cached aggregates (slow-changing data)
+    const aggregates = await getCachedAggregates();
+    const { blockAggregates, milestoneAggregates, coverage, inflation } = aggregates;
 
-    // Get milestone statistics
-    const milestoneStats = await queryOne<MilestoneStats>(`
-      SELECT
-        MIN(sequence_id)::text as min_seq,
-        MAX(sequence_id)::text as max_seq,
-        MIN(start_block)::text as min_start_block,
-        MAX(end_block)::text as max_end_block,
-        MIN(timestamp) as min_timestamp,
-        MAX(timestamp) as max_timestamp,
-        COUNT(*)::text as total_count
-      FROM milestones
-    `);
-
-    // Get gaps from gaps table (fast!)
-    const [blockGaps, milestoneGaps, finalityGaps] = await Promise.all([
-      getPendingGaps('block', 20),
-      getPendingGaps('milestone', 20),
-      getPendingGaps('finality', 20),
-    ]);
-
-    // Get gap statistics
-    const [blockGapStats, milestoneGapStats, finalityGapStats] = await Promise.all([
-      getGapStats('block'),
-      getGapStats('milestone'),
-      getGapStats('finality'),
-    ]);
-
-    // Get data coverage
-    const [blockCoverage, milestoneCoverage] = await Promise.all([
-      getDataCoverage('blocks'),
-      getDataCoverage('milestones'),
-    ]);
-
-    // Get inflation rate data
-    const [inflationCount, latestInflation] = await Promise.all([
-      getInflationRateCount().catch(() => 0),
-      getLatestInflationRate().catch(() => null),
-    ]);
-
-    // Get reconciliation status - only count uncompressed (recent) blocks as pending
-    // Blocks in compressed chunks can't be efficiently updated, so they're not "pending"
-    const compressionThreshold = new Date();
-    compressionThreshold.setDate(compressionThreshold.getDate() - 10); // 10 days ago
-
-    const reconcileStats = await queryOne<{
-      pending_unfinalized: string;
-      total_unfinalized: string;
-    }>(`
-      SELECT
-        COUNT(*) FILTER (
-          WHERE finalized = false
-          AND timestamp >= $1
-          AND block_number >= (SELECT COALESCE(MIN(start_block), 0) FROM milestones)
-          AND block_number <= (SELECT COALESCE(MAX(end_block), 0) FROM milestones)
-        )::text as pending_unfinalized,
-        COUNT(*) FILTER (WHERE finalized = false)::text as total_unfinalized
-      FROM blocks
-    `, [compressionThreshold]);
-
-    // Get latest block and milestone timestamps
-    const latestBlock = await queryOne<{ block_number: string; timestamp: Date }>(`
-      SELECT block_number::text, timestamp FROM blocks ORDER BY block_number::bigint DESC LIMIT 1
-    `);
-
-    const latestMilestone = await queryOne<{ sequence_id: string; end_block: string; timestamp: Date }>(`
-      SELECT sequence_id::text, end_block::text, timestamp FROM milestones ORDER BY sequence_id::integer DESC LIMIT 1
-    `);
+    // Fetch real-time data (fast queries, not cached)
+    const [blockGaps, milestoneGaps, finalityGaps, blockGapStats, milestoneGapStats, finalityGapStats, latestBlock, latestMilestone] =
+      await Promise.all([
+        getPendingGaps('block', 20),
+        getPendingGaps('milestone', 20),
+        getPendingGaps('finality', 20),
+        getGapStats('block'),
+        getGapStats('milestone'),
+        getGapStats('finality'),
+        getLatestBlock(),
+        getLatestMilestone(),
+      ]);
 
     // Get individual worker statuses
     const workerStatuses = getAllWorkerStatuses().map(ws => ({
@@ -126,16 +73,14 @@ export async function GET() {
       workerStatuses,
       timestamp: new Date().toISOString(),
       blocks: {
-        min: blockStats?.min_block ?? null,
-        max: blockStats?.max_block ?? null,
-        minTimestamp: blockStats?.min_timestamp?.toISOString() ?? null,
-        maxTimestamp: blockStats?.max_timestamp?.toISOString() ?? null,
-        total: parseInt(blockStats?.total_count ?? '0', 10),
-        finalized: parseInt(blockStats?.finalized_count ?? '0', 10),
-        minFinalized: blockStats?.min_finalized ?? null,
-        maxFinalized: blockStats?.max_finalized ?? null,
-        unfinalized: parseInt(reconcileStats?.total_unfinalized ?? '0', 10),
-        pendingUnfinalized: parseInt(reconcileStats?.pending_unfinalized ?? '0', 10),
+        min: blockAggregates.minBlock ?? null,
+        max: blockAggregates.maxBlock ?? null,
+        minTimestamp: blockAggregates.minTimestamp?.toISOString() ?? null,
+        maxTimestamp: blockAggregates.maxTimestamp?.toISOString() ?? null,
+        total: blockAggregates.totalCount,
+        finalized: blockAggregates.finalizedCount,
+        minFinalized: blockAggregates.minFinalized ?? null,
+        maxFinalized: blockAggregates.maxFinalized ?? null,
         gaps: blockGaps.map(g => ({
           start: g.startValue.toString(),
           end: g.endValue.toString(),
@@ -151,13 +96,13 @@ export async function GET() {
         } : null,
       },
       milestones: {
-        minSeq: milestoneStats?.min_seq ?? null,
-        maxSeq: milestoneStats?.max_seq ?? null,
-        minStartBlock: milestoneStats?.min_start_block ?? null,
-        maxEndBlock: milestoneStats?.max_end_block ?? null,
-        minTimestamp: milestoneStats?.min_timestamp?.toISOString() ?? null,
-        maxTimestamp: milestoneStats?.max_timestamp?.toISOString() ?? null,
-        total: parseInt(milestoneStats?.total_count ?? '0', 10),
+        minSeq: milestoneAggregates.minSeq ?? null,
+        maxSeq: milestoneAggregates.maxSeq ?? null,
+        minStartBlock: milestoneAggregates.minStartBlock ?? null,
+        maxEndBlock: milestoneAggregates.maxEndBlock ?? null,
+        minTimestamp: milestoneAggregates.minTimestamp?.toISOString() ?? null,
+        maxTimestamp: milestoneAggregates.maxTimestamp?.toISOString() ?? null,
+        total: milestoneAggregates.totalCount,
         gaps: milestoneGaps.map(g => ({
           start: g.startValue.toString(),
           end: g.endValue.toString(),
@@ -184,21 +129,21 @@ export async function GET() {
         gapStats: finalityGapStats,
       },
       coverage: {
-        blocks: blockCoverage ? {
-          lowWaterMark: blockCoverage.lowWaterMark.toString(),
-          highWaterMark: blockCoverage.highWaterMark.toString(),
-          lastAnalyzedAt: blockCoverage.lastAnalyzedAt?.toISOString() ?? null,
+        blocks: coverage.blockCoverage ? {
+          lowWaterMark: coverage.blockCoverage.lowWaterMark.toString(),
+          highWaterMark: coverage.blockCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: coverage.blockCoverage.lastAnalyzedAt?.toISOString() ?? null,
         } : null,
-        milestones: milestoneCoverage ? {
-          lowWaterMark: milestoneCoverage.lowWaterMark.toString(),
-          highWaterMark: milestoneCoverage.highWaterMark.toString(),
-          lastAnalyzedAt: milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
+        milestones: coverage.milestoneCoverage ? {
+          lowWaterMark: coverage.milestoneCoverage.lowWaterMark.toString(),
+          highWaterMark: coverage.milestoneCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: coverage.milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
         } : null,
       },
       inflation: {
-        rateCount: inflationCount,
-        latestRate: latestInflation?.interestPerYearLog2.toString() ?? null,
-        lastChange: latestInflation?.blockTimestamp.toISOString() ?? null,
+        rateCount: inflation.inflationCount,
+        latestRate: inflation.latestInflation?.interestPerYearLog2.toString() ?? null,
+        lastChange: inflation.latestInflation?.blockTimestamp.toISOString() ?? null,
       },
     };
 

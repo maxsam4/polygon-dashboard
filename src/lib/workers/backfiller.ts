@@ -7,6 +7,7 @@ import {
 import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
+import { updateTableStats } from '@/lib/queries/stats';
 
 const WORKER_NAME = 'Backfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
@@ -149,6 +150,12 @@ export class Backfiller {
 
     if (blocks.length > 0) {
       await insertBlocksBatch(blocks);
+
+      // Update stats cache with batch min/max (backfiller fills backwards, so targetStart is min)
+      const minBlock = targetStart;
+      const maxBlock = endBlock;
+      await updateTableStats('blocks', minBlock, maxBlock, blocks.length);
+
       console.log(`[Backfiller] Inserted ${blocks.length} blocks (lowest: ${targetStart})`);
       return blocks.length;
     }

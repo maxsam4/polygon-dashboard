@@ -26,7 +26,6 @@ import {
   TIME_RANGE_SECONDS,
   GWEI_PER_POL,
 } from '@/lib/constants';
-import { formatPol } from '@/lib/utils';
 
 type InflationMetric = 'issuance' | 'netInflation' | 'totalSupply';
 
@@ -78,7 +77,6 @@ export function InflationChart({ title, metric }: InflationChartProps) {
 
   const [timeRange, setTimeRange] = useState('1D');
   const [bucketSize, setBucketSize] = useState('15m');
-  const [showAsPercent, setShowAsPercent] = useState(false);
   const [rates, setRates] = useState<InflationRateParams[]>([]);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [burnData, setBurnData] = useState<Map<number, number>>(new Map());
@@ -187,7 +185,16 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       const bucketEnd = Math.min(t + bucketSeconds, toTime);
       const issuanceWei = calculateBucketIssuance(t, bucketEnd, rates);
       const issuancePol = weiToPol(issuanceWei);
-      const burned = burnData.get(t) || 0;
+
+      // Sum all burn data within this bucket's time range
+      // The chart-data API returns data at various timestamps, so we aggregate all burns in this bucket
+      let burned = 0;
+      for (const [burnTimestamp, burnAmount] of burnData.entries()) {
+        if (burnTimestamp >= t && burnTimestamp < bucketEnd) {
+          burned += burnAmount;
+        }
+      }
+
       const totalSupply = weiToPol(calculateSupplyAt(bucketEnd, rates[rates.length - 1]));
 
       data.push({
@@ -210,25 +217,26 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     label: string;
     enabled: boolean;
     color: string;
+    priceScaleId: 'left' | 'right';
   }
 
-  // Series options based on metric
+  // Series options based on metric - raw values only
   const seriesOptions = useMemo((): SeriesOption[] => {
     const colors = CHART_COLOR_PALETTE;
     if (metric === 'netInflation') {
       return [
-        { key: 'netInflation', label: 'Net Inflation', enabled: true, color: colors[0] },
-        { key: 'issuance', label: 'Issuance', enabled: false, color: colors[1] },
-        { key: 'burned', label: 'Burned', enabled: false, color: colors[4] },
+        { key: 'netInflation', label: 'Net Inflation', enabled: true, color: colors[0], priceScaleId: 'right' },
+        { key: 'issuance', label: 'Issuance', enabled: false, color: colors[1], priceScaleId: 'right' },
+        { key: 'burned', label: 'Burned', enabled: false, color: colors[4], priceScaleId: 'right' },
       ];
     }
     if (metric === 'issuance') {
       return [
-        { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1] },
+        { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1], priceScaleId: 'right' },
       ];
     }
     return [
-      { key: 'totalSupply', label: 'Total Supply', enabled: true, color: colors[2] },
+      { key: 'totalSupply', label: 'Total Supply', enabled: true, color: colors[2], priceScaleId: 'right' },
     ];
   }, [metric]);
 
@@ -275,7 +283,16 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
         horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
       },
-      rightPriceScale: { visible: true, borderVisible: false },
+      leftPriceScale: {
+        visible: false,
+        borderVisible: false,
+      },
+      rightPriceScale: {
+        visible: true,
+        borderVisible: false,
+        // Shows RAW POL values with comma separators (not percentages)
+        // Note: Number formatting is handled by the library's default formatter
+      },
       timeScale: {
         borderVisible: false,
         timeVisible: true,
@@ -326,18 +343,21 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       .forEach((opt) => {
         let seriesData: LineData<UTCTimestamp>[];
 
-        if (opt.key === 'totalSupply') {
+        const isPercentSeries = opt.key.endsWith('%');
+        const baseKey = isPercentSeries ? opt.key.replace('%', '') : opt.key;
+
+        if (baseKey === 'totalSupply') {
           seriesData = chartData.map((d) => ({
             time: d.timestamp as UTCTimestamp,
-            value: showAsPercent ? 100 : d.totalSupply,
+            value: d.totalSupply,
           }));
         } else {
           seriesData = chartData.map((d) => {
-            let rawValue = opt.key === 'issuance' ? d.issuance :
-                          opt.key === 'burned' ? d.burned :
+            let rawValue = baseKey === 'issuance' ? d.issuance :
+                          baseKey === 'burned' ? d.burned :
                           d.netInflation;
 
-            if (showAsPercent && d.supplyAtRangeStart > 0) {
+            if (isPercentSeries && d.supplyAtRangeStart > 0) {
               rawValue = (rawValue / d.supplyAtRangeStart) * 100;
             }
 
@@ -348,7 +368,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         const series = chartRef.current!.addSeries(LineSeries, {
           color: opt.color,
           lineWidth: 2,
-          priceScaleId: 'right',
+          priceScaleId: opt.priceScaleId,
         });
 
         series.setData(seriesData);
@@ -356,7 +376,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       });
 
     chartRef.current.timeScale().fitContent();
-  }, [chartData, enabledSeries, showAsPercent]);
+  }, [chartData, enabledSeries]);
 
   const handleResetZoom = () => {
     if (chartRef.current) {
@@ -397,15 +417,6 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       <div className="flex justify-between items-start mb-4">
         <h3 className="text-lg font-semibold">{title}</h3>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showAsPercent}
-              onChange={(e) => setShowAsPercent(e.target.checked)}
-              className="rounded"
-            />
-            Show as %
-          </label>
           {isZoomed && (
             <button
               onClick={handleResetZoom}
@@ -417,25 +428,34 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         </div>
       </div>
 
+      {/* Period totals - Show both absolute (POL) and relative (%) values */}
       {periodTotals && metric !== 'totalSupply' && (
-        <div className="mb-4 text-sm grid grid-cols-2 gap-2">
-          <div>
-            <span className="text-gray-500 dark:text-gray-400">Period: </span>
-            <span className="font-semibold">
-              {showAsPercent
-                ? `${periodTotals[metric === 'issuance' ? 'issuancePercent' : 'netInflationPercent'].toFixed(4)}%`
-                : `${formatPol(periodTotals[metric === 'issuance' ? 'totalIssuance' : 'netInflation'])} POL`
-              }
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-500 dark:text-gray-400">Annualized: </span>
-            <span className="font-semibold">
-              {showAsPercent
-                ? `${periodTotals[metric === 'issuance' ? 'annualizedIssuancePercent' : 'annualizedNetInflationPercent'].toFixed(2)}%/yr`
-                : `${formatPol(periodTotals[metric === 'issuance' ? 'annualizedIssuance' : 'annualizedNetInflation'])} POL/yr`
-              }
-            </span>
+        <div className="mb-4 text-sm">
+          <div className="grid grid-cols-2 gap-4 mb-2">
+            <div>
+              <div className="text-gray-500 dark:text-gray-400 mb-1">Period Total:</div>
+              <div className="font-semibold text-lg">
+                {(periodTotals[metric === 'issuance' ? 'totalIssuance' : 'netInflation']).toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 2,
+                })} POL
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                ({(periodTotals[metric === 'issuance' ? 'issuancePercent' : 'netInflationPercent']).toFixed(4)}% of supply)
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-500 dark:text-gray-400 mb-1">Annualized:</div>
+              <div className="font-semibold text-lg">
+                {(periodTotals[metric === 'issuance' ? 'annualizedIssuance' : 'annualizedNetInflation']).toLocaleString('en-US', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 2,
+                })} POL/yr
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                ({(periodTotals[metric === 'issuance' ? 'annualizedIssuancePercent' : 'annualizedNetInflationPercent']).toFixed(2)}%/yr)
+              </div>
+            </div>
           </div>
         </div>
       )}

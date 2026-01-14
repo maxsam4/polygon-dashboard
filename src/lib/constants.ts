@@ -90,10 +90,13 @@ export const EXTERNAL_URLS = {
 } as const;
 
 // Ethereum mainnet RPC URLs (for POL inflation data)
+// These endpoints support archive node queries for historical state
 export const ETH_RPC_URLS = process.env.ETH_RPC_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [
-  'https://eth.llamarpc.com',
-  'https://rpc.ankr.com/eth',
-  'https://ethereum.publicnode.com',
+  'https://ethereum-rpc.publicnode.com', // PublicNode - claims archive support
+  'https://rpc.ankr.com/eth',            // Ankr - free tier
+  'https://eth.drpc.org',                 // dRPC - free tier
+  'https://eth.llamarpc.com',            // LlamaRPC
+  'https://ethereum.publicnode.com',     // PublicNode alt
 ];
 
 // POL Emission Manager contract (Ethereum mainnet)

@@ -1,5 +1,6 @@
 import { query, queryOne, getPool } from '../db';
 import { Block, BlockRow } from '../types';
+import { getTableStats } from './stats';
 
 function rowToBlock(row: BlockRow): Block {
   return {
@@ -90,13 +91,13 @@ export async function getBlocksPaginated(
 }
 
 export async function getLowestBlockNumber(): Promise<bigint | null> {
-  const row = await queryOne<{ min: string }>(`SELECT MIN(block_number) as min FROM blocks`);
-  return row?.min ? BigInt(row.min) : null;
+  const stats = await getTableStats('blocks');
+  return stats?.minValue ?? null;
 }
 
 export async function getHighestBlockNumber(): Promise<bigint | null> {
-  const row = await queryOne<{ max: string }>(`SELECT MAX(block_number) as max FROM blocks`);
-  return row?.max ? BigInt(row.max) : null;
+  const stats = await getTableStats('blocks');
+  return stats?.maxValue ?? null;
 }
 
 export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>): Promise<void> {
