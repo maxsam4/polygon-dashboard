@@ -11,7 +11,7 @@ import {
   releaseGap,
   Gap,
 } from '@/lib/queries/gaps';
-import { Block, Milestone } from '@/lib/types';
+import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
 import { query } from '@/lib/db';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
