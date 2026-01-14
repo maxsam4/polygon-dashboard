@@ -80,6 +80,11 @@ interface StatusData {
     blocks: Coverage | null;
     milestones: Coverage | null;
   };
+  inflation?: {
+    rateCount: number;
+    latestRate: string | null;
+    lastChange: string | null;
+  };
 }
 
 function formatAge(seconds: number): string {
@@ -307,6 +312,13 @@ export default function StatusPage() {
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
+  // Inflation refresh state
+  const [isRefreshingInflation, setIsRefreshingInflation] = useState(false);
+  const [inflationRefreshResult, setInflationRefreshResult] = useState<{
+    updated: boolean;
+    message: string;
+  } | null>(null);
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/status');
@@ -344,6 +356,30 @@ export default function StatusPage() {
     const interval = setInterval(fetchStatus, 5000); // Refresh every 5 seconds
     return () => clearInterval(interval);
   }, []);
+
+  const handleRefreshInflation = async () => {
+    setIsRefreshingInflation(true);
+    setInflationRefreshResult(null);
+    try {
+      const response = await fetch('/api/inflation/refresh', { method: 'POST' });
+      const result = await response.json();
+      setInflationRefreshResult({
+        updated: result.updated,
+        message: result.message || (result.updated ? 'Rate updated!' : 'No change'),
+      });
+      // Refresh status after update
+      if (result.updated) {
+        fetchStatus();
+      }
+    } catch {
+      setInflationRefreshResult({
+        updated: false,
+        message: 'Failed to check inflation rate',
+      });
+    } finally {
+      setIsRefreshingInflation(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -675,6 +711,31 @@ export default function StatusPage() {
                   </div>
                 )}
               </div>
+            </Card>
+
+            {/* POL Inflation Rate */}
+            <Card title="POL Inflation Rate">
+              <div className="space-y-1">
+                <StatRow label="Stored Rates" value={status?.inflation?.rateCount ?? 'N/A'} />
+                <StatRow
+                  label="Last Change"
+                  value={status?.inflation?.lastChange
+                    ? formatTimeAgo(status.inflation.lastChange)
+                    : 'Never'}
+                />
+              </div>
+              <button
+                onClick={handleRefreshInflation}
+                disabled={isRefreshingInflation}
+                className="mt-4 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
+              >
+                {isRefreshingInflation ? 'Checking...' : 'Check for New Rate'}
+              </button>
+              {inflationRefreshResult && (
+                <div className={`mt-2 text-sm ${inflationRefreshResult.updated ? 'text-green-400' : 'text-gray-500'}`}>
+                  {inflationRefreshResult.message}
+                </div>
+              )}
             </Card>
 
             {/* Worker Health */}

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { areWorkersRunning, getAllWorkerStatuses } from '@/lib/workers';
 import { getPendingGaps, getGapStats, getDataCoverage } from '@/lib/queries/gaps';
+import { getInflationRateCount, getLatestInflationRate } from '@/lib/queries/inflation';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +74,12 @@ export async function GET() {
     const [blockCoverage, milestoneCoverage] = await Promise.all([
       getDataCoverage('blocks'),
       getDataCoverage('milestones'),
+    ]);
+
+    // Get inflation rate data
+    const [inflationCount, latestInflation] = await Promise.all([
+      getInflationRateCount().catch(() => 0),
+      getLatestInflationRate().catch(() => null),
     ]);
 
     // Get reconciliation status - only count uncompressed (recent) blocks as pending
@@ -187,6 +194,11 @@ export async function GET() {
           highWaterMark: milestoneCoverage.highWaterMark.toString(),
           lastAnalyzedAt: milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
         } : null,
+      },
+      inflation: {
+        rateCount: inflationCount,
+        latestRate: latestInflation?.interestPerYearLog2.toString() ?? null,
+        lastChange: latestInflation?.blockTimestamp.toISOString() ?? null,
       },
     };
 
