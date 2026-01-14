@@ -225,15 +225,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     const colors = CHART_COLOR_PALETTE;
     if (metric === 'netInflation') {
       return [
-        { key: 'netInflation', label: 'Net Inflation', enabled: true, color: colors[0], priceScaleId: 'right' },
+        { key: 'netInflation', label: 'Net Inflation (POL)', enabled: true, color: colors[0], priceScaleId: 'right' },
+        { key: 'annualizedNetInflationPercent', label: 'Annualized %', enabled: true, color: colors[3], priceScaleId: 'left' },
         { key: 'issuance', label: 'Issuance', enabled: false, color: colors[1], priceScaleId: 'right' },
         { key: 'burned', label: 'Burned', enabled: false, color: colors[4], priceScaleId: 'right' },
       ];
     }
     if (metric === 'issuance') {
       return [
-        { key: 'issuance', label: 'Issuance (POL)', enabled: true, color: colors[1], priceScaleId: 'right' },
-        { key: 'annualizedIssuancePercent', label: 'Annualized %', enabled: true, color: colors[3], priceScaleId: 'left' },
+        { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1], priceScaleId: 'right' },
       ];
     }
     return [
@@ -285,7 +285,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
       },
       leftPriceScale: {
-        visible: metric === 'issuance', // Show left axis for issuance chart (annualized %)
+        visible: metric === 'netInflation', // Show left axis for net inflation chart (annualized %)
         borderVisible: false,
       },
       rightPriceScale: {
@@ -357,6 +357,17 @@ export function InflationChart({ title, metric }: InflationChartProps) {
             const bucketDurationSeconds = d.bucketEnd - d.bucketStart;
             const annualizedIssuance = annualize(d.issuance, bucketDurationSeconds);
             const annualizedPercent = (annualizedIssuance / d.supplyAtRangeStart) * 100;
+
+            return { time: d.timestamp as UTCTimestamp, value: annualizedPercent };
+          });
+        } else if (opt.key === 'annualizedNetInflationPercent') {
+          // Calculate annualized net inflation percentage
+          seriesData = chartData.map((d) => {
+            if (d.supplyAtRangeStart === 0) return { time: d.timestamp as UTCTimestamp, value: 0 };
+
+            const bucketDurationSeconds = d.bucketEnd - d.bucketStart;
+            const annualizedNetInflation = annualize(d.netInflation, bucketDurationSeconds);
+            const annualizedPercent = (annualizedNetInflation / d.supplyAtRangeStart) * 100;
 
             return { time: d.timestamp as UTCTimestamp, value: annualizedPercent };
           });
