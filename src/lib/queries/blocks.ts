@@ -28,17 +28,17 @@ function rowToBlock(row: BlockRow): Block {
 }
 
 export async function getLatestBlocks(limit = 20): Promise<Block[]> {
-  // Query only recent uncompressed chunks (last 14 days) to avoid expensive
-  // parallel sequential scans on compressed chunks. Latest blocks are always
-  // in recent chunks. Compression policy is 7 days, using 14 days for safety.
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  // Query only the last hour to avoid expensive parallel sequential scans
+  // on compressed chunks. Latest blocks are always within the last minute.
+  // This restriction ensures we only touch the most recent uncompressed chunk.
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
   const rows = await query<BlockRow>(
     `SELECT * FROM blocks
      WHERE timestamp >= $1
      ORDER BY block_number DESC
      LIMIT $2`,
-    [fourteenDaysAgo, limit]
+    [oneHourAgo, limit]
   );
   return rows.map(rowToBlock);
 }

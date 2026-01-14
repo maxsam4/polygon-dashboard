@@ -1,7 +1,7 @@
-import { calculateSupplyAt, exp2 } from '../inflationCalc';
+import { calculateSupplyAt } from '../inflationCalc';
 import { readInflationParams } from '../inflation';
 import { getEthRpcClient } from '../ethRpc';
-import { POL_EMISSION_MANAGER_PROXY, WEI_PER_POL } from '../constants';
+import { POL_EMISSION_MANAGER_PROXY } from '../constants';
 import { parseAbi } from 'viem';
 
 // Skip in CI - requires Ethereum RPC

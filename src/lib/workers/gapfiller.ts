@@ -18,7 +18,8 @@ import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError
 
 const WORKER_NAME = 'Gapfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds
-const CHUNK_SIZE = 10; // Process gaps in chunks of 10
+const CHUNK_SIZE = 10; // Process block gaps in chunks of 10
+const MILESTONE_CHUNK_SIZE = 50; // Process milestone gaps in larger chunks (parallel fetch)
 
 // Helper to reconcile blocks in a specific range
 async function reconcileBlocksInRange(startBlock: bigint, endBlock: bigint): Promise<number> {
@@ -244,28 +245,29 @@ export class Gapfiller {
     // Process in chunks
     let currentStart = startValue;
     while (currentStart <= endValue && this.running) {
-      const chunkEnd = Math.min(currentStart + CHUNK_SIZE - 1, endValue);
+      const chunkEnd = Math.min(currentStart + MILESTONE_CHUNK_SIZE - 1, endValue);
 
-      // Fetch milestones in this chunk
-      const milestones: Milestone[] = [];
-
+      // Build list of sequence IDs to fetch
+      const seqIds: number[] = [];
       for (let seqId = currentStart; seqId <= chunkEnd; seqId++) {
-        try {
-          const milestone = await heimdall.getMilestone(seqId);
-          milestones.push({
-            milestoneId: milestone.milestoneId,
-            sequenceId: milestone.sequenceId,
-            startBlock: milestone.startBlock,
-            endBlock: milestone.endBlock,
-            hash: milestone.hash,
-            proposer: milestone.proposer,
-            timestamp: milestone.timestamp,
-          });
-        } catch (error) {
-          console.error(`[Gapfiller] Error fetching milestone seq=${seqId}:`, error);
-          throw error;
-        }
+        seqIds.push(seqId);
       }
+
+      // Fetch milestones in parallel
+      const milestonePromises = seqIds.map(async (seqId) => {
+        const milestone = await heimdall.getMilestone(seqId);
+        return {
+          milestoneId: milestone.milestoneId,
+          sequenceId: milestone.sequenceId,
+          startBlock: milestone.startBlock,
+          endBlock: milestone.endBlock,
+          hash: milestone.hash,
+          proposer: milestone.proposer,
+          timestamp: milestone.timestamp,
+        };
+      });
+
+      const milestones = await Promise.all(milestonePromises);
 
       // Insert milestones
       await insertMilestonesBatch(milestones);
