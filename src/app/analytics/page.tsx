@@ -3,6 +3,7 @@
 import { Nav } from '@/components/Nav';
 import { FullChart } from '@/components/charts/FullChart';
 import { CustomizableChart } from '@/components/charts/CustomizableChart';
+import { InflationChart } from '@/components/charts/InflationChart';
 
 export default function AnalyticsPage() {
   return (
@@ -26,14 +27,20 @@ export default function AnalyticsPage() {
           />
         </div>
 
-        {/* Block Time Charts - for detecting downtime and performance issues */}
+        {/* Block Time Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <FullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
           <FullChart title="Milestone Time (seconds)" metric="heimdallBlockTime" />
         </div>
 
+        {/* Inflation Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <InflationChart title="POL Issuance" metric="issuance" />
+          <InflationChart title="Net Inflation (Issuance - Burned)" metric="netInflation" />
+        </div>
+
         {/* Standard charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <FullChart title="Gas Price (gwei)" metric="gas" />
           <FullChart title="Finality Time (seconds)" metric="finality" />
           <FullChart title="MGAS/s" metric="mgas" />
@@ -46,6 +53,11 @@ export default function AnalyticsPage() {
           <FullChart title="Cumulative Base Fee per Block (POL)" metric="totalBaseFee" showCumulative />
           <FullChart title="Cumulative Priority Fee per Block (POL)" metric="totalPriorityFee" showCumulative />
           <FullChart title="Cumulative Total Fee per Block (POL)" metric="totalFee" showCumulative />
+        </div>
+
+        {/* Total Supply Chart */}
+        <div className="mb-6">
+          <InflationChart title="Total POL Supply" metric="totalSupply" />
         </div>
       </main>
     </div>
