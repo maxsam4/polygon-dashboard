@@ -88,3 +88,18 @@ export const TIME_RANGE_SECONDS: Record<string, number> = {
 export const EXTERNAL_URLS = {
   POLYGONSCAN_BLOCK: 'https://polygonscan.com/block/',
 } as const;
+
+// Ethereum mainnet RPC URLs (for POL inflation data)
+export const ETH_RPC_URLS = process.env.ETH_RPC_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [
+  'https://eth.llamarpc.com',
+  'https://rpc.ankr.com/eth',
+  'https://ethereum.publicnode.com',
+];
+
+// POL Emission Manager contract (Ethereum mainnet)
+export const POL_EMISSION_MANAGER_PROXY = '0xbC9f74b3b14f460a6c47dCdDFd17411cBc7b6c53' as const;
+
+// Inflation calculation constants
+export const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
+export const POL_DECIMALS = 18;
+export const WEI_PER_POL = 10n ** 18n;
