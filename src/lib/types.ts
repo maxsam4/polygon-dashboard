@@ -114,3 +114,46 @@ export interface MilestoneChartDataPoint {
   blockTimeMin: number | null;
   blockTimeMax: number | null;
 }
+
+// Inflation rate data from database
+export interface InflationRate {
+  id: number;
+  blockNumber: bigint;
+  blockTimestamp: Date;
+  interestPerYearLog2: bigint;
+  startSupply: bigint;
+  startTimestamp: bigint;
+  implementationAddress: string;
+  createdAt: Date;
+}
+
+// Inflation rate row from database (raw)
+export interface InflationRateRow {
+  id: number;
+  block_number: string;
+  block_timestamp: string;
+  interest_per_year_log2: string;
+  start_supply: string;
+  start_timestamp: string;
+  implementation_address: string;
+  created_at: string;
+}
+
+// API response for inflation rates
+export interface InflationRateResponse {
+  blockNumber: string;
+  blockTimestamp: string;
+  interestPerYearLog2: string;
+  startSupply: string;
+  startTimestamp: string;
+  implementationAddress: string;
+}
+
+// Inflation chart data point (calculated on frontend)
+export interface InflationChartDataPoint {
+  timestamp: number;
+  issuance: number;         // POL issued in this bucket
+  netInflation: number;     // issuance - burned
+  totalSupply: number;      // Total supply at bucket end
+  supplyAtStart: number;    // Supply at start of time range (for % calc)
+}
