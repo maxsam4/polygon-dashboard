@@ -27,16 +27,16 @@ export default function AnalyticsPage() {
           />
         </div>
 
-        {/* Block Time Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <FullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
-          <FullChart title="Milestone Time (seconds)" metric="heimdallBlockTime" />
-        </div>
-
         {/* Inflation Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <InflationChart title="POL Issuance" metric="issuance" />
           <InflationChart title="Net Inflation (Issuance - Burned)" metric="netInflation" />
+        </div>
+
+        {/* Block Time Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <FullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
+          <FullChart title="Milestone Time (seconds)" metric="heimdallBlockTime" />
         </div>
 
         {/* Standard charts */}

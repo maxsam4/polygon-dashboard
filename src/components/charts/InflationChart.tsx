@@ -220,7 +220,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     priceScaleId: 'left' | 'right';
   }
 
-  // Series options based on metric - raw values only
+  // Series options based on metric
   const seriesOptions = useMemo((): SeriesOption[] => {
     const colors = CHART_COLOR_PALETTE;
     if (metric === 'netInflation') {
@@ -232,7 +232,8 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
     if (metric === 'issuance') {
       return [
-        { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1], priceScaleId: 'right' },
+        { key: 'issuance', label: 'Issuance (POL)', enabled: true, color: colors[1], priceScaleId: 'right' },
+        { key: 'annualizedIssuancePercent', label: 'Annualized %', enabled: true, color: colors[3], priceScaleId: 'left' },
       ];
     }
     return [
@@ -284,7 +285,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
       },
       leftPriceScale: {
-        visible: false,
+        visible: metric === 'issuance', // Show left axis for issuance chart (annualized %)
         borderVisible: false,
       },
       rightPriceScale: {
@@ -316,7 +317,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       chart.remove();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [metric]);
 
   // Update theme
   useEffect(() => {
@@ -343,15 +344,27 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       .forEach((opt) => {
         let seriesData: LineData<UTCTimestamp>[];
 
-        const isPercentSeries = opt.key.endsWith('%');
-        const baseKey = isPercentSeries ? opt.key.replace('%', '') : opt.key;
-
-        if (baseKey === 'totalSupply') {
+        if (opt.key === 'totalSupply') {
           seriesData = chartData.map((d) => ({
             time: d.timestamp as UTCTimestamp,
             value: d.totalSupply,
           }));
+        } else if (opt.key === 'annualizedIssuancePercent') {
+          // Calculate annualized issuance percentage
+          seriesData = chartData.map((d) => {
+            if (d.supplyAtRangeStart === 0) return { time: d.timestamp as UTCTimestamp, value: 0 };
+
+            const bucketDurationSeconds = d.bucketEnd - d.bucketStart;
+            const annualizedIssuance = annualize(d.issuance, bucketDurationSeconds);
+            const annualizedPercent = (annualizedIssuance / d.supplyAtRangeStart) * 100;
+
+            return { time: d.timestamp as UTCTimestamp, value: annualizedPercent };
+          });
         } else {
+          // Handle issuance, burned, netInflation
+          const isPercentSeries = opt.key.endsWith('%');
+          const baseKey = isPercentSeries ? opt.key.replace('%', '') : opt.key;
+
           seriesData = chartData.map((d) => {
             let rawValue = baseKey === 'issuance' ? d.issuance :
                           baseKey === 'burned' ? d.burned :
