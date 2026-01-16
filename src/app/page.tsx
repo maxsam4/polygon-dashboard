@@ -66,7 +66,7 @@ export default function Home() {
     return {
       gas: reversed.map((b, i) => ({
         time: i,
-        value: b.baseFeeGwei,
+        value: b.baseFeeGwei ?? 0,
         blockNumber: parseInt(b.blockNumber, 10),
         timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
       })),
@@ -100,7 +100,7 @@ export default function Home() {
           <MiniChart
             title="Gas Price"
             data={chartData.gas}
-            currentValue={latestBlock?.baseFeeGwei.toFixed(2) ?? '-'}
+            currentValue={latestBlock?.baseFeeGwei?.toFixed(2) ?? '-'}
             unit="gwei"
             color="#2962FF"
           />
