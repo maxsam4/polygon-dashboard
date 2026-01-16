@@ -1,6 +1,33 @@
 import { getLatestBlocks } from '@/lib/queries/blocks';
+import { Block, BlockDataUI } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+// Transform Block to BlockDataUI for SSE streaming
+function blockToUI(b: Block): BlockDataUI {
+  const gasUsed = Number(b.gasUsed);
+  const gasLimit = Number(b.gasLimit);
+  return {
+    blockNumber: b.blockNumber.toString(),
+    timestamp: b.timestamp.toISOString(),
+    gasUsedPercent: gasLimit > 0 ? (gasUsed / gasLimit) * 100 : 0,
+    baseFeeGwei: b.baseFeeGwei ?? 0,
+    avgPriorityFeeGwei: b.avgPriorityFeeGwei ?? 0,
+    medianPriorityFeeGwei: b.medianPriorityFeeGwei ?? 0,
+    minPriorityFeeGwei: b.minPriorityFeeGwei ?? 0,
+    maxPriorityFeeGwei: b.maxPriorityFeeGwei ?? 0,
+    txCount: b.txCount ?? 0,
+    gasUsed: b.gasUsed.toString(),
+    gasLimit: b.gasLimit.toString(),
+    blockTimeSec: b.blockTimeSec ?? null,
+    mgasPerSec: b.mgasPerSec ?? null,
+    tps: b.tps ?? null,
+    totalBaseFeeGwei: b.totalBaseFeeGwei ?? 0,
+    totalPriorityFeeGwei: b.totalPriorityFeeGwei ?? 0,
+    finalized: b.finalized ?? false,
+    timeToFinalitySec: b.timeToFinalitySec ?? null,
+  };
+}
 
 // SSE endpoint for streaming new blocks to the frontend
 export async function GET() {
@@ -17,19 +44,7 @@ export async function GET() {
           lastBlockNumber = blocks[0].blockNumber;
           const data = JSON.stringify({
             type: 'initial',
-            blocks: blocks.map(b => ({
-              blockNumber: b.blockNumber.toString(),
-              timestamp: b.timestamp.toISOString(),
-              baseFeeGwei: b.baseFeeGwei ?? 0,
-              gasUsed: b.gasUsed.toString(),
-              gasLimit: b.gasLimit.toString(),
-              txCount: b.txCount ?? 0,
-              blockTimeSec: b.blockTimeSec ?? null,
-              mgasPerSec: b.mgasPerSec ?? 0,
-              tps: b.tps ?? 0,
-              finalized: b.finalized ?? false,
-              timeToFinalitySec: b.timeToFinalitySec ?? null,
-            })),
+            blocks: blocks.map(blockToUI),
           });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         }
@@ -54,19 +69,7 @@ export async function GET() {
             if (newBlocks.length > 0) {
               const data = JSON.stringify({
                 type: 'update',
-                blocks: newBlocks.map(b => ({
-                  blockNumber: b.blockNumber.toString(),
-                  timestamp: b.timestamp.toISOString(),
-                  baseFeeGwei: b.baseFeeGwei ?? 0,
-                  gasUsed: b.gasUsed.toString(),
-                  gasLimit: b.gasLimit.toString(),
-                  txCount: b.txCount ?? 0,
-                  blockTimeSec: b.blockTimeSec ?? null,
-                  mgasPerSec: b.mgasPerSec ?? 0,
-                  tps: b.tps ?? 0,
-                  finalized: b.finalized ?? false,
-                  timeToFinalitySec: b.timeToFinalitySec ?? null,
-                })),
+                blocks: newBlocks.map(blockToUI),
               });
               controller.enqueue(encoder.encode(`data: ${data}\n\n`));
             }
