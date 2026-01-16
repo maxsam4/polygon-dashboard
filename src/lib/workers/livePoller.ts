@@ -1,4 +1,4 @@
-import { getRpcClient, RpcExhaustedError } from '@/lib/rpc';
+import { getRpcClient, RpcExhaustedError, getBlockSubscriptionManager } from '@/lib/rpc';
 import { calculateBlockMetrics } from '@/lib/gas';
 import {
   getHighestBlockNumber,
@@ -14,7 +14,7 @@ import { updateTableStats } from '@/lib/queries/stats';
 
 const WORKER_NAME = 'LivePoller';
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 2000; // Fallback polling interval when no WebSocket
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 const MAX_GAP = 30; // If gap > 30 blocks, skip to latest and let backfiller handle
 const BATCH_SIZE = 10; // Process up to 10 blocks at a time when slightly behind
@@ -22,6 +22,8 @@ const BATCH_SIZE = 10; // Process up to 10 blocks at a time when slightly behind
 export class LivePoller {
   private running = false;
   private lastProcessedBlock: bigint | null = null;
+  private processing = false; // Mutex to prevent concurrent processing
+  private useSubscriptions = false;
 
   async start(): Promise<void> {
     if (this.running) return;
@@ -33,14 +35,87 @@ export class LivePoller {
     this.lastProcessedBlock = await getHighestBlockNumber();
     console.log(`[LivePoller] Starting from block ${this.lastProcessedBlock?.toString() ?? 'none'}`);
 
-    this.poll();
+    // Try to use WebSocket subscriptions if available
+    const subscriptionManager = getBlockSubscriptionManager();
+    if (subscriptionManager) {
+      this.useSubscriptions = true;
+      console.log('[LivePoller] Using WebSocket subscriptions for new blocks');
+      subscriptionManager.start((blockNumber) => this.onNewBlock(blockNumber));
+      // Also start polling as backup (with longer interval)
+      this.pollBackup();
+    } else {
+      console.log('[LivePoller] No WebSocket URLs configured, using polling');
+      this.poll();
+    }
   }
 
   stop(): void {
     this.running = false;
     updateWorkerState(WORKER_NAME, 'stopped');
+
+    // Stop subscriptions if using them
+    const subscriptionManager = getBlockSubscriptionManager();
+    if (subscriptionManager) {
+      subscriptionManager.stop();
+    }
   }
 
+  /**
+   * Called when WebSocket receives a new block notification.
+   * Processes the block immediately.
+   */
+  private async onNewBlock(blockNumber: bigint): Promise<void> {
+    if (!this.running || this.processing) return;
+
+    this.processing = true;
+    try {
+      updateWorkerState(WORKER_NAME, 'running');
+      console.log(`[LivePoller] New block notification: ${blockNumber}`);
+      const processed = await this.processNewBlocks();
+      if (processed > 0) {
+        updateWorkerRun(WORKER_NAME, processed);
+      }
+    } catch (error) {
+      if (error instanceof RpcExhaustedError) {
+        console.error('[LivePoller] RPC exhausted on subscription callback');
+        updateWorkerError(WORKER_NAME, 'RPC exhausted');
+      } else {
+        console.error('[LivePoller] Error processing subscription block:', error);
+        updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
+      }
+    } finally {
+      this.processing = false;
+    }
+  }
+
+  /**
+   * Backup polling when using subscriptions - runs less frequently to catch any missed blocks.
+   */
+  private async pollBackup(): Promise<void> {
+    const BACKUP_POLL_INTERVAL = 10000; // 10 seconds backup check
+    while (this.running) {
+      await sleep(BACKUP_POLL_INTERVAL);
+      if (!this.running) break;
+
+      // Only poll if not currently processing
+      if (!this.processing) {
+        try {
+          const processed = await this.processNewBlocks();
+          if (processed > 0) {
+            console.log(`[LivePoller] Backup poll caught ${processed} missed blocks`);
+            updateWorkerRun(WORKER_NAME, processed);
+          }
+        } catch (error) {
+          // Errors in backup poll are not critical
+          console.warn('[LivePoller] Backup poll error:', error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Main polling loop (used when WebSocket not available).
+   */
   private async poll(): Promise<void> {
     while (this.running) {
       try {
@@ -54,7 +129,7 @@ export class LivePoller {
         await sleep(POLL_INTERVAL_MS);
       } catch (error) {
         if (error instanceof RpcExhaustedError) {
-          console.error('[LivePoller] RPC exhausted, waiting 5 minutes...');
+          console.error('[LivePoller] RPC exhausted, waiting 5 seconds...');
           updateWorkerError(WORKER_NAME, 'RPC exhausted');
           await sleep(EXHAUSTED_RETRY_MS);
         } else {

@@ -1,9 +1,12 @@
-import { createPublicClient, http, PublicClient } from 'viem';
+import { createPublicClient, http, webSocket, PublicClient } from 'viem';
 import { polygon } from 'viem/chains';
 import { sleep } from './utils';
 
 // Re-export Block type for convenience
 export type { Block as ViemBlock } from 'viem';
+
+// Callback type for block subscriptions
+export type BlockCallback = (blockNumber: bigint) => void;
 
 interface RetryConfig {
   maxRetries: number;
@@ -196,4 +199,142 @@ export function getRpcClient(): RpcClient {
     rpcClient = new RpcClient(urls);
   }
   return rpcClient;
+}
+
+/**
+ * Manages WebSocket subscriptions to multiple RPC endpoints for new blocks.
+ * Keeps all subscriptions active and reconnects on errors.
+ */
+export class BlockSubscriptionManager {
+  private wsUrls: string[];
+  private clients: Map<string, PublicClient> = new Map();
+  private unsubscribes: Map<string, () => void> = new Map();
+  private callback: BlockCallback | null = null;
+  private running = false;
+  private reconnectDelayMs = 1000;
+  private lastBlockNumber: bigint = 0n;
+
+  constructor(wsUrls: string[]) {
+    this.wsUrls = wsUrls;
+  }
+
+  /**
+   * Start subscriptions to all WebSocket endpoints.
+   * Calls the callback whenever a new block is detected from ANY endpoint.
+   */
+  start(callback: BlockCallback): void {
+    if (this.running) return;
+    this.running = true;
+    this.callback = callback;
+
+    console.log(`[BlockSubscriptionManager] Starting subscriptions to ${this.wsUrls.length} WebSocket endpoints`);
+
+    for (const url of this.wsUrls) {
+      this.connectAndSubscribe(url);
+    }
+  }
+
+  /**
+   * Stop all subscriptions.
+   */
+  stop(): void {
+    this.running = false;
+    this.callback = null;
+
+    // Unsubscribe from all
+    for (const [url, unsubscribe] of this.unsubscribes) {
+      try {
+        unsubscribe();
+        console.log(`[BlockSubscriptionManager] Unsubscribed from ${url}`);
+      } catch {
+        // Ignore unsubscribe errors
+      }
+    }
+    this.unsubscribes.clear();
+    this.clients.clear();
+  }
+
+  private async connectAndSubscribe(url: string): Promise<void> {
+    if (!this.running) return;
+
+    try {
+      // Create WebSocket client with auto-reconnect
+      const client = createPublicClient({
+        chain: polygon,
+        transport: webSocket(url, {
+          reconnect: {
+            attempts: Infinity, // Keep trying forever
+            delay: 1000,
+          },
+          keepAlive: {
+            interval: 10_000,
+          },
+        }),
+      });
+
+      this.clients.set(url, client);
+
+      // Subscribe to new blocks
+      const unsubscribe = await client.watchBlocks({
+        onBlock: (block) => {
+          // Only process if this is a new block we haven't seen
+          if (block.number && block.number > this.lastBlockNumber) {
+            this.lastBlockNumber = block.number;
+            if (this.callback) {
+              this.callback(block.number);
+            }
+          }
+        },
+        onError: (error) => {
+          console.error(`[BlockSubscriptionManager] Block watch error on ${url}:`, error);
+          // viem's reconnect handles reconnection, but schedule a backup reconnect
+          this.scheduleReconnect(url);
+        },
+      });
+
+      this.unsubscribes.set(url, unsubscribe);
+      console.log(`[BlockSubscriptionManager] Subscribed to ${url}`);
+    } catch (error) {
+      console.error(`[BlockSubscriptionManager] Failed to connect to ${url}:`, error);
+      this.scheduleReconnect(url);
+    }
+  }
+
+  private scheduleReconnect(url: string): void {
+    if (!this.running) return;
+
+    // Clean up existing subscription
+    const existingUnsubscribe = this.unsubscribes.get(url);
+    if (existingUnsubscribe) {
+      try {
+        existingUnsubscribe();
+      } catch {
+        // Ignore
+      }
+      this.unsubscribes.delete(url);
+    }
+    this.clients.delete(url);
+
+    // Schedule reconnect
+    setTimeout(() => {
+      if (this.running) {
+        console.log(`[BlockSubscriptionManager] Reconnecting to ${url}...`);
+        this.connectAndSubscribe(url);
+      }
+    }, this.reconnectDelayMs);
+  }
+}
+
+let blockSubscriptionManager: BlockSubscriptionManager | null = null;
+
+export function getBlockSubscriptionManager(): BlockSubscriptionManager | null {
+  if (!blockSubscriptionManager) {
+    const wsUrls = process.env.POLYGON_WS_URLS?.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!wsUrls || wsUrls.length === 0) {
+      // No WebSocket URLs configured, return null
+      return null;
+    }
+    blockSubscriptionManager = new BlockSubscriptionManager(wsUrls);
+  }
+  return blockSubscriptionManager;
 }
