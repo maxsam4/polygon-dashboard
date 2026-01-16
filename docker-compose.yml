@@ -29,6 +29,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${DB_USER:-polygon}:${DB_PASSWORD:-polygon}@db:5432/${DB_NAME:-polygon_dashboard}
       POLYGON_RPC_URLS: ${POLYGON_RPC_URLS}
+      POLYGON_WS_URLS: ${POLYGON_WS_URLS:-}
       HEIMDALL_API_URLS: ${HEIMDALL_API_URLS:-https://heimdall-api.polygon.technology}
       BACKFILL_TO_BLOCK: ${BACKFILL_TO_BLOCK:-50000000}
       BACKFILL_BATCH_SIZE: ${BACKFILL_BATCH_SIZE:-100}
