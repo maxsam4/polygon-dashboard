@@ -11,6 +11,7 @@ import { sleep } from '@/lib/utils';
 import { insertGap } from '@/lib/queries/gaps';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 import { updateTableStats } from '@/lib/queries/stats';
+import { blockChannel } from '@/lib/blockChannel';
 
 const WORKER_NAME = 'LivePoller';
 
@@ -254,6 +255,9 @@ export class LivePoller {
       const maxBlock = blocks[blocks.length - 1].blockNumber;
       await updateTableStats('blocks', minBlock, maxBlock, blocks.length);
 
+      // Publish to channel for real-time SSE updates
+      blockChannel.publishBatch(blocks as Block[]);
+
       console.log(`[LivePoller] Inserted ${blocks.length} blocks (${startBlock}-${this.lastProcessedBlock})`);
       return blocks.length;
     }
@@ -321,6 +325,9 @@ export class LivePoller {
 
     // Update stats cache with new max
     await updateTableStats('blocks', blockNumber, blockNumber, 1);
+
+    // Publish to channel for real-time SSE updates
+    blockChannel.publish(blockData as Block);
 
     console.log(`[LivePoller] Processed block ${blockNumber}`);
   }

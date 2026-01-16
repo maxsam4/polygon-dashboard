@@ -1,5 +1,6 @@
 import { getLatestBlocks } from '@/lib/queries/blocks';
 import { Block, BlockDataUI } from '@/lib/types';
+import { blockChannel } from '@/lib/blockChannel';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,10 +33,11 @@ function blockToUI(b: Block): BlockDataUI {
 // SSE endpoint for streaming new blocks to the frontend
 export async function GET() {
   const encoder = new TextEncoder();
-  let lastBlockNumber = 0n;
   let isConnected = true;
   // Track finality state to detect changes
   const blockFinalityState = new Map<string, boolean>();
+  // Track blocks we've sent to avoid duplicates
+  let lastBlockNumber = 0n;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -56,7 +58,28 @@ export async function GET() {
         console.error('[SSE] Error fetching initial blocks:', error);
       }
 
-      // Poll for new blocks and finality updates every 500ms
+      // Subscribe to block channel for instant new block notifications
+      const unsubscribe = blockChannel.subscribe((block) => {
+        if (!isConnected) return;
+
+        try {
+          // Only send if this is a new block we haven't sent yet
+          if (block.blockNumber > lastBlockNumber) {
+            lastBlockNumber = block.blockNumber;
+            blockFinalityState.set(block.blockNumber.toString(), block.finalized);
+
+            const data = JSON.stringify({
+              type: 'update',
+              blocks: [blockToUI(block)],
+            });
+            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          }
+        } catch (error) {
+          console.error('[SSE] Error sending block from channel:', error);
+        }
+      });
+
+      // Poll for finality updates every 1 second (new blocks come via channel)
       const pollInterval = setInterval(async () => {
         if (!isConnected) {
           clearInterval(pollInterval);
@@ -73,19 +96,20 @@ export async function GET() {
             const blockNumStr = block.blockNumber.toString();
             const prevFinalized = blockFinalityState.get(blockNumStr);
 
-            if (block.blockNumber > lastBlockNumber) {
-              // New block
-              blocksToSend.push(block);
-              blockFinalityState.set(blockNumStr, block.finalized);
-            } else if (prevFinalized === false && block.finalized === true) {
-              // Finality status changed from false to true
+            // Check for finality updates (new blocks come via channel subscription)
+            if (prevFinalized === false && block.finalized === true) {
               blocksToSend.push(block);
               blockFinalityState.set(blockNumStr, true);
             }
-          }
 
-          if (blocks[0].blockNumber > lastBlockNumber) {
-            lastBlockNumber = blocks[0].blockNumber;
+            // Also catch any blocks that might have been missed by the channel
+            if (block.blockNumber > lastBlockNumber) {
+              lastBlockNumber = block.blockNumber;
+              if (!blockFinalityState.has(blockNumStr)) {
+                blocksToSend.push(block);
+                blockFinalityState.set(blockNumStr, block.finalized);
+              }
+            }
           }
 
           // Clean up old entries from state map (keep only last 30 blocks)
@@ -109,11 +133,12 @@ export async function GET() {
         } catch (error) {
           console.error('[SSE] Error polling blocks:', error);
         }
-      }, 500);
+      }, 1000); // Poll every 1s for finality updates
 
       // Cleanup on close
       return () => {
         isConnected = false;
+        unsubscribe();
         clearInterval(pollInterval);
       };
     },
