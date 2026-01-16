@@ -8,7 +8,16 @@ const INITIAL_SUPPLY = 10000000000n * 1000000000000000000n; // 10 billion POL in
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { blockNumber, interestPerYearLog2, blockTimestamp } = body;
+    const { blockNumber, interestPerYearLog2, blockTimestamp, password } = body;
+
+    // Check password if ADD_RATE_PASSWORD is set
+    const requiredPassword = process.env.ADD_RATE_PASSWORD;
+    if (requiredPassword && password !== requiredPassword) {
+      return NextResponse.json(
+        { error: 'Invalid password' },
+        { status: 401 }
+      );
+    }
 
     if (!blockNumber || !interestPerYearLog2) {
       return NextResponse.json(

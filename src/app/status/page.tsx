@@ -313,6 +313,7 @@ export default function StatusPage() {
   // Scan block state
   const [blockNumberInput, setBlockNumberInput] = useState('');
   const [interestRateInput, setInterestRateInput] = useState('');
+  const [addRatePassword, setAddRatePassword] = useState('');
   const [isScanningBlock, setIsScanningBlock] = useState(false);
   const [scanBlockResult, setScanBlockResult] = useState<{
     success: boolean;
@@ -383,6 +384,7 @@ export default function StatusPage() {
         body: JSON.stringify({
           blockNumber: blockNumberInput,
           interestPerYearLog2: interestRateInput,
+          password: addRatePassword,
         }),
       });
       const result = await response.json();
@@ -783,6 +785,13 @@ export default function StatusPage() {
                     value={interestRateInput}
                     onChange={(e) => setInterestRateInput(e.target.value)}
                     placeholder="Interest rate (e.g., 28569152196770890)"
+                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                  />
+                  <input
+                    type="password"
+                    value={addRatePassword}
+                    onChange={(e) => setAddRatePassword(e.target.value)}
+                    placeholder="Password"
                     className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
                   />
                   <button
