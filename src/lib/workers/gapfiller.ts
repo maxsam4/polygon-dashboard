@@ -18,7 +18,7 @@ import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError
 
 const WORKER_NAME = 'Gapfiller';
 const EXHAUSTED_RETRY_MS = 5000; // 5 seconds
-const CHUNK_SIZE = 10; // Process block gaps in chunks of 10
+const BASE_BATCH_SIZE = 50; // Base batch size, multiplied by endpoint count (same as Backfiller)
 const MILESTONE_CHUNK_SIZE = 50; // Process milestone gaps in larger chunks (parallel fetch)
 
 // Helper to reconcile blocks in a specific range
@@ -159,36 +159,50 @@ export class Gapfiller {
     const startBlock = gap.startValue;
     const endBlock = gap.endValue;
 
-    console.log(`[Gapfiller] Filling block gap ${gap.id}: ${startBlock} to ${endBlock}`);
+    // Scale batch size by endpoint count for better parallelism (same as Backfiller)
+    const batchSize = BASE_BATCH_SIZE * rpc.endpointCount;
 
-    // Process in chunks
+    console.log(`[Gapfiller] Filling block gap ${gap.id}: ${startBlock} to ${endBlock} (batch size: ${batchSize})`);
+
+    // Process in batches
     let currentStart = startBlock;
     while (currentStart <= endBlock && this.running) {
-      const chunkEnd = currentStart + BigInt(CHUNK_SIZE - 1);
-      const actualEnd = chunkEnd > endBlock ? endBlock : chunkEnd;
+      const batchEnd = currentStart + BigInt(batchSize - 1);
+      const actualEnd = batchEnd > endBlock ? endBlock : batchEnd;
 
-      // Fetch blocks in this chunk
+      // Build list of block numbers to fetch
       const blockNumbers: bigint[] = [];
       for (let blockNum = currentStart; blockNum <= actualEnd; blockNum++) {
         blockNumbers.push(blockNum);
       }
 
+      // Also need previous blocks for block time calculation
+      const prevBlockNumbers = blockNumbers.map(n => n - 1n).filter(n => n >= 0n);
+
+      // Fetch all blocks in parallel using batch methods (same as Backfiller)
+      const [blocksMap, prevBlocksMap] = await Promise.all([
+        rpc.getBlocksWithTransactions(blockNumbers),
+        rpc.getBlocks(prevBlockNumbers),
+      ]);
+
       const blocks: Omit<Block, 'createdAt' | 'updatedAt'>[] = [];
 
-      // Fetch blocks in parallel
-      const blockPromises = blockNumbers.map(async (blockNum) => {
-        const block = await rpc.getBlockWithTransactions(blockNum);
+      for (const blockNum of blockNumbers) {
+        const block = blocksMap.get(blockNum);
+        if (!block) continue;
 
-        // Get previous block for block time calculation
+        // Get previous block timestamp for block time calculation
         let previousTimestamp: bigint | undefined;
         if (blockNum > 0n) {
-          const prevBlock = await rpc.getBlock(blockNum - 1n);
-          previousTimestamp = prevBlock.timestamp;
+          const prevBlock = prevBlocksMap.get(blockNum - 1n);
+          if (prevBlock) {
+            previousTimestamp = prevBlock.timestamp;
+          }
         }
 
         const metrics = calculateBlockMetrics(block, previousTimestamp);
 
-        return {
+        blocks.push({
           blockNumber: blockNum,
           timestamp: new Date(Number(block.timestamp) * 1000),
           blockHash: block.hash,
@@ -210,23 +224,23 @@ export class Gapfiller {
           finalizedAt: null,
           milestoneId: null,
           timeToFinalitySec: null,
-        };
-      });
+        });
+      }
 
-      const chunkBlocks = await Promise.all(blockPromises);
-      blocks.push(...chunkBlocks);
+      if (blocks.length > 0) {
+        // Insert blocks - insertBlocksBatch auto-sets finality via LEFT JOIN to milestones
+        await insertBlocksBatch(blocks);
 
-      // Insert blocks - insertBlocksBatch auto-sets finality via LEFT JOIN to milestones
-      await insertBlocksBatch(blocks);
+        // Shrink the gap (moves start forward)
+        const newStart = actualEnd + 1n;
+        await shrinkGap(gap.id, newStart, endBlock);
 
-      // Shrink the gap (moves start forward)
-      const newStart = actualEnd + 1n;
-      await shrinkGap(gap.id, newStart, endBlock);
+        console.log(`[Gapfiller] Filled ${blocks.length} blocks (${currentStart} to ${actualEnd})`);
+      }
 
-      console.log(`[Gapfiller] Filled blocks ${currentStart} to ${actualEnd}`);
-      currentStart = newStart;
+      currentStart = actualEnd + 1n;
 
-      // Small delay between chunks to avoid overwhelming RPC
+      // Small delay between batches
       await sleep(this.delayMs);
     }
 

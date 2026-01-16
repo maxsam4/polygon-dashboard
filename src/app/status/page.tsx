@@ -310,13 +310,6 @@ export default function StatusPage() {
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
-  // Inflation refresh state
-  const [isRefreshingInflation, setIsRefreshingInflation] = useState(false);
-  const [inflationRefreshResult, setInflationRefreshResult] = useState<{
-    updated: boolean;
-    message: string;
-  } | null>(null);
-
   // Scan block state
   const [blockNumberInput, setBlockNumberInput] = useState('');
   const [interestRateInput, setInterestRateInput] = useState('');
@@ -363,30 +356,6 @@ export default function StatusPage() {
     const interval = setInterval(fetchStatus, 5000); // Refresh every 5 seconds
     return () => clearInterval(interval);
   }, []);
-
-  const handleRefreshInflation = async () => {
-    setIsRefreshingInflation(true);
-    setInflationRefreshResult(null);
-    try {
-      const response = await fetch('/api/inflation/refresh', { method: 'POST' });
-      const result = await response.json();
-      setInflationRefreshResult({
-        updated: result.updated,
-        message: result.message || (result.updated ? 'Rate updated!' : 'No change'),
-      });
-      // Refresh status after update
-      if (result.updated) {
-        fetchStatus();
-      }
-    } catch {
-      setInflationRefreshResult({
-        updated: false,
-        message: 'Failed to check inflation rate',
-      });
-    } finally {
-      setIsRefreshingInflation(false);
-    }
-  };
 
   const handleScanBlock = async () => {
     if (!blockNumberInput || isNaN(Number(blockNumberInput))) {
@@ -781,32 +750,16 @@ export default function StatusPage() {
                 <StatRow
                   label="Current Rate"
                   value={status?.inflation?.latestRate
-                    ? `${(parseFloat(status.inflation.latestRate) / 1e18 * 100 / Math.log(2)).toFixed(2)}%`
+                    ? `${((Math.pow(2, parseFloat(status.inflation.latestRate) / 1e18) - 1) * 100).toFixed(2)}%`
                     : 'N/A'}
                 />
                 <StatRow label="Stored Rates" value={status?.inflation?.rateCount ?? 'N/A'} />
                 <StatRow
                   label="Last Change"
                   value={status?.inflation?.lastChange
-                    ? formatTimeAgo(status.inflation.lastChange)
+                    ? new Date(status.inflation.lastChange).toLocaleString()
                     : 'Never'}
                 />
-              </div>
-
-              {/* Check for New Rate */}
-              <div className="mb-4">
-                <button
-                  onClick={handleRefreshInflation}
-                  disabled={isRefreshingInflation}
-                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                >
-                  {isRefreshingInflation ? 'Checking...' : 'Check for New Rate'}
-                </button>
-                {inflationRefreshResult && (
-                  <div className={`mt-2 text-sm ${inflationRefreshResult.updated ? 'text-green-400' : 'text-gray-500'}`}>
-                    {inflationRefreshResult.message}
-                  </div>
-                )}
               </div>
 
               {/* Add New Inflation Rate */}
