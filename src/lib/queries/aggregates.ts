@@ -90,29 +90,33 @@ export async function getMilestoneAggregates() {
 }
 
 /**
- * Get latest block using index (fast).
+ * Get latest block using index scan.
+ * Uses subquery to ensure ORDER BY uses the index before casting to text.
  */
 export async function getLatestBlock() {
   return queryOne<{ block_number: string; timestamp: Date }>(`
     SELECT block_number::text, timestamp
-    FROM blocks
-    ORDER BY block_number DESC
-    LIMIT 1
+    FROM (
+      SELECT block_number, timestamp
+      FROM blocks
+      ORDER BY block_number DESC
+      LIMIT 1
+    ) b
   `);
 }
 
 /**
- * Get latest milestone by first finding MAX(sequence_id) from recent data.
- * Filters to last hour to avoid scanning old data - new milestones arrive every few seconds.
+ * Get latest milestone using index scan.
+ * Uses subquery to ensure ORDER BY uses the index before casting to text.
  */
 export async function getLatestMilestone() {
   return queryOne<{ sequence_id: string; end_block: string; timestamp: Date }>(`
     SELECT sequence_id::text, end_block::text, timestamp
-    FROM milestones
-    WHERE sequence_id = (
-      SELECT MAX(sequence_id)
+    FROM (
+      SELECT sequence_id, end_block, timestamp
       FROM milestones
-      WHERE created_at > NOW() - INTERVAL '1 hour'
-    )
+      ORDER BY sequence_id DESC
+      LIMIT 1
+    ) m
   `);
 }
