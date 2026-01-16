@@ -102,13 +102,17 @@ export async function getLatestBlock() {
 }
 
 /**
- * Get latest milestone using index (fast).
+ * Get latest milestone by first finding MAX(sequence_id) from recent data.
+ * Filters to last hour to avoid scanning old data - new milestones arrive every few seconds.
  */
 export async function getLatestMilestone() {
   return queryOne<{ sequence_id: string; end_block: string; timestamp: Date }>(`
     SELECT sequence_id::text, end_block::text, timestamp
     FROM milestones
-    ORDER BY sequence_id DESC
-    LIMIT 1
+    WHERE sequence_id = (
+      SELECT MAX(sequence_id)
+      FROM milestones
+      WHERE created_at > NOW() - INTERVAL '1 hour'
+    )
   `);
 }
