@@ -34,6 +34,8 @@ export async function GET() {
   const encoder = new TextEncoder();
   let lastBlockNumber = 0n;
   let isConnected = true;
+  // Track finality state to detect changes
+  const blockFinalityState = new Map<string, boolean>();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -42,6 +44,8 @@ export async function GET() {
         const blocks = await getLatestBlocks(20);
         if (blocks.length > 0) {
           lastBlockNumber = blocks[0].blockNumber;
+          // Track initial finality state
+          blocks.forEach(b => blockFinalityState.set(b.blockNumber.toString(), b.finalized));
           const data = JSON.stringify({
             type: 'initial',
             blocks: blocks.map(blockToUI),
@@ -52,7 +56,7 @@ export async function GET() {
         console.error('[SSE] Error fetching initial blocks:', error);
       }
 
-      // Poll for new blocks every 500ms and push updates
+      // Poll for new blocks and finality updates every 500ms
       const pollInterval = setInterval(async () => {
         if (!isConnected) {
           clearInterval(pollInterval);
@@ -61,18 +65,46 @@ export async function GET() {
 
         try {
           const blocks = await getLatestBlocks(20);
-          if (blocks.length > 0 && blocks[0].blockNumber > lastBlockNumber) {
-            // Find new blocks
-            const newBlocks = blocks.filter(b => b.blockNumber > lastBlockNumber);
-            lastBlockNumber = blocks[0].blockNumber;
+          if (blocks.length === 0) return;
 
-            if (newBlocks.length > 0) {
-              const data = JSON.stringify({
-                type: 'update',
-                blocks: newBlocks.map(blockToUI),
-              });
-              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          const blocksToSend: Block[] = [];
+
+          for (const block of blocks) {
+            const blockNumStr = block.blockNumber.toString();
+            const prevFinalized = blockFinalityState.get(blockNumStr);
+
+            if (block.blockNumber > lastBlockNumber) {
+              // New block
+              blocksToSend.push(block);
+              blockFinalityState.set(blockNumStr, block.finalized);
+            } else if (prevFinalized === false && block.finalized === true) {
+              // Finality status changed from false to true
+              blocksToSend.push(block);
+              blockFinalityState.set(blockNumStr, true);
             }
+          }
+
+          if (blocks[0].blockNumber > lastBlockNumber) {
+            lastBlockNumber = blocks[0].blockNumber;
+          }
+
+          // Clean up old entries from state map (keep only last 30 blocks)
+          if (blockFinalityState.size > 30) {
+            const sortedKeys = Array.from(blockFinalityState.keys())
+              .map(k => BigInt(k))
+              .sort((a, b) => Number(a - b));
+            const toRemove = sortedKeys.slice(0, sortedKeys.length - 30);
+            toRemove.forEach(k => blockFinalityState.delete(k.toString()));
+          }
+
+          if (blocksToSend.length > 0) {
+            // Sort by block number ascending for consistent ordering
+            blocksToSend.sort((a, b) => Number(a.blockNumber - b.blockNumber));
+            const data = JSON.stringify({
+              type: 'update',
+              blocks: blocksToSend.map(blockToUI),
+            });
+            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }
         } catch (error) {
           console.error('[SSE] Error polling blocks:', error);

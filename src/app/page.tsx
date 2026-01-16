@@ -28,10 +28,27 @@ export default function Home() {
             setLoading(false);
             setIsStreaming(true);
           } else if (data.type === 'update') {
-            // New blocks - prepend to list and keep max 20
+            // Update can contain new blocks OR finality updates for existing blocks
             setBlocks(prev => {
-              const newBlocks = [...data.blocks, ...prev];
-              return newBlocks.slice(0, 20);
+              const updatedBlocks = [...prev];
+              const existingBlockNums = new Set(prev.map(b => b.blockNumber));
+
+              for (const block of data.blocks) {
+                if (existingBlockNums.has(block.blockNumber)) {
+                  // Update existing block (finality update)
+                  const idx = updatedBlocks.findIndex(b => b.blockNumber === block.blockNumber);
+                  if (idx !== -1) {
+                    updatedBlocks[idx] = block;
+                  }
+                } else {
+                  // New block - prepend
+                  updatedBlocks.unshift(block);
+                }
+              }
+
+              // Sort by block number descending and keep max 20
+              updatedBlocks.sort((a, b) => parseInt(b.blockNumber) - parseInt(a.blockNumber));
+              return updatedBlocks.slice(0, 20);
             });
           }
         } catch (error) {
