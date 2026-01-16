@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Nav } from '@/components/Nav';
 import { MiniChart } from '@/components/charts/MiniChart';
 import { BlockTable } from '@/components/blocks/BlockTable';
@@ -9,23 +9,52 @@ import { BlockDataUI } from '@/lib/types';
 export default function Home() {
   const [blocks, setBlocks] = useState<BlockDataUI[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const fetchBlocks = async () => {
-      try {
-        const response = await fetch('/api/blocks/latest');
-        const data = await response.json();
-        setBlocks(data.blocks || []);
-      } catch (error) {
-        console.error('Failed to fetch blocks:', error);
-      } finally {
-        setLoading(false);
-      }
+    // Use Server-Sent Events for real-time updates
+    const connectSSE = () => {
+      const eventSource = new EventSource('/api/blocks/stream');
+      eventSourceRef.current = eventSource;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'initial') {
+            // Initial load - replace all blocks
+            setBlocks(data.blocks);
+            setLoading(false);
+            setIsStreaming(true);
+          } else if (data.type === 'update') {
+            // New blocks - prepend to list and keep max 20
+            setBlocks(prev => {
+              const newBlocks = [...data.blocks, ...prev];
+              return newBlocks.slice(0, 20);
+            });
+          }
+        } catch (error) {
+          console.error('Failed to parse SSE data:', error);
+        }
+      };
+
+      eventSource.onerror = () => {
+        console.warn('SSE connection error, reconnecting...');
+        setIsStreaming(false);
+        eventSource.close();
+        // Reconnect after 2 seconds
+        setTimeout(connectSSE, 2000);
+      };
     };
 
-    fetchBlocks();
-    const interval = setInterval(fetchBlocks, 2000);
-    return () => clearInterval(interval);
+    connectSSE();
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
   }, []);
 
   const latestBlock = blocks[0];
@@ -101,7 +130,10 @@ export default function Home() {
         {loading ? (
           <div className="text-center py-8">Loading...</div>
         ) : (
-          <BlockTable blocks={blocks} title="Latest Blocks (Live)" />
+          <BlockTable
+            blocks={blocks}
+            title={`Latest Blocks ${isStreaming ? '(Live)' : '(Reconnecting...)'}`}
+          />
         )}
       </main>
     </div>
