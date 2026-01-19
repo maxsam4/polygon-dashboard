@@ -59,6 +59,27 @@ export async function getBlocksPaginated(
   toBlock?: bigint
 ): Promise<{ blocks: Block[]; total: number }> {
   const offset = (page - 1) * limit;
+  let total: number;
+
+  // Use cached stats for total count to avoid expensive COUNT(*) on compressed chunks
+  if (fromBlock === undefined && toBlock === undefined) {
+    // No filter: use cached total from table_stats
+    const stats = await getTableStats('blocks');
+    total = stats ? Number(stats.totalCount) : 0;
+  } else {
+    // With block range filter: calculate from range
+    // This is O(1) instead of scanning all matching rows
+    const stats = await getTableStats('blocks');
+    if (stats) {
+      const effectiveFrom = fromBlock ?? stats.minValue;
+      const effectiveTo = toBlock ?? stats.maxValue;
+      total = Number(effectiveTo - effectiveFrom + 1n);
+    } else {
+      total = 0;
+    }
+  }
+
+  // Build WHERE clause for the data query
   let whereClause = '';
   const params: (string | number)[] = [];
   let paramIndex = 1;
@@ -71,10 +92,6 @@ export async function getBlocksPaginated(
     whereClause += ` AND block_number <= $${paramIndex++}`;
     params.push(toBlock.toString());
   }
-
-  const countQuery = `SELECT COUNT(*) as count FROM blocks WHERE 1=1 ${whereClause}`;
-  const countResult = await queryOne<{ count: string }>(countQuery, params);
-  const total = parseInt(countResult?.count ?? '0', 10);
 
   const dataQuery = `
     SELECT * FROM blocks
