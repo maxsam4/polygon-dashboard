@@ -1,4 +1,5 @@
-import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
+import { reconcileUnfinalizedBlocks } from '@/lib/queries/milestones';
+import { getPendingUnfinalizedCount } from '@/lib/queries/stats';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 
@@ -43,7 +44,7 @@ export class FinalityReconciler {
 
           // Log progress periodically to reduce log spam
           if (batchCount % LOG_INTERVAL === 0) {
-            const remaining = await getUnfinalizedBlockCount();
+            const remaining = await getPendingUnfinalizedCount();
             console.log(`[FinalityReconciler] Reconciled ${totalReconciled} blocks in ${batchCount} batches, ${remaining} still unfinalized`);
 
             totalReconciled = 0;
@@ -67,7 +68,7 @@ export class FinalityReconciler {
 
           // Periodically log status when idle
           if (consecutiveEmpty % 6 === 0) { // Every minute when idle
-            const remaining = await getUnfinalizedBlockCount();
+            const remaining = await getPendingUnfinalizedCount();
             if (remaining > 0) {
               console.log(`[FinalityReconciler] Idle but ${remaining} blocks still unfinalized (waiting for milestones)`);
             }
