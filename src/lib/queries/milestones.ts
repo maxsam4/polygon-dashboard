@@ -1,5 +1,6 @@
 import { query, queryOne } from '../db';
 import { Milestone, MilestoneWithStats } from '../types';
+import { getTableStats } from './stats';
 
 interface MilestoneRow {
   milestone_id: string;
@@ -256,11 +257,13 @@ export async function getMilestonesPaginated(
 ): Promise<{ milestones: MilestoneWithStats[]; total: number }> {
   const offset = (page - 1) * limit;
 
-  // Get total count
-  const countResult = await queryOne<{ count: string }>('SELECT COUNT(*) as count FROM milestones');
-  const total = parseInt(countResult?.count ?? '0', 10);
+  // Use cached stats for total count to avoid expensive COUNT(*)
+  const stats = await getTableStats('milestones');
+  const total = stats ? Number(stats.totalCount) : 0;
 
   // Get milestones with block stats
+  // Note: The LATERAL join for block stats is acceptable because it only queries
+  // the specific block range for each milestone (small, indexed range scan)
   const rows = await query<MilestoneWithStatsRow>(
     `SELECT
       m.*,

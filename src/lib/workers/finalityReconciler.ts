@@ -1,7 +1,6 @@
 import { reconcileUnfinalizedBlocks, getUnfinalizedBlockCount } from '@/lib/queries/milestones';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
-import { refreshFinalityStats } from '@/lib/queries/stats';
 
 const WORKER_NAME = 'FinalityReconciler';
 const ACTIVE_INTERVAL_MS = 100;   // 100ms when actively reconciling for fast catch-up
@@ -47,9 +46,6 @@ export class FinalityReconciler {
             const remaining = await getUnfinalizedBlockCount();
             console.log(`[FinalityReconciler] Reconciled ${totalReconciled} blocks in ${batchCount} batches, ${remaining} still unfinalized`);
 
-            // Refresh finality stats cache periodically
-            await refreshFinalityStats();
-
             totalReconciled = 0;
             batchCount = 0;
           }
@@ -60,9 +56,6 @@ export class FinalityReconciler {
           // Log final progress before going idle
           if (totalReconciled > 0) {
             console.log(`[FinalityReconciler] Reconciled ${totalReconciled} blocks in ${batchCount} batches`);
-
-            // Refresh finality stats cache after completing work
-            await refreshFinalityStats();
 
             totalReconciled = 0;
             batchCount = 0;

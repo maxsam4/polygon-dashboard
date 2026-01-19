@@ -107,8 +107,10 @@ export async function getPendingUnfinalizedCount(): Promise<number> {
 
 /**
  * Refresh finality statistics from actual data.
- * This queries finalized blocks and updates the cached stats.
- * More efficient than refreshTableStats because it only updates finality fields.
+ *
+ * WARNING: This function performs a full table scan on the blocks table.
+ * On large tables with compressed chunks, this can take 20+ seconds.
+ * Only use for manual recovery/verification, never in production code paths.
  */
 export async function refreshFinalityStats(): Promise<void> {
   const result = await queryOne<{
@@ -134,8 +136,10 @@ export async function refreshFinalityStats(): Promise<void> {
 
 /**
  * Refresh table statistics from actual data.
- * Use this sparingly - it's expensive and defeats the purpose of caching.
- * Mainly for verification or recovery scenarios.
+ *
+ * WARNING: This function performs a full table scan.
+ * On the blocks table with compressed chunks, this can take 20+ seconds.
+ * Only use for manual recovery/verification, never in production code paths.
  *
  * @param tableName - Name of the table to refresh
  */

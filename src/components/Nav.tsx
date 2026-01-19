@@ -12,7 +12,6 @@ export function Nav() {
     { href: '/analytics', label: 'Analytics' },
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
-    { href: '/export', label: 'Export' },
     { href: '/status', label: 'Status' },
   ];
 
