@@ -4,7 +4,7 @@ Real-time Polygon blockchain analytics (gas, finality, MGAS/s, TPS).
 
 ## Production
 
-See `prod.md` for server details. **Always confirm with user before deploying.**
+See `prod.md` for server details. **Always deploy to local first, then prod.** Confirm with user before deploying to prod.
 
 ## Database Safety
 
