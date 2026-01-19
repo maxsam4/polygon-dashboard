@@ -91,18 +91,20 @@ export async function getMilestoneAggregates() {
 
 /**
  * Get latest block using index scan.
- * Uses subquery to ensure ORDER BY uses the index before casting to text.
+ * Uses timestamp filter to avoid scanning compressed chunks.
  */
 export async function getLatestBlock() {
+  // Filter to last hour to avoid parallel scans on compressed chunks
+  // Latest block should always be within seconds of now
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
   return queryOne<{ block_number: string; timestamp: Date }>(`
     SELECT block_number::text, timestamp
-    FROM (
-      SELECT block_number, timestamp
-      FROM blocks
-      ORDER BY block_number DESC
-      LIMIT 1
-    ) b
-  `);
+    FROM blocks
+    WHERE timestamp >= $1
+    ORDER BY block_number DESC
+    LIMIT 1
+  `, [oneHourAgo]);
 }
 
 /**
