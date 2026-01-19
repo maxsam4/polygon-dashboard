@@ -59,17 +59,14 @@ export async function getBlocksPaginated(
   toBlock?: bigint
 ): Promise<{ blocks: Block[]; total: number }> {
   const offset = (page - 1) * limit;
+  const stats = await getTableStats('blocks');
   let total: number;
 
   // Use cached stats for total count to avoid expensive COUNT(*) on compressed chunks
   if (fromBlock === undefined && toBlock === undefined) {
-    // No filter: use cached total from table_stats
-    const stats = await getTableStats('blocks');
     total = stats ? Number(stats.totalCount) : 0;
   } else {
-    // With block range filter: calculate from range
-    // This is O(1) instead of scanning all matching rows
-    const stats = await getTableStats('blocks');
+    // With block range filter: calculate from range (O(1))
     if (stats) {
       const effectiveFrom = fromBlock ?? stats.minValue;
       const effectiveTo = toBlock ?? stats.maxValue;
@@ -79,7 +76,33 @@ export async function getBlocksPaginated(
     }
   }
 
-  // Build WHERE clause for the data query
+  // For unfiltered queries, use block_number range instead of OFFSET
+  // This avoids scanning compressed chunks by targeting specific block ranges
+  if (fromBlock === undefined && toBlock === undefined && stats) {
+    const maxBlock = stats.maxValue;
+    // Calculate block range for this page (blocks are sorted DESC)
+    const rangeEnd = maxBlock - BigInt(offset);
+    const rangeStart = rangeEnd - BigInt(limit) + 1n;
+
+    const dataQuery = `
+      SELECT * FROM blocks
+      WHERE block_number <= $1 AND block_number >= $2
+      ORDER BY block_number DESC
+      LIMIT $3
+    `;
+    const rows = await query<BlockRow>(dataQuery, [
+      rangeEnd.toString(),
+      rangeStart.toString(),
+      limit,
+    ]);
+
+    return {
+      blocks: rows.map(rowToBlock),
+      total,
+    };
+  }
+
+  // Filtered queries: use traditional WHERE clause with OFFSET
   let whereClause = '';
   const params: (string | number)[] = [];
   let paramIndex = 1;
