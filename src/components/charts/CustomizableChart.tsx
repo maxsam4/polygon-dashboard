@@ -167,6 +167,11 @@ export function CustomizableChart({
   };
 
   const fetchData = useCallback(async () => {
+    // Guard: Don't fetch if Custom is selected but not yet applied
+    if (timeRange === 'Custom' && !appliedCustomRange) {
+      return; // Keep existing data visible while user enters dates
+    }
+
     let fromTime: number;
     let toTime: number;
 

@@ -125,6 +125,11 @@ export function InflationChart({ title, metric }: InflationChartProps) {
 
   // Fetch burn data from existing chart-data API
   const fetchBurnData = useCallback(async () => {
+    // Guard: Don't fetch if Custom is selected but not yet applied
+    if (timeRange === 'Custom' && !appliedCustomRange) {
+      return; // Keep existing data visible while user enters dates
+    }
+
     let fromTime: number;
     let toTime: number;
 
@@ -169,6 +174,11 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   // Calculate chart data when rates or burn data change
   useEffect(() => {
     if (rates.length === 0) return;
+
+    // Guard: Don't recalculate if Custom is selected but not yet applied
+    if (timeRange === 'Custom' && !appliedCustomRange) {
+      return; // Keep existing chart data visible while user enters dates
+    }
 
     let fromTime: number;
     let toTime: number;
