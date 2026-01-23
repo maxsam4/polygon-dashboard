@@ -131,6 +131,12 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     if (timeRange === 'Custom' && appliedCustomRange) {
       fromTime = appliedCustomRange.start;
       toTime = appliedCustomRange.end;
+    } else if (timeRange === 'YTD') {
+      // Year-to-Date: from January 1st of current year to now
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      fromTime = Math.floor(startOfYear.getTime() / 1000);
+      toTime = Math.floor(Date.now() / 1000);
     } else {
       toTime = Math.floor(Date.now() / 1000);
       const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
@@ -170,6 +176,12 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     if (timeRange === 'Custom' && appliedCustomRange) {
       fromTime = appliedCustomRange.start;
       toTime = appliedCustomRange.end;
+    } else if (timeRange === 'YTD') {
+      // Year-to-Date: from January 1st of current year to now
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      fromTime = Math.floor(startOfYear.getTime() / 1000);
+      toTime = Math.floor(Date.now() / 1000);
     } else {
       toTime = Math.floor(Date.now() / 1000);
       const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
@@ -257,7 +269,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     if (range === 'Custom' && appliedCustomRange) {
       return (appliedCustomRange.end - appliedCustomRange.start) > 86400;
     }
-    const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'ALL'];
+    const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL'];
     return longRanges.includes(range);
   };
 

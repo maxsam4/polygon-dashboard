@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 interface ChartControlsProps {
   timeRange: string;
   onTimeRangeChange: (range: string) => void;
@@ -14,10 +16,10 @@ interface ChartControlsProps {
   onApplyCustomRange: () => void;
 }
 
-const TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'ALL', 'Custom'];
+const TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL', 'Custom'];
 const BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 
-export function ChartControls({
+const ChartControlsComponent = ({
   timeRange,
   onTimeRangeChange,
   bucketSize,
@@ -29,7 +31,7 @@ export function ChartControls({
   onCustomStartTimeChange,
   onCustomEndTimeChange,
   onApplyCustomRange,
-}: ChartControlsProps) {
+}: ChartControlsProps) => {
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-wrap gap-4 items-center">
@@ -114,4 +116,6 @@ export function ChartControls({
       )}
     </div>
   );
-}
+};
+
+export const ChartControls = memo(ChartControlsComponent);

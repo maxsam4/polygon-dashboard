@@ -66,6 +66,7 @@ export const TIME_RANGE_BUCKETS: Record<string, string> = {
   '1M': '4h',
   '6M': '1d',
   '1Y': '1d',
+  'YTD': '1d',
   'ALL': '1w',
 } as const;
 
