@@ -145,6 +145,16 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         { key: 'value', label: metric === 'blockLimit' ? 'Block Limit' : 'Utilization %', enabled: true, color: colors[0] },
       ];
     }
+    if (metric === 'mgas') {
+      return [
+        { key: 'value', label: 'MGAS/s', enabled: true, color: colors[0] },
+      ];
+    }
+    if (metric === 'tps') {
+      return [
+        { key: 'value', label: 'TPS', enabled: true, color: colors[0] },
+      ];
+    }
     if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
       return [
         { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
@@ -470,8 +480,20 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           });
         } else if (metric === 'finality') {
           seriesData = data
-            .filter((d) => d.finalityAvg !== null)
-            .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.finalityAvg! }));
+            .filter((d) => {
+              // Filter based on which series we're rendering
+              return opt.key === 'avg' ? d.finalityAvg !== null :
+                     opt.key === 'min' ? d.finalityMin !== null :
+                     d.finalityMax !== null;
+            })
+            .map((d) => {
+              // Map to the correct field based on series key
+              const value =
+                opt.key === 'avg' ? d.finalityAvg! :
+                opt.key === 'min' ? d.finalityMin! :
+                d.finalityMax!;
+              return { time: d.timestamp as UTCTimestamp, value };
+            });
         } else if (metric === 'mgas') {
           seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
         } else if (metric === 'tps') {
