@@ -12,9 +12,8 @@ type BlockWithTransactions = ViemBlock & { transactions: Transaction[] };
 
 const WORKER_NAME = 'PriorityFeeFixer';
 
-const BASE_BATCH_SIZE = 50; // Base batch size, scaled by endpoint count
-const BATCH_DELAY_MS = 50; // Reduced delay - RPC distribution handles load
-const EXHAUSTED_RETRY_MS = 1000; // Wait 1 second if RPC exhausted
+const BATCH_SIZE = 100; // Fixed batch size
+const BATCH_DELAY_MS = 100; // Delay between batches
 
 interface PriorityFeeFixStatus {
   fix_deployed_at_block: string;
@@ -109,12 +108,8 @@ export class PriorityFeeFixer {
         }
 
         // Process a batch of blocks going backwards
-        // Scale batch size by endpoint count for better throughput
-        const rpc = getRpcClient();
-        const batchSize = BASE_BATCH_SIZE * rpc.endpointCount;
-
         const batchEnd = lastFixed - 1n;
-        const batchStart = batchEnd - BigInt(batchSize) + 1n;
+        const batchStart = batchEnd - BigInt(BATCH_SIZE) + 1n;
         const effectiveStart = batchStart < earliestBlock ? earliestBlock : batchStart;
 
         const { count, lowestProcessed } = await this.processBatch(effectiveStart, batchEnd);
@@ -128,9 +123,9 @@ export class PriorityFeeFixer {
           updateWorkerRun(WORKER_NAME, count);
           console.log(`[PriorityFeeFixer] Fixed ${count} blocks (${effectiveStart}-${batchEnd}), progress: ${lowestProcessed} -> ${earliestBlock}`);
         } else if (count === 0) {
-          // All blocks in batch failed - apply a small delay before retrying
+          // All blocks in batch failed - apply a longer delay before retrying
           console.warn(`[PriorityFeeFixer] Batch ${effectiveStart}-${batchEnd} had no successful updates, retrying...`);
-          await sleep(EXHAUSTED_RETRY_MS);
+          await sleep(5000);
         }
 
         await sleep(BATCH_DELAY_MS);
@@ -145,51 +140,35 @@ export class PriorityFeeFixer {
   }
 
   /**
-   * Process a batch of blocks using batch RPC calls and batch DB updates.
+   * Process a batch of blocks sequentially using a single RPC endpoint.
    * Returns the count of successfully processed blocks and the lowest block number that was processed.
    */
   private async processBatch(startBlock: bigint, endBlock: bigint): Promise<{ count: number; lowestProcessed: bigint | null }> {
     const rpc = getRpcClient();
-    const blockNumbers: bigint[] = [];
-
-    for (let blockNum = startBlock; blockNum <= endBlock; blockNum++) {
-      blockNumbers.push(blockNum);
-    }
-
-    if (blockNumbers.length === 0) return { count: 0, lowestProcessed: null };
-
-    // Batch fetch all blocks and receipts at once using parallel RPC calls
-    let blocksMap: Map<bigint, NonNullable<Awaited<ReturnType<typeof rpc.getBlockWithTransactions>>>>;
-    let receiptsMap: Map<bigint, TransactionReceipt[]>;
-
-    try {
-      [blocksMap, receiptsMap] = await Promise.all([
-        rpc.getBlocksWithTransactions(blockNumbers),
-        rpc.getBlocksReceipts(blockNumbers),
-      ]);
-    } catch (error) {
-      console.warn(`[PriorityFeeFixer] Batch RPC failed: ${error instanceof Error ? error.message : String(error)}`);
-      return { count: 0, lowestProcessed: null };
-    }
-
-    // Calculate priority fees for all blocks
     const updates: Array<{ blockNumber: bigint; totalPriorityFeeGwei: number }> = [];
     let lowestProcessed: bigint | null = null;
 
-    for (const blockNum of blockNumbers) {
-      const block = blocksMap.get(blockNum);
-      const receipts = receiptsMap.get(blockNum);
+    // Process blocks sequentially using first RPC endpoint
+    for (let blockNum = startBlock; blockNum <= endBlock; blockNum++) {
+      try {
+        const [block, receipts] = await Promise.all([
+          rpc.getBlockWithTransactions(blockNum),
+          rpc.getBlockReceipts(blockNum),
+        ]);
 
-      if (!block || !receipts) {
-        // Skip blocks with missing data - they'll be retried in a future batch
-        continue;
-      }
+        if (!block || !receipts) {
+          continue;
+        }
 
-      const totalPriorityFeeGwei = this.calculatePriorityFee(block, receipts);
-      updates.push({ blockNumber: blockNum, totalPriorityFeeGwei });
+        const totalPriorityFeeGwei = this.calculatePriorityFee(block, receipts);
+        updates.push({ blockNumber: blockNum, totalPriorityFeeGwei });
 
-      if (lowestProcessed === null || blockNum < lowestProcessed) {
-        lowestProcessed = blockNum;
+        if (lowestProcessed === null || blockNum < lowestProcessed) {
+          lowestProcessed = blockNum;
+        }
+      } catch (error) {
+        // Skip failed blocks - they'll be retried in a future batch
+        console.warn(`[PriorityFeeFixer] Block ${blockNum} failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
