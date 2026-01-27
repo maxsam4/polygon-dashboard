@@ -136,8 +136,8 @@ export class RpcClient {
   }
 
   // Execute multiple calls in parallel across ALL endpoints
-  async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<T[]> {
-    const results: T[] = [];
+  // Returns array with null for failed requests (preserves indices)
+  async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<(T | null)[]> {
     const errors: Error[] = [];
 
     // Distribute requests across endpoints
@@ -160,15 +160,18 @@ export class RpcClient {
     });
 
     const settled = await Promise.allSettled(promises);
+    const results: (T | null)[] = [];
+
     for (const result of settled) {
       if (result.status === 'fulfilled') {
         results.push(result.value);
       } else {
+        results.push(null);
         errors.push(result.reason);
       }
     }
 
-    if (errors.length > 0 && results.length === 0) {
+    if (errors.length > 0 && results.every(r => r === null)) {
       throw new RpcExhaustedError(`All parallel RPC calls failed`, errors[0]);
     }
 
@@ -202,8 +205,9 @@ export class RpcClient {
     const blocks = await this.callParallel(fns);
 
     for (let i = 0; i < blocks.length; i++) {
-      if (blocks[i]) {
-        results.set(blockNumbers[i], blocks[i]);
+      const block = blocks[i];
+      if (block !== null) {
+        results.set(blockNumbers[i], block);
       }
     }
 
@@ -221,8 +225,9 @@ export class RpcClient {
     const blocks = await this.callParallel(fns);
 
     for (let i = 0; i < blocks.length; i++) {
-      if (blocks[i]) {
-        results.set(blockNumbers[i], blocks[i]);
+      const block = blocks[i];
+      if (block !== null) {
+        results.set(blockNumbers[i], block);
       }
     }
 
@@ -243,8 +248,8 @@ export class RpcClient {
   }
 
   // Fetch transaction receipts for multiple blocks in parallel
-  async getBlocksReceipts(blockNumbers: bigint[]): Promise<Map<bigint, TransactionReceipt[] | null>> {
-    const results = new Map<bigint, TransactionReceipt[] | null>();
+  async getBlocksReceipts(blockNumbers: bigint[]): Promise<Map<bigint, TransactionReceipt[]>> {
+    const results = new Map<bigint, TransactionReceipt[]>();
 
     const fns = blockNumbers.map((blockNumber) => async (client: PublicClient) => {
       // eth_getBlockReceipts is not in viem's typed methods, so we use a type assertion
@@ -259,8 +264,9 @@ export class RpcClient {
     const receipts = await this.callParallel(fns);
 
     for (let i = 0; i < receipts.length; i++) {
-      if (receipts[i]) {
-        results.set(blockNumbers[i], receipts[i]);
+      const receipt = receipts[i];
+      if (receipt !== null) {
+        results.set(blockNumbers[i], receipt);
       }
     }
 

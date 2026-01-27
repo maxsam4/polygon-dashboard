@@ -119,6 +119,7 @@ interface HistoricalData {
   blockGapSize: number;
   milestoneGapSize: number;
   finalityGapSize: number;
+  priorityFeeLastFixedBlock?: string;
 }
 
 interface SpeedStats {
@@ -126,6 +127,7 @@ interface SpeedStats {
   blockGapSpeed: number | null;         // blocks/sec (gap filling)
   milestoneBackfillerSpeed: number | null; // milestones/sec
   milestoneGapSpeed: number | null;     // milestones/sec
+  priorityFeeFixSpeed: number | null;   // blocks/sec (priority fee fixing)
 }
 
 function calculateSpeeds(history: HistoricalData[]): SpeedStats {
@@ -135,6 +137,7 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
       blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
       milestoneGapSpeed: null,
+      priorityFeeFixSpeed: null,
     };
   }
 
@@ -148,6 +151,7 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
       blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
       milestoneGapSpeed: null,
+      priorityFeeFixSpeed: null,
     };
   }
 
@@ -183,11 +187,22 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     milestoneGapSpeed = (oldest.milestoneGapSize - newest.milestoneGapSize) / timeDiffSec;
   }
 
+  // Priority fee fix speed: how fast last fixed block is decreasing
+  let priorityFeeFixSpeed: number | null = null;
+  if (oldest.priorityFeeLastFixedBlock && newest.priorityFeeLastFixedBlock) {
+    const oldBlock = BigInt(oldest.priorityFeeLastFixedBlock);
+    const newBlock = BigInt(newest.priorityFeeLastFixedBlock);
+    if (newBlock < oldBlock) {
+      priorityFeeFixSpeed = Number(oldBlock - newBlock) / timeDiffSec;
+    }
+  }
+
   return {
     backfillerSpeed,
     blockGapSpeed,
     milestoneBackfillerSpeed,
     milestoneGapSpeed,
+    priorityFeeFixSpeed,
   };
 }
 
@@ -222,6 +237,22 @@ function formatDateRange(minTimestamp: string | null, maxTimestamp: string | nul
   const min = new Date(minTimestamp);
   const max = new Date(maxTimestamp);
   return `${min.toLocaleString()} - ${max.toLocaleString()}`;
+}
+
+function estimateBlockDate(
+  blockNumber: string | null,
+  refBlock: string | null,
+  refTimestamp: string | null
+): string | null {
+  if (!blockNumber || !refBlock || !refTimestamp) return null;
+  const block = BigInt(blockNumber);
+  const ref = BigInt(refBlock);
+  const refTime = new Date(refTimestamp).getTime();
+  // Polygon ~2.2 seconds per block
+  const msOffset = Number(ref - block) * 2200;
+  return new Date(refTime - msOffset).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  });
 }
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -316,6 +347,7 @@ export default function StatusPage() {
     blockGapSpeed: null,
     milestoneBackfillerSpeed: null,
     milestoneGapSpeed: null,
+    priorityFeeFixSpeed: null,
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
@@ -347,6 +379,7 @@ export default function StatusPage() {
         blockGapSize: data.blocks.gapStats.totalPendingSize,
         milestoneGapSize: data.milestones.gapStats.totalPendingSize,
         finalityGapSize: data.finality.gapStats.totalPendingSize,
+        priorityFeeLastFixedBlock: data.priorityFeeFix?.lastFixedBlock ?? undefined,
       };
 
       const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
@@ -781,17 +814,47 @@ export default function StatusPage() {
                     label="Blocks Fixed"
                     value={`${formatNumber(parseInt(status.priorityFeeFix.totalFixed))} / ${formatNumber(parseInt(status.priorityFeeFix.totalToFix))}`}
                   />
+                  {!status.priorityFeeFix.isComplete && (
+                    <div className="py-2 border-b border-gray-700">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400">Speed</span>
+                        <span className={`font-mono ${speeds.priorityFeeFixSpeed ? 'text-blue-400' : 'text-gray-400'}`}>
+                          {formatSpeed(speeds.priorityFeeFixSpeed, 'blk', false, historyRef.current.length >= 2)}
+                        </span>
+                      </div>
+                      {speeds.priorityFeeFixSpeed && (
+                        <div className="text-gray-500 text-xs mt-1">
+                          ETA: {formatEta(
+                            parseInt(status.priorityFeeFix.totalToFix) - parseInt(status.priorityFeeFix.totalFixed),
+                            speeds.priorityFeeFixSpeed
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <StatRow
                     label="Correct Data From"
-                    value={status.priorityFeeFix.fixDeployedAtBlock ?? 'N/A'}
+                    value={
+                      status.priorityFeeFix.fixDeployedAtBlock
+                        ? `${formatNumber(parseInt(status.priorityFeeFix.fixDeployedAtBlock))} (${estimateBlockDate(status.priorityFeeFix.fixDeployedAtBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
+                        : 'N/A'
+                    }
                   />
                   <StatRow
                     label="Last Fixed Block"
-                    value={status.priorityFeeFix.lastFixedBlock ?? 'N/A'}
+                    value={
+                      status.priorityFeeFix.lastFixedBlock
+                        ? `${formatNumber(parseInt(status.priorityFeeFix.lastFixedBlock))} (${estimateBlockDate(status.priorityFeeFix.lastFixedBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
+                        : 'N/A'
+                    }
                   />
                   <StatRow
                     label="Earliest Block"
-                    value={status.priorityFeeFix.earliestBlock ?? 'N/A'}
+                    value={
+                      status.priorityFeeFix.earliestBlock
+                        ? `${formatNumber(parseInt(status.priorityFeeFix.earliestBlock))} (${estimateBlockDate(status.priorityFeeFix.earliestBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
+                        : 'N/A'
+                    }
                   />
                   <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
                     Fixing historical priority fee calculations (using gasUsed instead of gas limit)

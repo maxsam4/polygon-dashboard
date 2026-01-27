@@ -179,9 +179,10 @@ export class Gapfiller {
       // Also need previous blocks for block time calculation
       const prevBlockNumbers = blockNumbers.map(n => n - 1n).filter(n => n >= 0n);
 
-      // Fetch all blocks in parallel using batch methods (same as Backfiller)
-      const [blocksMap, prevBlocksMap] = await Promise.all([
+      // Fetch all blocks, receipts, and previous blocks in parallel (same as Backfiller)
+      const [blocksMap, receiptsMap, prevBlocksMap] = await Promise.all([
         rpc.getBlocksWithTransactions(blockNumbers),
+        rpc.getBlocksReceipts(blockNumbers),
         rpc.getBlocks(prevBlockNumbers),
       ]);
 
@@ -190,6 +191,18 @@ export class Gapfiller {
       for (const blockNum of blockNumbers) {
         const block = blocksMap.get(blockNum);
         if (!block) continue;
+
+        // Merge gasUsed from receipts into transactions
+        const receipts = receiptsMap.get(blockNum);
+        const receiptMap = new Map(
+          (receipts ?? []).map(r => [r.transactionHash, r])
+        );
+        const transactionsWithGasUsed = block.transactions.map(tx => {
+          if (typeof tx === 'string') return tx;
+          const receipt = receiptMap.get(tx.hash);
+          return { ...tx, gasUsed: receipt?.gasUsed };
+        });
+        const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
 
         // Get previous block timestamp for block time calculation
         let previousTimestamp: bigint | undefined;
@@ -200,7 +213,7 @@ export class Gapfiller {
           }
         }
 
-        const metrics = calculateBlockMetrics(block, previousTimestamp);
+        const metrics = calculateBlockMetrics(blockWithReceipts, previousTimestamp);
 
         blocks.push({
           blockNumber: blockNum,

@@ -1,14 +1,19 @@
-import { getRpcClient, RpcExhaustedError, RpcClient, TransactionReceipt } from '@/lib/rpc';
+import { getRpcClient, TransactionReceipt, ViemBlock } from '@/lib/rpc';
 import { weiToGwei } from '@/lib/gas';
 import { query, queryOne } from '@/lib/db';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 import { getTableStats } from '@/lib/queries/stats';
+import { updateBlocksPriorityFeeBatch, recompressOldChunks } from '@/lib/queries/blocks';
+import { Transaction } from 'viem';
+
+// Block type with full transaction objects
+type BlockWithTransactions = ViemBlock & { transactions: Transaction[] };
 
 const WORKER_NAME = 'PriorityFeeFixer';
 
-const BATCH_SIZE = 10; // Number of blocks to process per batch
-const BATCH_DELAY_MS = 100; // Delay between batches to not overload RPC
+const BASE_BATCH_SIZE = 50; // Base batch size, scaled by endpoint count
+const BATCH_DELAY_MS = 50; // Reduced delay - RPC distribution handles load
 const EXHAUSTED_RETRY_MS = 1000; // Wait 1 second if RPC exhausted
 
 interface PriorityFeeFixStatus {
@@ -86,14 +91,30 @@ export class PriorityFeeFixer {
         // Check if we've completed the fix
         if (lastFixed <= earliestBlock) {
           console.log(`[PriorityFeeFixer] Fix complete! All blocks from ${earliestBlock} to ${fixDeployedAt} have been fixed.`);
+
+          // Recompress old chunks now that the fix is complete
+          try {
+            console.log(`[PriorityFeeFixer] Recompressing old chunks...`);
+            const recompressedCount = await recompressOldChunks();
+            if (recompressedCount > 0) {
+              console.log(`[PriorityFeeFixer] Recompressed ${recompressedCount} chunks`);
+            }
+          } catch (error) {
+            console.error(`[PriorityFeeFixer] Failed to recompress chunks:`, error);
+          }
+
           updateWorkerState(WORKER_NAME, 'idle');
           await sleep(60000); // Check once per minute if new blocks appear below
           continue;
         }
 
         // Process a batch of blocks going backwards
+        // Scale batch size by endpoint count for better throughput
+        const rpc = getRpcClient();
+        const batchSize = BASE_BATCH_SIZE * rpc.endpointCount;
+
         const batchEnd = lastFixed - 1n;
-        const batchStart = batchEnd - BigInt(BATCH_SIZE) + 1n;
+        const batchStart = batchEnd - BigInt(batchSize) + 1n;
         const effectiveStart = batchStart < earliestBlock ? earliestBlock : batchStart;
 
         const { count, lowestProcessed } = await this.processBatch(effectiveStart, batchEnd);
@@ -124,8 +145,7 @@ export class PriorityFeeFixer {
   }
 
   /**
-   * Process a batch of blocks with per-block error isolation.
-   * Each block is processed independently so one failing endpoint doesn't block others.
+   * Process a batch of blocks using batch RPC calls and batch DB updates.
    * Returns the count of successfully processed blocks and the lowest block number that was processed.
    */
   private async processBatch(startBlock: bigint, endBlock: bigint): Promise<{ count: number; lowestProcessed: bigint | null }> {
@@ -138,65 +158,63 @@ export class PriorityFeeFixer {
 
     if (blockNumbers.length === 0) return { count: 0, lowestProcessed: null };
 
-    // Process blocks in parallel with individual error handling
-    const results = await Promise.allSettled(
-      blockNumbers.map(async (blockNum) => {
-        try {
-          return await this.processBlock(rpc, blockNum);
-        } catch (error) {
-          // Log but don't throw - block will be retried later
-          if (error instanceof RpcExhaustedError) {
-            // Don't log every exhausted error to avoid spam
-          } else {
-            console.warn(`[PriorityFeeFixer] Block ${blockNum} failed: ${error instanceof Error ? error.message : String(error)}`);
-          }
-          throw error;
-        }
-      })
-    );
+    // Batch fetch all blocks and receipts at once using parallel RPC calls
+    let blocksMap: Map<bigint, NonNullable<Awaited<ReturnType<typeof rpc.getBlockWithTransactions>>>>;
+    let receiptsMap: Map<bigint, TransactionReceipt[]>;
 
-    // Count successes and track which blocks were processed
-    let successCount = 0;
+    try {
+      [blocksMap, receiptsMap] = await Promise.all([
+        rpc.getBlocksWithTransactions(blockNumbers),
+        rpc.getBlocksReceipts(blockNumbers),
+      ]);
+    } catch (error) {
+      console.warn(`[PriorityFeeFixer] Batch RPC failed: ${error instanceof Error ? error.message : String(error)}`);
+      return { count: 0, lowestProcessed: null };
+    }
+
+    // Calculate priority fees for all blocks
+    const updates: Array<{ blockNumber: bigint; totalPriorityFeeGwei: number }> = [];
     let lowestProcessed: bigint | null = null;
-    let highestProcessed: bigint | null = null;
 
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].status === 'fulfilled') {
-        const blockNum = blockNumbers[i];
-        successCount++;
-        if (lowestProcessed === null || blockNum < lowestProcessed) {
-          lowestProcessed = blockNum;
-        }
-        if (highestProcessed === null || blockNum > highestProcessed) {
-          highestProcessed = blockNum;
-        }
+    for (const blockNum of blockNumbers) {
+      const block = blocksMap.get(blockNum);
+      const receipts = receiptsMap.get(blockNum);
+
+      if (!block || !receipts) {
+        // Skip blocks with missing data - they'll be retried in a future batch
+        continue;
+      }
+
+      const totalPriorityFeeGwei = this.calculatePriorityFee(block, receipts);
+      updates.push({ blockNumber: blockNum, totalPriorityFeeGwei });
+
+      if (lowestProcessed === null || blockNum < lowestProcessed) {
+        lowestProcessed = blockNum;
       }
     }
 
-    return { count: successCount, lowestProcessed };
+    if (updates.length === 0) {
+      return { count: 0, lowestProcessed: null };
+    }
+
+    // Batch update database
+    const count = await updateBlocksPriorityFeeBatch(updates);
+
+    return { count, lowestProcessed };
   }
 
   /**
-   * Process a single block - fetch data and update priority fee.
-   * Throws on failure so caller can handle.
+   * Calculate the total priority fee for a block.
+   * Pure function that extracts the calculation logic.
    */
-  private async processBlock(rpc: RpcClient, blockNum: bigint): Promise<void> {
-    // Fetch block and receipts in parallel
-    const [block, receipts] = await Promise.all([
-      rpc.getBlockWithTransactions(blockNum),
-      rpc.getBlockReceipts(blockNum),
-    ]);
-
-    if (!block || !receipts) {
-      throw new Error(`Missing data for block ${blockNum}`);
-    }
-
-    // Build receipt map
+  private calculatePriorityFee(
+    block: BlockWithTransactions,
+    receipts: TransactionReceipt[]
+  ): number {
     const receiptMap = new Map<`0x${string}`, TransactionReceipt>(
       receipts.map((r): [`0x${string}`, TransactionReceipt] => [r.transactionHash, r])
     );
 
-    // Calculate correct total priority fee
     const baseFeePerGas = block.baseFeePerGas ?? 0n;
     let totalPriorityFee = 0n;
 
@@ -214,20 +232,13 @@ export class PriorityFeeFixer {
         priorityFee = 0n;
       }
 
-      // Get gasUsed from receipt
       const receipt = receiptMap.get(tx.hash);
       const gasUsed = receipt?.gasUsed ?? tx.gas ?? 0n;
 
       totalPriorityFee += priorityFee * gasUsed;
     }
 
-    const totalPriorityFeeGwei = weiToGwei(totalPriorityFee);
-
-    // Update the block's total_priority_fee_gwei
-    await query(
-      `UPDATE blocks SET total_priority_fee_gwei = $1, updated_at = NOW() WHERE block_number = $2`,
-      [totalPriorityFeeGwei, blockNum.toString()]
-    );
+    return weiToGwei(totalPriorityFee);
   }
 }
 
