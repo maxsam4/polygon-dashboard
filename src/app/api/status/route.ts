@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Cached aggregates: block/milestone stats, coverage, inflation
  * Cache for 10 seconds to reduce load on compressed chunks
+ *
+ * Note: All BigInt values must be converted to strings before caching,
+ * as JSON serialization (used by unstable_cache) doesn't support BigInt.
  */
 const getCachedAggregates = unstable_cache(
   async () => {
@@ -29,11 +32,42 @@ const getCachedAggregates = unstable_cache(
         getLatestInflationRate().catch(() => null),
       ]);
 
+    // Convert BigInt and Date values for JSON serialization in cache
+    // JSON.stringify converts Date objects to ISO strings, so we do it explicitly
     return {
-      blockAggregates,
-      milestoneAggregates,
-      coverage: { blockCoverage, milestoneCoverage },
-      inflation: { inflationCount, latestInflation },
+      blockAggregates: {
+        ...blockAggregates,
+        minTimestamp: blockAggregates.minTimestamp?.toISOString() ?? null,
+        maxTimestamp: blockAggregates.maxTimestamp?.toISOString() ?? null,
+      },
+      milestoneAggregates: {
+        ...milestoneAggregates,
+        minTimestamp: milestoneAggregates.minTimestamp?.toISOString() ?? null,
+        maxTimestamp: milestoneAggregates.maxTimestamp?.toISOString() ?? null,
+      },
+      coverage: {
+        blockCoverage: blockCoverage ? {
+          id: blockCoverage.id,
+          lowWaterMark: blockCoverage.lowWaterMark.toString(),
+          highWaterMark: blockCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: blockCoverage.lastAnalyzedAt?.toISOString() ?? null,
+          updatedAt: blockCoverage.updatedAt.toISOString(),
+        } : null,
+        milestoneCoverage: milestoneCoverage ? {
+          id: milestoneCoverage.id,
+          lowWaterMark: milestoneCoverage.lowWaterMark.toString(),
+          highWaterMark: milestoneCoverage.highWaterMark.toString(),
+          lastAnalyzedAt: milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
+          updatedAt: milestoneCoverage.updatedAt.toISOString(),
+        } : null,
+      },
+      inflation: {
+        inflationCount,
+        latestInflation: latestInflation ? {
+          interestPerYearLog2: latestInflation.interestPerYearLog2.toString(),
+          blockTimestamp: latestInflation.blockTimestamp.toISOString(),
+        } : null,
+      },
     };
   },
   ['status-aggregates'],
@@ -77,8 +111,8 @@ export async function GET() {
       blocks: {
         min: blockAggregates.minBlock?.toString() ?? null,
         max: blockAggregates.maxBlock?.toString() ?? null,
-        minTimestamp: blockAggregates.minTimestamp?.toISOString() ?? null,
-        maxTimestamp: blockAggregates.maxTimestamp?.toISOString() ?? null,
+        minTimestamp: blockAggregates.minTimestamp ?? null,
+        maxTimestamp: blockAggregates.maxTimestamp ?? null,
         total: blockAggregates.totalCount?.toString() ?? '0',
         finalized: blockAggregates.finalizedCount?.toString() ?? '0',
         minFinalized: blockAggregates.minFinalized?.toString() ?? null,
@@ -102,8 +136,8 @@ export async function GET() {
         maxSeq: milestoneAggregates.maxSeq?.toString() ?? null,
         minStartBlock: milestoneAggregates.minStartBlock?.toString() ?? null,
         maxEndBlock: milestoneAggregates.maxEndBlock?.toString() ?? null,
-        minTimestamp: milestoneAggregates.minTimestamp?.toISOString() ?? null,
-        maxTimestamp: milestoneAggregates.maxTimestamp?.toISOString() ?? null,
+        minTimestamp: milestoneAggregates.minTimestamp ?? null,
+        maxTimestamp: milestoneAggregates.maxTimestamp ?? null,
         total: milestoneAggregates.totalCount?.toString() ?? '0',
         gaps: milestoneGaps.map(g => ({
           start: g.startValue.toString(),
@@ -132,20 +166,20 @@ export async function GET() {
       },
       coverage: {
         blocks: coverage.blockCoverage ? {
-          lowWaterMark: coverage.blockCoverage.lowWaterMark.toString(),
-          highWaterMark: coverage.blockCoverage.highWaterMark.toString(),
-          lastAnalyzedAt: coverage.blockCoverage.lastAnalyzedAt?.toISOString() ?? null,
+          lowWaterMark: coverage.blockCoverage.lowWaterMark,
+          highWaterMark: coverage.blockCoverage.highWaterMark,
+          lastAnalyzedAt: coverage.blockCoverage.lastAnalyzedAt ?? null,
         } : null,
         milestones: coverage.milestoneCoverage ? {
-          lowWaterMark: coverage.milestoneCoverage.lowWaterMark.toString(),
-          highWaterMark: coverage.milestoneCoverage.highWaterMark.toString(),
-          lastAnalyzedAt: coverage.milestoneCoverage.lastAnalyzedAt?.toISOString() ?? null,
+          lowWaterMark: coverage.milestoneCoverage.lowWaterMark,
+          highWaterMark: coverage.milestoneCoverage.highWaterMark,
+          lastAnalyzedAt: coverage.milestoneCoverage.lastAnalyzedAt ?? null,
         } : null,
       },
       inflation: {
         rateCount: inflation.inflationCount,
-        latestRate: inflation.latestInflation?.interestPerYearLog2.toString() ?? null,
-        lastChange: inflation.latestInflation?.blockTimestamp.toISOString() ?? null,
+        latestRate: inflation.latestInflation?.interestPerYearLog2 ?? null,
+        lastChange: inflation.latestInflation?.blockTimestamp ?? null,
       },
       priorityFeeFix: priorityFeeFixStatus ? {
         fixDeployedAtBlock: priorityFeeFixStatus.fixDeployedAtBlock?.toString() ?? null,

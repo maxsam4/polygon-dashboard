@@ -1,4 +1,4 @@
-import { getRpcClient, RpcExhaustedError } from '@/lib/rpc';
+import { getRpcClient, RpcExhaustedError, RpcClient, TransactionReceipt } from '@/lib/rpc';
 import { weiToGwei } from '@/lib/gas';
 import { query, queryOne } from '@/lib/db';
 import { sleep } from '@/lib/utils';
@@ -96,34 +96,39 @@ export class PriorityFeeFixer {
         const batchStart = batchEnd - BigInt(BATCH_SIZE) + 1n;
         const effectiveStart = batchStart < earliestBlock ? earliestBlock : batchStart;
 
-        const processed = await this.processBatch(effectiveStart, batchEnd);
+        const { count, lowestProcessed } = await this.processBatch(effectiveStart, batchEnd);
 
-        if (processed > 0) {
-          // Update last_fixed_block to the lowest block we fixed
+        if (count > 0 && lowestProcessed !== null) {
+          // Update last_fixed_block to the lowest block we successfully fixed
           await query(
             `UPDATE priority_fee_fix_status SET last_fixed_block = $1, updated_at = NOW() WHERE id = 1`,
-            [effectiveStart.toString()]
+            [lowestProcessed.toString()]
           );
-          updateWorkerRun(WORKER_NAME, processed);
-          console.log(`[PriorityFeeFixer] Fixed ${processed} blocks (${effectiveStart}-${batchEnd}), progress: ${effectiveStart} -> ${earliestBlock}`);
+          updateWorkerRun(WORKER_NAME, count);
+          console.log(`[PriorityFeeFixer] Fixed ${count} blocks (${effectiveStart}-${batchEnd}), progress: ${lowestProcessed} -> ${earliestBlock}`);
+        } else if (count === 0) {
+          // All blocks in batch failed - apply a small delay before retrying
+          console.warn(`[PriorityFeeFixer] Batch ${effectiveStart}-${batchEnd} had no successful updates, retrying...`);
+          await sleep(EXHAUSTED_RETRY_MS);
         }
 
         await sleep(BATCH_DELAY_MS);
       } catch (error) {
-        if (error instanceof RpcExhaustedError) {
-          console.error('[PriorityFeeFixer] RPC exhausted, waiting...');
-          updateWorkerError(WORKER_NAME, 'RPC exhausted');
-          await sleep(EXHAUSTED_RETRY_MS);
-        } else {
-          console.error('[PriorityFeeFixer] Error:', error);
-          updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
-          await sleep(10000);
-        }
+        // This catch is for unexpected errors (DB errors, etc.)
+        // RPC errors are now handled per-block in processBatch
+        console.error('[PriorityFeeFixer] Error:', error);
+        updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
+        await sleep(10000);
       }
     }
   }
 
-  private async processBatch(startBlock: bigint, endBlock: bigint): Promise<number> {
+  /**
+   * Process a batch of blocks with per-block error isolation.
+   * Each block is processed independently so one failing endpoint doesn't block others.
+   * Returns the count of successfully processed blocks and the lowest block number that was processed.
+   */
+  private async processBatch(startBlock: bigint, endBlock: bigint): Promise<{ count: number; lowestProcessed: bigint | null }> {
     const rpc = getRpcClient();
     const blockNumbers: bigint[] = [];
 
@@ -131,64 +136,98 @@ export class PriorityFeeFixer {
       blockNumbers.push(blockNum);
     }
 
-    if (blockNumbers.length === 0) return 0;
+    if (blockNumbers.length === 0) return { count: 0, lowestProcessed: null };
 
-    // Fetch blocks and receipts
-    const [blocksMap, receiptsMap] = await Promise.all([
-      rpc.getBlocksWithTransactions(blockNumbers),
-      rpc.getBlocksReceipts(blockNumbers),
-    ]);
-
-    let updatedCount = 0;
-
-    for (const blockNum of blockNumbers) {
-      const block = blocksMap.get(blockNum);
-      const receipts = receiptsMap.get(blockNum);
-
-      if (!block || !receipts) continue;
-
-      // Build receipt map
-      const receiptMap = new Map(
-        receipts.map(r => [r.transactionHash, r])
-      );
-
-      // Calculate correct total priority fee
-      const baseFeePerGas = block.baseFeePerGas ?? 0n;
-      let totalPriorityFee = 0n;
-
-      for (const tx of block.transactions) {
-        if (typeof tx === 'string') continue;
-
-        let priorityFee: bigint;
-        if (tx.maxPriorityFeePerGas !== undefined && tx.maxPriorityFeePerGas !== null) {
-          priorityFee = tx.maxPriorityFeePerGas;
-        } else if (tx.gasPrice !== undefined && tx.gasPrice !== null) {
-          priorityFee = baseFeePerGas > 0n
-            ? (tx.gasPrice > baseFeePerGas ? tx.gasPrice - baseFeePerGas : 0n)
-            : tx.gasPrice;
-        } else {
-          priorityFee = 0n;
+    // Process blocks in parallel with individual error handling
+    const results = await Promise.allSettled(
+      blockNumbers.map(async (blockNum) => {
+        try {
+          return await this.processBlock(rpc, blockNum);
+        } catch (error) {
+          // Log but don't throw - block will be retried later
+          if (error instanceof RpcExhaustedError) {
+            // Don't log every exhausted error to avoid spam
+          } else {
+            console.warn(`[PriorityFeeFixer] Block ${blockNum} failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          throw error;
         }
+      })
+    );
 
-        // Get gasUsed from receipt
-        const receipt = receiptMap.get(tx.hash);
-        const gasUsed = receipt?.gasUsed ?? tx.gas ?? 0n;
+    // Count successes and track which blocks were processed
+    let successCount = 0;
+    let lowestProcessed: bigint | null = null;
+    let highestProcessed: bigint | null = null;
 
-        totalPriorityFee += priorityFee * gasUsed;
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled') {
+        const blockNum = blockNumbers[i];
+        successCount++;
+        if (lowestProcessed === null || blockNum < lowestProcessed) {
+          lowestProcessed = blockNum;
+        }
+        if (highestProcessed === null || blockNum > highestProcessed) {
+          highestProcessed = blockNum;
+        }
       }
-
-      const totalPriorityFeeGwei = weiToGwei(totalPriorityFee);
-
-      // Update the block's total_priority_fee_gwei
-      await query(
-        `UPDATE blocks SET total_priority_fee_gwei = $1, updated_at = NOW() WHERE block_number = $2`,
-        [totalPriorityFeeGwei, blockNum.toString()]
-      );
-
-      updatedCount++;
     }
 
-    return updatedCount;
+    return { count: successCount, lowestProcessed };
+  }
+
+  /**
+   * Process a single block - fetch data and update priority fee.
+   * Throws on failure so caller can handle.
+   */
+  private async processBlock(rpc: RpcClient, blockNum: bigint): Promise<void> {
+    // Fetch block and receipts in parallel
+    const [block, receipts] = await Promise.all([
+      rpc.getBlockWithTransactions(blockNum),
+      rpc.getBlockReceipts(blockNum),
+    ]);
+
+    if (!block || !receipts) {
+      throw new Error(`Missing data for block ${blockNum}`);
+    }
+
+    // Build receipt map
+    const receiptMap = new Map<`0x${string}`, TransactionReceipt>(
+      receipts.map((r): [`0x${string}`, TransactionReceipt] => [r.transactionHash, r])
+    );
+
+    // Calculate correct total priority fee
+    const baseFeePerGas = block.baseFeePerGas ?? 0n;
+    let totalPriorityFee = 0n;
+
+    for (const tx of block.transactions) {
+      if (typeof tx === 'string') continue;
+
+      let priorityFee: bigint;
+      if (tx.maxPriorityFeePerGas !== undefined && tx.maxPriorityFeePerGas !== null) {
+        priorityFee = tx.maxPriorityFeePerGas;
+      } else if (tx.gasPrice !== undefined && tx.gasPrice !== null) {
+        priorityFee = baseFeePerGas > 0n
+          ? (tx.gasPrice > baseFeePerGas ? tx.gasPrice - baseFeePerGas : 0n)
+          : tx.gasPrice;
+      } else {
+        priorityFee = 0n;
+      }
+
+      // Get gasUsed from receipt
+      const receipt = receiptMap.get(tx.hash);
+      const gasUsed = receipt?.gasUsed ?? tx.gas ?? 0n;
+
+      totalPriorityFee += priorityFee * gasUsed;
+    }
+
+    const totalPriorityFeeGwei = weiToGwei(totalPriorityFee);
+
+    // Update the block's total_priority_fee_gwei
+    await query(
+      `UPDATE blocks SET total_priority_fee_gwei = $1, updated_at = NOW() WHERE block_number = $2`,
+      [totalPriorityFeeGwei, blockNum.toString()]
+    );
   }
 }
 
