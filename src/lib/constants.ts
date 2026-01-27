@@ -88,6 +88,8 @@ export const TIME_RANGE_SECONDS: Record<string, number> = {
 // External URLs
 export const EXTERNAL_URLS = {
   POLYGONSCAN_BLOCK: 'https://polygonscan.com/block/',
+  POLYGONSCAN_TX: 'https://polygonscan.com/tx/',
+  POLYGONSCAN_ADDRESS: 'https://polygonscan.com/address/',
 } as const;
 
 // Ethereum mainnet RPC URLs (for POL inflation data)

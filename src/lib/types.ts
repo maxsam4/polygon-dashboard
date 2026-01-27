@@ -180,3 +180,32 @@ export interface TableStatsRow {
   max_finalized: string | null;
   updated_at: Date;
 }
+
+// Transaction details for block details page (from RPC receipts)
+export interface TransactionDetails {
+  hash: string;
+  from: string;
+  to: string | null;
+  value: string;
+  gasLimit: string;
+  gasUsed: string | null;
+  gasPrice: string | null;
+  maxFeePerGas: string | null;
+  maxPriorityFeePerGas: string | null;
+  effectiveGasPrice: string | null;
+  nonce: number;
+  transactionIndex: number | null;
+  status: string | null;  // 'success' or 'reverted'
+  type: string;
+  input: string;
+  contractAddress: string | null;
+}
+
+// Block details page response (block from DB + transactions from RPC)
+export interface BlockDetailsResponse {
+  block: BlockDataUI & {
+    blockHash: string;
+    parentHash: string;
+  };
+  transactions: TransactionDetails[];
+}

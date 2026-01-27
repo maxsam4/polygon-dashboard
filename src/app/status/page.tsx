@@ -83,6 +83,15 @@ interface StatusData {
     latestRate: string | null;
     lastChange: string | null;
   };
+  priorityFeeFix?: {
+    fixDeployedAtBlock: string | null;
+    lastFixedBlock: string | null;
+    earliestBlock: string | null;
+    totalToFix: string;
+    totalFixed: string;
+    percentComplete: number;
+    isComplete: boolean;
+  } | null;
 }
 
 function formatAge(seconds: number): string {
@@ -745,6 +754,51 @@ export default function StatusPage() {
                 )}
               </div>
             </Card>
+
+            {/* Priority Fee Fix Progress */}
+            {status.priorityFeeFix && (
+              <Card title="Priority Fee Data Fix">
+                <div className="space-y-3">
+                  <div className="mb-3">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-gray-400 text-sm">Progress</span>
+                      <span className={status.priorityFeeFix.isComplete ? 'text-green-400' : 'text-blue-400'}>
+                        {status.priorityFeeFix.percentComplete.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full ${status.priorityFeeFix.isComplete ? 'bg-green-500' : 'bg-blue-500'}`}
+                        style={{ width: `${Math.min(100, status.priorityFeeFix.percentComplete)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <StatRow
+                    label="Status"
+                    value={status.priorityFeeFix.isComplete ? 'Complete' : 'In Progress'}
+                  />
+                  <StatRow
+                    label="Blocks Fixed"
+                    value={`${formatNumber(parseInt(status.priorityFeeFix.totalFixed))} / ${formatNumber(parseInt(status.priorityFeeFix.totalToFix))}`}
+                  />
+                  <StatRow
+                    label="Correct Data From"
+                    value={status.priorityFeeFix.fixDeployedAtBlock ?? 'N/A'}
+                  />
+                  <StatRow
+                    label="Last Fixed Block"
+                    value={status.priorityFeeFix.lastFixedBlock ?? 'N/A'}
+                  />
+                  <StatRow
+                    label="Earliest Block"
+                    value={status.priorityFeeFix.earliestBlock ?? 'N/A'}
+                  />
+                  <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
+                    Fixing historical priority fee calculations (using gasUsed instead of gas limit)
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* POL Inflation Rate */}
             <Card title="POL Inflation Rate">

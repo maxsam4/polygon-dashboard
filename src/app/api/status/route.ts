@@ -9,6 +9,7 @@ import {
   getLatestBlock,
   getLatestMilestone,
 } from '@/lib/queries/aggregates';
+import { getPriorityFeeFixStatus } from '@/lib/workers/priorityFeeFixer';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,7 @@ export async function GET() {
     const { blockAggregates, milestoneAggregates, coverage, inflation } = aggregates;
 
     // Fetch real-time data (fast queries, not cached)
-    const [blockGaps, milestoneGaps, finalityGaps, blockGapStats, milestoneGapStats, finalityGapStats, latestBlock, latestMilestone] =
+    const [blockGaps, milestoneGaps, finalityGaps, blockGapStats, milestoneGapStats, finalityGapStats, latestBlock, latestMilestone, priorityFeeFixStatus] =
       await Promise.all([
         getPendingGaps('block', 20),
         getPendingGaps('milestone', 20),
@@ -56,6 +57,7 @@ export async function GET() {
         getGapStats('finality'),
         getLatestBlock(),
         getLatestMilestone(),
+        getPriorityFeeFixStatus().catch(() => null),
       ]);
 
     // Get individual worker statuses
@@ -73,14 +75,14 @@ export async function GET() {
       workerStatuses,
       timestamp: new Date().toISOString(),
       blocks: {
-        min: blockAggregates.minBlock ?? null,
-        max: blockAggregates.maxBlock ?? null,
+        min: blockAggregates.minBlock?.toString() ?? null,
+        max: blockAggregates.maxBlock?.toString() ?? null,
         minTimestamp: blockAggregates.minTimestamp?.toISOString() ?? null,
         maxTimestamp: blockAggregates.maxTimestamp?.toISOString() ?? null,
-        total: blockAggregates.totalCount,
-        finalized: blockAggregates.finalizedCount,
-        minFinalized: blockAggregates.minFinalized ?? null,
-        maxFinalized: blockAggregates.maxFinalized ?? null,
+        total: blockAggregates.totalCount?.toString() ?? '0',
+        finalized: blockAggregates.finalizedCount?.toString() ?? '0',
+        minFinalized: blockAggregates.minFinalized?.toString() ?? null,
+        maxFinalized: blockAggregates.maxFinalized?.toString() ?? null,
         gaps: blockGaps.map(g => ({
           start: g.startValue.toString(),
           end: g.endValue.toString(),
@@ -90,19 +92,19 @@ export async function GET() {
         })),
         gapStats: blockGapStats,
         latest: latestBlock ? {
-          blockNumber: latestBlock.block_number,
+          blockNumber: latestBlock.block_number.toString(),
           timestamp: latestBlock.timestamp.toISOString(),
           age: Math.floor((Date.now() - latestBlock.timestamp.getTime()) / 1000),
         } : null,
       },
       milestones: {
-        minSeq: milestoneAggregates.minSeq ?? null,
-        maxSeq: milestoneAggregates.maxSeq ?? null,
-        minStartBlock: milestoneAggregates.minStartBlock ?? null,
-        maxEndBlock: milestoneAggregates.maxEndBlock ?? null,
+        minSeq: milestoneAggregates.minSeq?.toString() ?? null,
+        maxSeq: milestoneAggregates.maxSeq?.toString() ?? null,
+        minStartBlock: milestoneAggregates.minStartBlock?.toString() ?? null,
+        maxEndBlock: milestoneAggregates.maxEndBlock?.toString() ?? null,
         minTimestamp: milestoneAggregates.minTimestamp?.toISOString() ?? null,
         maxTimestamp: milestoneAggregates.maxTimestamp?.toISOString() ?? null,
-        total: milestoneAggregates.totalCount,
+        total: milestoneAggregates.totalCount?.toString() ?? '0',
         gaps: milestoneGaps.map(g => ({
           start: g.startValue.toString(),
           end: g.endValue.toString(),
@@ -112,8 +114,8 @@ export async function GET() {
         })),
         gapStats: milestoneGapStats,
         latest: latestMilestone ? {
-          sequenceId: latestMilestone.sequence_id,
-          endBlock: latestMilestone.end_block,
+          sequenceId: latestMilestone.sequence_id.toString(),
+          endBlock: latestMilestone.end_block.toString(),
           timestamp: latestMilestone.timestamp.toISOString(),
           age: Math.floor((Date.now() - latestMilestone.timestamp.getTime()) / 1000),
         } : null,
@@ -145,6 +147,15 @@ export async function GET() {
         latestRate: inflation.latestInflation?.interestPerYearLog2.toString() ?? null,
         lastChange: inflation.latestInflation?.blockTimestamp.toISOString() ?? null,
       },
+      priorityFeeFix: priorityFeeFixStatus ? {
+        fixDeployedAtBlock: priorityFeeFixStatus.fixDeployedAtBlock?.toString() ?? null,
+        lastFixedBlock: priorityFeeFixStatus.lastFixedBlock?.toString() ?? null,
+        earliestBlock: priorityFeeFixStatus.earliestBlock?.toString() ?? null,
+        totalToFix: priorityFeeFixStatus.totalToFix.toString(),
+        totalFixed: priorityFeeFixStatus.totalFixed.toString(),
+        percentComplete: priorityFeeFixStatus.percentComplete,
+        isComplete: priorityFeeFixStatus.isComplete,
+      } : null,
     };
 
     return NextResponse.json(response);

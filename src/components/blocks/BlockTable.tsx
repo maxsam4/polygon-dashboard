@@ -1,8 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { BlockDataUI } from '@/lib/types';
 import { getTimeAgo, formatGas, formatGweiToPol, getGasUtilizationColor } from '@/lib/utils';
-import { EXTERNAL_URLS } from '@/lib/constants';
 
 interface BlockTableProps {
   blocks: BlockDataUI[];
@@ -45,14 +45,12 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
               blocks.map((block) => (
                 <tr key={block.blockNumber} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="px-3 py-2">
-                    <a
-                      href={`${EXTERNAL_URLS.POLYGONSCAN_BLOCK}${block.blockNumber}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <Link
+                      href={`/blocks/${block.blockNumber}`}
                       className="text-blue-500 hover:underline font-mono"
                     >
                       {block.blockNumber}
-                    </a>
+                    </Link>
                   </td>
                   <td className="px-3 py-2 text-gray-500" title={new Date(block.timestamp).toLocaleString()}>
                     {getTimeAgo(new Date(block.timestamp))}

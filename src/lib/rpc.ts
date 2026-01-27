@@ -1,9 +1,51 @@
-import { createPublicClient, http, webSocket, PublicClient } from 'viem';
+import { createPublicClient, http, webSocket, PublicClient, TransactionReceipt, numberToHex, hexToBigInt } from 'viem';
 import { polygon } from 'viem/chains';
 import { sleep } from './utils';
 
 // Re-export Block type for convenience
 export type { Block as ViemBlock } from 'viem';
+export type { TransactionReceipt } from 'viem';
+
+// Raw receipt format from eth_getBlockReceipts RPC (hex strings)
+interface RawReceipt {
+  transactionHash: string;
+  transactionIndex: string;
+  blockHash: string;
+  blockNumber: string;
+  from: string;
+  to: string | null;
+  cumulativeGasUsed: string;
+  gasUsed: string;
+  effectiveGasPrice: string;
+  contractAddress: string | null;
+  logs: unknown[];
+  logsBloom: string;
+  status: string;
+  type: string;
+}
+
+// Parse raw receipt to viem-compatible format
+function parseReceipt(raw: RawReceipt): TransactionReceipt {
+  return {
+    transactionHash: raw.transactionHash as `0x${string}`,
+    transactionIndex: Number(hexToBigInt(raw.transactionIndex as `0x${string}`)),
+    blockHash: raw.blockHash as `0x${string}`,
+    blockNumber: hexToBigInt(raw.blockNumber as `0x${string}`),
+    from: raw.from as `0x${string}`,
+    to: raw.to as `0x${string}` | null,
+    cumulativeGasUsed: hexToBigInt(raw.cumulativeGasUsed as `0x${string}`),
+    gasUsed: hexToBigInt(raw.gasUsed as `0x${string}`),
+    effectiveGasPrice: hexToBigInt(raw.effectiveGasPrice as `0x${string}`),
+    contractAddress: raw.contractAddress as `0x${string}` | null,
+    logs: raw.logs as TransactionReceipt['logs'],
+    logsBloom: raw.logsBloom as `0x${string}`,
+    status: raw.status === '0x1' ? 'success' : 'reverted',
+    type: raw.type as TransactionReceipt['type'],
+    root: undefined,
+    blobGasPrice: undefined,
+    blobGasUsed: undefined,
+  };
+}
 
 // Callback type for block subscriptions
 export type BlockCallback = (blockNumber: bigint) => void;
@@ -181,6 +223,44 @@ export class RpcClient {
     for (let i = 0; i < blocks.length; i++) {
       if (blocks[i]) {
         results.set(blockNumbers[i], blocks[i]);
+      }
+    }
+
+    return results;
+  }
+
+  // Fetch transaction receipts for a block using eth_getBlockReceipts RPC method
+  async getBlockReceipts(blockNumber: bigint): Promise<TransactionReceipt[] | null> {
+    return this.call(async (client) => {
+      // eth_getBlockReceipts is not in viem's typed methods, so we use a type assertion
+      const result = await (client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
+        method: 'eth_getBlockReceipts',
+        params: [numberToHex(blockNumber)],
+      });
+      if (!result || !Array.isArray(result)) return null;
+      return (result as RawReceipt[]).map(parseReceipt);
+    });
+  }
+
+  // Fetch transaction receipts for multiple blocks in parallel
+  async getBlocksReceipts(blockNumbers: bigint[]): Promise<Map<bigint, TransactionReceipt[] | null>> {
+    const results = new Map<bigint, TransactionReceipt[] | null>();
+
+    const fns = blockNumbers.map((blockNumber) => async (client: PublicClient) => {
+      // eth_getBlockReceipts is not in viem's typed methods, so we use a type assertion
+      const result = await (client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
+        method: 'eth_getBlockReceipts',
+        params: [numberToHex(blockNumber)],
+      });
+      if (!result || !Array.isArray(result)) return null;
+      return (result as RawReceipt[]).map(parseReceipt);
+    });
+
+    const receipts = await this.callParallel(fns);
+
+    for (let i = 0; i < receipts.length; i++) {
+      if (receipts[i]) {
+        results.set(blockNumbers[i], receipts[i]);
       }
     }
 

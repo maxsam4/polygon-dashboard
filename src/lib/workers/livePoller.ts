@@ -193,10 +193,24 @@ export class LivePoller {
       (_, i) => startBlock + BigInt(i)
     );
 
-    // Fetch all blocks in parallel
+    // Fetch all blocks and receipts in parallel
     const blockPromises = blockNumbers.map(async (blockNumber) => {
       try {
-        const block = await rpc.getBlockWithTransactions(blockNumber);
+        const [block, receipts] = await Promise.all([
+          rpc.getBlockWithTransactions(blockNumber),
+          rpc.getBlockReceipts(blockNumber),
+        ]);
+
+        // Merge gasUsed from receipts into transactions
+        const receiptMap = new Map(
+          (receipts ?? []).map(r => [r.transactionHash, r])
+        );
+        const transactionsWithGasUsed = block.transactions.map(tx => {
+          if (typeof tx === 'string') return tx;
+          const receipt = receiptMap.get(tx.hash);
+          return { ...tx, gasUsed: receipt?.gasUsed };
+        });
+        const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
 
         // Get previous block timestamp
         let previousTimestamp: bigint | undefined;
@@ -210,7 +224,7 @@ export class LivePoller {
           }
         }
 
-        const metrics = calculateBlockMetrics(block, previousTimestamp);
+        const metrics = calculateBlockMetrics(blockWithReceipts, previousTimestamp);
         const blockTimestamp = new Date(Number(block.timestamp) * 1000);
 
         return {
@@ -236,8 +250,8 @@ export class LivePoller {
           milestoneId: null,
           timeToFinalitySec: null,
         };
-      } catch {
-        console.error(`[LivePoller] Error fetching block ${blockNumber}`);
+      } catch (error) {
+        console.error(`[LivePoller] Error fetching block ${blockNumber}:`, error instanceof Error ? error.message : error);
         return null;
       }
     });
@@ -267,8 +281,22 @@ export class LivePoller {
   private async processBlock(blockNumber: bigint): Promise<void> {
     const rpc = getRpcClient();
 
-    // Get block with transactions
-    const block = await rpc.getBlockWithTransactions(blockNumber);
+    // Get block with transactions and receipts in parallel
+    const [block, receipts] = await Promise.all([
+      rpc.getBlockWithTransactions(blockNumber),
+      rpc.getBlockReceipts(blockNumber),
+    ]);
+
+    // Merge gasUsed from receipts into transactions
+    const receiptMap = new Map(
+      (receipts ?? []).map(r => [r.transactionHash, r])
+    );
+    const transactionsWithGasUsed = block.transactions.map(tx => {
+      if (typeof tx === 'string') return tx;
+      const receipt = receiptMap.get(tx.hash);
+      return { ...tx, gasUsed: receipt?.gasUsed };
+    });
+    const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
 
     // Get previous block timestamp for block time calculation
     let previousTimestamp: bigint | undefined;
@@ -283,7 +311,7 @@ export class LivePoller {
     }
 
     // Calculate metrics
-    const metrics = calculateBlockMetrics(block, previousTimestamp);
+    const metrics = calculateBlockMetrics(blockWithReceipts, previousTimestamp);
     const blockTimestamp = new Date(Number(block.timestamp) * 1000);
 
     // Check for reorg

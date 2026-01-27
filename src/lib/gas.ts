@@ -8,6 +8,7 @@ interface TransactionLike {
   maxPriorityFeePerGas?: bigint | null;
   gasPrice?: bigint | null;
   gas?: bigint;
+  gasUsed?: bigint;  // From transaction receipt - actual gas consumed
 }
 
 interface BlockLike {
@@ -68,7 +69,9 @@ export function calculateBlockMetrics(
       priorityFees.push(priorityFee);
       if (priorityFee < minPriorityFee) minPriorityFee = priorityFee;
       if (priorityFee > maxPriorityFee) maxPriorityFee = priorityFee;
-      totalPriorityFee += priorityFee * (tx.gas ?? 0n);
+      // Use gasUsed (from receipt) if available, otherwise fall back to gas limit
+      const gasForCalc = tx.gasUsed ?? tx.gas ?? 0n;
+      totalPriorityFee += priorityFee * gasForCalc;
     }
   } else {
     // Only have transaction hashes, not full transactions
