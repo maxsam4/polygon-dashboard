@@ -294,6 +294,59 @@ export async function resetInvalidFinalityData(maxValidFinalitySec = 300): Promi
   return (result as unknown as { rowCount: number }).rowCount ?? 0;
 }
 
+export async function updateBlocksPriorityFeeBatch(
+  updates: Array<{ blockNumber: bigint; totalPriorityFeeGwei: number }>
+): Promise<number> {
+  if (updates.length === 0) return 0;
+
+  // Process in chunks to avoid TimescaleDB decompression limits
+  // With timestamp filter, we can use larger chunks for uncompressed data
+  const CHUNK_SIZE = 50;
+  let totalUpdated = 0;
+
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    const blockNumbers = chunk.map(u => u.blockNumber.toString());
+    const fees = chunk.map(u => u.totalPriorityFeeGwei);
+
+    try {
+      // Batch update using UNNEST for efficiency
+      // Assumes chunks are decompressed (run migration first)
+      const result = await queryOne<{ count: string }>(
+        `WITH updated AS (
+           UPDATE blocks b
+           SET total_priority_fee_gwei = u.fee, updated_at = NOW()
+           FROM UNNEST($1::bigint[], $2::double precision[]) AS u(block_num, fee)
+           WHERE b.block_number = u.block_num
+           RETURNING 1
+         )
+         SELECT COUNT(*) as count FROM updated`,
+        [blockNumbers, fees]
+      );
+
+      totalUpdated += parseInt(result?.count ?? '0', 10);
+    } catch (error) {
+      // If batch update fails completely, fall back to individual updates
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`[updateBlocksPriorityFeeBatch] Batch update failed: ${errorMessage}`);
+
+      for (const update of chunk) {
+        try {
+          await query(
+            `UPDATE blocks SET total_priority_fee_gwei = $1, updated_at = NOW() WHERE block_number = $2`,
+            [update.totalPriorityFeeGwei, update.blockNumber.toString()]
+          );
+          totalUpdated++;
+        } catch (individualError) {
+          console.warn(`[updateBlocksPriorityFeeBatch] Individual update failed for block ${update.blockNumber}: ${individualError instanceof Error ? individualError.message : String(individualError)}`);
+        }
+      }
+    }
+  }
+
+  return totalUpdated;
+}
+
 export async function updateBlocksFinalityInRange(
   startBlock: bigint,
   endBlock: bigint,
@@ -336,4 +389,35 @@ export async function updateBlocksFinalityInRange(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Recompress old chunks after priority fee fix completes.
+ * Only compresses chunks older than 7 days to match the compression policy.
+ */
+export async function recompressOldChunks(): Promise<number> {
+  const result = await query<{ chunk_schema: string; chunk_name: string }>(
+    `SELECT chunk_schema, chunk_name
+     FROM timescaledb_information.chunks
+     WHERE hypertable_name = 'blocks'
+       AND is_compressed = false
+       AND range_end < NOW() - INTERVAL '35 days'
+     ORDER BY range_start`
+  );
+
+  let compressedCount = 0;
+  for (const chunk of result) {
+    try {
+      await query(
+        `SELECT compress_chunk($1::regclass)`,
+        [`${chunk.chunk_schema}.${chunk.chunk_name}`]
+      );
+      compressedCount++;
+      console.log(`[recompressOldChunks] Compressed ${chunk.chunk_schema}.${chunk.chunk_name}`);
+    } catch (error) {
+      console.error(`[recompressOldChunks] Failed to compress ${chunk.chunk_schema}.${chunk.chunk_name}:`, error);
+    }
+  }
+
+  return compressedCount;
 }
