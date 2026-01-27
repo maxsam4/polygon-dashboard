@@ -25,6 +25,8 @@ import {
   TIME_RANGE_BUCKETS,
   TIME_RANGE_SECONDS,
   GWEI_PER_POL,
+  getAvailableBuckets,
+  getTimeRangeSeconds,
 } from '@/lib/constants';
 
 type InflationMetric = 'issuance' | 'netInflation' | 'totalSupply';
@@ -81,6 +83,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [burnData, setBurnData] = useState<Map<number, number>>(new Map());
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isDataComplete, setIsDataComplete] = useState(true);
   const timeRangeRef = useRef(timeRange);
 
   const now = new Date();
@@ -88,6 +91,21 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
   const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Calculate available bucket sizes based on time range
+  const availableBuckets = useMemo(() => {
+    const seconds = getTimeRangeSeconds(timeRange, appliedCustomRange);
+    return getAvailableBuckets(seconds);
+  }, [timeRange, appliedCustomRange]);
+
+  // Auto-adjust bucket size when it becomes invalid for the current time range
+  useEffect(() => {
+    if (availableBuckets.length > 0 && !availableBuckets.includes(bucketSize)) {
+      const recommended = TIME_RANGE_BUCKETS[timeRange];
+      const newBucket = availableBuckets.find(b => b === recommended) ?? availableBuckets[0];
+      setBucketSize(newBucket);
+    }
+  }, [availableBuckets, bucketSize, timeRange]);
 
   const handleTimeRangeChange = (range: string) => {
     setTimeRange(range);
@@ -150,7 +168,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
 
     try {
       const response = await fetch(
-        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
+        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
       const json = await response.json();
 
@@ -162,8 +180,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         }
       }
       setBurnData(burnMap);
+      // Check if we received all the data or hit the limit
+      if (json.pagination) {
+        setIsDataComplete(json.pagination.total <= json.pagination.limit);
+      } else {
+        setIsDataComplete(true);
+      }
     } catch (error) {
       console.error('Failed to fetch burn data:', error);
+      setIsDataComplete(true);
     }
   }, [timeRange, bucketSize, appliedCustomRange]);
 
@@ -431,9 +456,9 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
   };
 
-  // Calculate period totals
+  // Calculate period totals (only show when data is complete)
   const periodTotals = useMemo(() => {
-    if (chartData.length === 0) return null;
+    if (chartData.length === 0 || !isDataComplete) return null;
 
     const totalIssuance = chartData.reduce((sum, d) => sum + d.issuance, 0);
     const totalBurned = chartData.reduce((sum, d) => sum + d.burned, 0);
@@ -456,7 +481,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       annualizedIssuancePercent: supplyAtStart > 0 ? annualize((totalIssuance / supplyAtStart) * 100, periodSeconds) : 0,
       annualizedNetInflationPercent: supplyAtStart > 0 ? annualize((netInflation / supplyAtStart) * 100, periodSeconds) : 0,
     };
-  }, [chartData]);
+  }, [chartData, isDataComplete]);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
@@ -518,6 +543,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         onCustomStartTimeChange={setCustomStartTime}
         onCustomEndTimeChange={setCustomEndTime}
         onApplyCustomRange={handleApplyCustomRange}
+        availableBuckets={availableBuckets}
       />
 
       <div className="relative mt-4">

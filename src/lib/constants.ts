@@ -107,3 +107,53 @@ export const POL_EMISSION_MANAGER_PROXY = '0xbC9f74b3b14f460a6c47dCdDFd17411cBc7
 export const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 export const POL_DECIMALS = 18;
 export const WEI_PER_POL = 10n ** 18n;
+
+// Bucket size configuration for charts
+export const ALL_BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'] as const;
+
+export const BUCKET_SIZES_SECONDS: Record<string, number> = {
+  '2s': 2,
+  '1m': 60,
+  '5m': 300,
+  '15m': 900,
+  '1h': 3600,
+  '4h': 14400,
+  '1d': 86400,
+  '1w': 604800,
+};
+
+// Maximum number of data points the API will return
+export const MAX_BUCKETS = 10000;
+
+/**
+ * Get available bucket sizes for a given time range.
+ * Returns only bucket sizes that won't exceed MAX_BUCKETS data points.
+ */
+export function getAvailableBuckets(timeRangeSeconds: number): string[] {
+  return ALL_BUCKET_SIZES.filter(
+    (size) => Math.ceil(timeRangeSeconds / BUCKET_SIZES_SECONDS[size]) <= MAX_BUCKETS
+  );
+}
+
+/**
+ * Get the time range in seconds from state.
+ * Handles preset ranges, custom ranges, and YTD.
+ */
+export function getTimeRangeSeconds(
+  timeRange: string,
+  appliedCustomRange: { start: number; end: number } | null
+): number {
+  if (timeRange === 'Custom' && appliedCustomRange) {
+    return appliedCustomRange.end - appliedCustomRange.start;
+  }
+  if (timeRange === 'YTD') {
+    const now = Date.now() / 1000;
+    const startOfYear = new Date(new Date().getFullYear(), 0, 1).getTime() / 1000;
+    return now - startOfYear;
+  }
+  if (timeRange === 'ALL') {
+    // For ALL, return a large number that will filter to weekly buckets
+    return TIME_SEC.YEAR * 10;
+  }
+  return TIME_RANGE_SECONDS[timeRange] ?? TIME_SEC.DAY;
+}

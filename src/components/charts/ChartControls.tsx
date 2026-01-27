@@ -14,6 +14,7 @@ interface ChartControlsProps {
   onCustomStartTimeChange: (time: string) => void;
   onCustomEndTimeChange: (time: string) => void;
   onApplyCustomRange: () => void;
+  availableBuckets?: string[];
 }
 
 const TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL', 'Custom'];
@@ -31,7 +32,10 @@ const ChartControlsComponent = ({
   onCustomStartTimeChange,
   onCustomEndTimeChange,
   onApplyCustomRange,
+  availableBuckets,
 }: ChartControlsProps) => {
+  // Use provided available buckets or fall back to all bucket sizes
+  const bucketsToShow = availableBuckets ?? BUCKET_SIZES;
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex flex-wrap gap-4 items-center">
@@ -56,7 +60,7 @@ const ChartControlsComponent = ({
           onChange={(e) => onBucketSizeChange(e.target.value)}
           className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700"
         >
-          {BUCKET_SIZES.map((size) => (
+          {bucketsToShow.map((size) => (
             <option key={size} value={size}>
               {size}
             </option>

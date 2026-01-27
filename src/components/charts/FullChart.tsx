@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   createChart,
   IChartApi,
@@ -20,6 +20,8 @@ import {
   CHART_COLOR_PALETTE,
   TIME_RANGE_BUCKETS,
   TIME_RANGE_SECONDS,
+  getAvailableBuckets,
+  getTimeRangeSeconds,
 } from '@/lib/constants';
 
 interface FullChartProps {
@@ -50,6 +52,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isDataComplete, setIsDataComplete] = useState(true);
   const timeRangeRef = useRef(timeRange);
 
   // Custom date range state
@@ -58,6 +61,22 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
   const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Calculate available bucket sizes based on time range
+  const availableBuckets = useMemo(() => {
+    const seconds = getTimeRangeSeconds(timeRange, appliedCustomRange);
+    return getAvailableBuckets(seconds);
+  }, [timeRange, appliedCustomRange]);
+
+  // Auto-adjust bucket size when it becomes invalid for the current time range
+  useEffect(() => {
+    if (availableBuckets.length > 0 && !availableBuckets.includes(bucketSize)) {
+      // Find the first available bucket that's larger than the recommended one
+      const recommended = TIME_RANGE_BUCKETS[timeRange];
+      const newBucket = availableBuckets.find(b => b === recommended) ?? availableBuckets[0];
+      setBucketSize(newBucket);
+    }
+  }, [availableBuckets, bucketSize, timeRange]);
 
   // Tooltip state
   const [tooltipVisible, setTooltipVisible] = useState(false);
@@ -342,12 +361,19 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         ? '/api/milestone-chart-data'
         : '/api/chart-data';
       const response = await fetch(
-        `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
+        `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
       const json = await response.json();
       setData(json.data || []);
+      // Check if we received all the data or hit the limit
+      if (json.pagination) {
+        setIsDataComplete(json.pagination.total <= json.pagination.limit);
+      } else {
+        setIsDataComplete(true);
+      }
     } catch (error) {
       console.error('Failed to fetch chart data:', error);
+      setIsDataComplete(true);
     }
   }, [timeRange, bucketSize, appliedCustomRange, metric]);
 
@@ -581,9 +607,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     }
   };
 
-  // Calculate period total for cumulative fee charts
+  // Calculate period total for cumulative fee charts (only show when data is complete)
   const periodTotal = (() => {
-    if (!showCumulative || data.length === 0) return null;
+    if (!showCumulative || data.length === 0 || !isDataComplete) return null;
     if (metric === 'totalBaseFee') {
       return data.reduce((sum, d) => sum + d.totalBaseFeeSum, 0);
     }
@@ -636,6 +662,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         onCustomStartTimeChange={setCustomStartTime}
         onCustomEndTimeChange={setCustomEndTime}
         onApplyCustomRange={handleApplyCustomRange}
+        availableBuckets={availableBuckets}
       />
       <div className="relative mt-4">
         <div

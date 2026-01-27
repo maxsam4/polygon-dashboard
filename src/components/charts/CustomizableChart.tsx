@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   createChart,
   IChartApi,
@@ -19,6 +19,8 @@ import {
   CHART_COLORS,
   TIME_RANGE_BUCKETS,
   TIME_RANGE_SECONDS,
+  getAvailableBuckets,
+  getTimeRangeSeconds,
 } from '@/lib/constants';
 
 // Available data series options
@@ -108,6 +110,7 @@ export function CustomizableChart({
   const [bucketSize, setBucketSize] = useState('15m');
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isDataComplete, setIsDataComplete] = useState(true);
   const timeRangeRef = useRef(timeRange);
 
   const [leftSeries, setLeftSeries] = useState<DataOptionValue>(defaultLeftSeries);
@@ -119,6 +122,21 @@ export function CustomizableChart({
   const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneDayAgo));
   const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Calculate available bucket sizes based on time range
+  const availableBuckets = useMemo(() => {
+    const seconds = getTimeRangeSeconds(timeRange, appliedCustomRange);
+    return getAvailableBuckets(seconds);
+  }, [timeRange, appliedCustomRange]);
+
+  // Auto-adjust bucket size when it becomes invalid for the current time range
+  useEffect(() => {
+    if (availableBuckets.length > 0 && !availableBuckets.includes(bucketSize)) {
+      const recommended = TIME_RANGE_BUCKETS[timeRange];
+      const newBucket = availableBuckets.find(b => b === recommended) ?? availableBuckets[0];
+      setBucketSize(newBucket);
+    }
+  }, [availableBuckets, bucketSize, timeRange]);
 
   const handleTimeRangeChange = (range: string) => {
     setTimeRange(range);
@@ -192,12 +210,19 @@ export function CustomizableChart({
 
     try {
       const response = await fetch(
-        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=5000`
+        `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
       const json = await response.json();
       setData(json.data || []);
+      // Check if we received all the data or hit the limit
+      if (json.pagination) {
+        setIsDataComplete(json.pagination.total <= json.pagination.limit);
+      } else {
+        setIsDataComplete(true);
+      }
     } catch (error) {
       console.error('Failed to fetch chart data:', error);
+      setIsDataComplete(true);
     }
   }, [timeRange, bucketSize, appliedCustomRange]);
 
@@ -338,9 +363,9 @@ export function CustomizableChart({
     }
   };
 
-  // Calculate cumulative totals for display
+  // Calculate cumulative totals for display (only show when data is complete)
   const cumulativeTotals = (() => {
-    if (data.length === 0) return { baseFee: null, priorityFee: null, totalFee: null };
+    if (data.length === 0 || !isDataComplete) return { baseFee: null, priorityFee: null, totalFee: null };
 
     const showBaseFee = isCumulativeSeries(leftSeries) || isCumulativeSeries(rightSeries);
     if (!showBaseFee) return { baseFee: null, priorityFee: null, totalFee: null };
@@ -458,6 +483,7 @@ export function CustomizableChart({
         onCustomStartTimeChange={setCustomStartTime}
         onCustomEndTimeChange={setCustomEndTime}
         onApplyCustomRange={handleApplyCustomRange}
+        availableBuckets={availableBuckets}
       />
       <div ref={chartContainerRef} className="w-full mt-4 cursor-crosshair" title="Scroll to zoom, drag to pan" />
     </div>
