@@ -1,14 +1,10 @@
-import { getRpcClient, TransactionReceipt, ViemBlock } from '@/lib/rpc';
+import { getRpcClient, TransactionReceipt } from '@/lib/rpc';
 import { weiToGwei } from '@/lib/gas';
 import { query, queryOne } from '@/lib/db';
 import { sleep } from '@/lib/utils';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from './workerStatus';
 import { getTableStats } from '@/lib/queries/stats';
 import { updateBlocksPriorityFeeBatch, recompressOldChunks } from '@/lib/queries/blocks';
-import { Transaction } from 'viem';
-
-// Block type with full transaction objects
-type BlockWithTransactions = ViemBlock & { transactions: Transaction[] };
 
 const WORKER_NAME = 'PriorityFeeFixer';
 
@@ -140,35 +136,49 @@ export class PriorityFeeFixer {
   }
 
   /**
-   * Process a batch of blocks sequentially using a single RPC endpoint.
-   * Returns the count of successfully processed blocks and the lowest block number that was processed.
+   * Process a batch of blocks in parallel.
+   * Only fetches block headers (for baseFeePerGas) and receipts (for effectiveGasPrice and gasUsed).
    */
   private async processBatch(startBlock: bigint, endBlock: bigint): Promise<{ count: number; lowestProcessed: bigint | null }> {
     const rpc = getRpcClient();
+    const blockNumbers: bigint[] = [];
+    for (let blockNum = startBlock; blockNum <= endBlock; blockNum++) {
+      blockNumbers.push(blockNum);
+    }
+
+    if (blockNumbers.length === 0) return { count: 0, lowestProcessed: null };
+
+    // Time RPC calls
+    const rpcStart = performance.now();
+
+    // Fetch block headers (light, no transactions) and receipts in parallel
+    const results = await Promise.allSettled(
+      blockNumbers.map(async (blockNum) => {
+        const [block, receipts] = await Promise.all([
+          rpc.getBlock(blockNum),
+          rpc.getBlockReceipts(blockNum),
+        ]);
+        return { blockNum, block, receipts };
+      })
+    );
+
+    const rpcTime = performance.now() - rpcStart;
+
+    // Process results
     const updates: Array<{ blockNumber: bigint; totalPriorityFeeGwei: number }> = [];
     let lowestProcessed: bigint | null = null;
 
-    // Process blocks sequentially using first RPC endpoint
-    for (let blockNum = startBlock; blockNum <= endBlock; blockNum++) {
-      try {
-        const [block, receipts] = await Promise.all([
-          rpc.getBlockWithTransactions(blockNum),
-          rpc.getBlockReceipts(blockNum),
-        ]);
+    for (const result of results) {
+      if (result.status === 'rejected') continue;
+      const { blockNum, block, receipts } = result.value;
+      if (!block || !receipts) continue;
 
-        if (!block || !receipts) {
-          continue;
-        }
+      const baseFeePerGas = block.baseFeePerGas ?? 0n;
+      const totalPriorityFeeGwei = this.calculatePriorityFee(baseFeePerGas, receipts);
+      updates.push({ blockNumber: blockNum, totalPriorityFeeGwei });
 
-        const totalPriorityFeeGwei = this.calculatePriorityFee(block, receipts);
-        updates.push({ blockNumber: blockNum, totalPriorityFeeGwei });
-
-        if (lowestProcessed === null || blockNum < lowestProcessed) {
-          lowestProcessed = blockNum;
-        }
-      } catch (error) {
-        // Skip failed blocks - they'll be retried in a future batch
-        console.warn(`[PriorityFeeFixer] Block ${blockNum} failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (lowestProcessed === null || blockNum < lowestProcessed) {
+        lowestProcessed = blockNum;
       }
     }
 
@@ -176,45 +186,29 @@ export class PriorityFeeFixer {
       return { count: 0, lowestProcessed: null };
     }
 
-    // Batch update database
+    // Time DB update
+    const dbStart = performance.now();
     const count = await updateBlocksPriorityFeeBatch(updates);
+    const dbTime = performance.now() - dbStart;
+
+    console.log(`[PriorityFeeFixer] Timing: RPC=${(rpcTime / 1000).toFixed(1)}s, DB=${(dbTime / 1000).toFixed(1)}s for ${updates.length} blocks`);
 
     return { count, lowestProcessed };
   }
 
   /**
-   * Calculate the total priority fee for a block.
-   * Pure function that extracts the calculation logic.
+   * Calculate total priority fee from receipts.
+   * Uses effectiveGasPrice from receipts: priorityFee = (effectiveGasPrice - baseFeePerGas) * gasUsed
    */
-  private calculatePriorityFee(
-    block: BlockWithTransactions,
-    receipts: TransactionReceipt[]
-  ): number {
-    const receiptMap = new Map<`0x${string}`, TransactionReceipt>(
-      receipts.map((r): [`0x${string}`, TransactionReceipt] => [r.transactionHash, r])
-    );
-
-    const baseFeePerGas = block.baseFeePerGas ?? 0n;
+  private calculatePriorityFee(baseFeePerGas: bigint, receipts: TransactionReceipt[]): number {
     let totalPriorityFee = 0n;
 
-    for (const tx of block.transactions) {
-      if (typeof tx === 'string') continue;
-
-      let priorityFee: bigint;
-      if (tx.maxPriorityFeePerGas !== undefined && tx.maxPriorityFeePerGas !== null) {
-        priorityFee = tx.maxPriorityFeePerGas;
-      } else if (tx.gasPrice !== undefined && tx.gasPrice !== null) {
-        priorityFee = baseFeePerGas > 0n
-          ? (tx.gasPrice > baseFeePerGas ? tx.gasPrice - baseFeePerGas : 0n)
-          : tx.gasPrice;
-      } else {
-        priorityFee = 0n;
-      }
-
-      const receipt = receiptMap.get(tx.hash);
-      const gasUsed = receipt?.gasUsed ?? tx.gas ?? 0n;
-
-      totalPriorityFee += priorityFee * gasUsed;
+    for (const receipt of receipts) {
+      const effectiveGasPrice = receipt.effectiveGasPrice ?? 0n;
+      const priorityFeePerGas = effectiveGasPrice > baseFeePerGas
+        ? effectiveGasPrice - baseFeePerGas
+        : 0n;
+      totalPriorityFee += priorityFeePerGas * receipt.gasUsed;
     }
 
     return weiToGwei(totalPriorityFee);
