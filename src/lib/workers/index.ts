@@ -5,7 +5,6 @@ import { MilestoneBackfiller } from './milestoneBackfiller';
 import { FinalityReconciler } from './finalityReconciler';
 import { GapAnalyzer } from './gapAnalyzer';
 import { Gapfiller } from './gapfiller';
-import { PriorityFeeFixer } from './priorityFeeFixer';
 import { getAllWorkerStatuses } from './workerStatus';
 import type { WorkerStatus } from './workerStatus';
 
@@ -22,7 +21,6 @@ const globalState = globalThis as typeof globalThis & {
   __finalityReconciler?: FinalityReconciler;
   __gapAnalyzer?: GapAnalyzer;
   __gapfiller?: Gapfiller;
-  __priorityFeeFixer?: PriorityFeeFixer;
 };
 
 export function areWorkersRunning(): boolean {
@@ -50,7 +48,6 @@ export async function startWorkers(): Promise<void> {
   globalState.__finalityReconciler = new FinalityReconciler();
   globalState.__gapAnalyzer = new GapAnalyzer();
   globalState.__gapfiller = new Gapfiller(rpcDelayMs);
-  globalState.__priorityFeeFixer = new PriorityFeeFixer();
 
   await Promise.all([
     globalState.__livePoller.start(),
@@ -60,7 +57,6 @@ export async function startWorkers(): Promise<void> {
     globalState.__finalityReconciler.start(),
     globalState.__gapAnalyzer.start(),
     globalState.__gapfiller.start(),
-    globalState.__priorityFeeFixer.start(),
   ]);
 
   globalState.__workersStarted = true;
@@ -76,7 +72,6 @@ export function stopWorkers(): void {
   globalState.__finalityReconciler?.stop();
   globalState.__gapAnalyzer?.stop();
   globalState.__gapfiller?.stop();
-  globalState.__priorityFeeFixer?.stop();
 }
 
 // Handle graceful shutdown
