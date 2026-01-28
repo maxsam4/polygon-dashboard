@@ -1,7 +1,7 @@
 import { getRpcClient, RpcExhaustedError } from '@/lib/rpc';
 import { getHeimdallClient, HeimdallExhaustedError } from '@/lib/heimdall';
 import { calculateBlockMetrics } from '@/lib/gas';
-import { insertBlocksBatch } from '@/lib/queries/blocks';
+import { insertBlocksBatch, updateBlockPriorityFees } from '@/lib/queries/blocks';
 import { insertMilestonesBatch, reconcileBlocksForMilestones } from '@/lib/queries/milestones';
 import {
   getPendingGaps,
@@ -94,6 +94,13 @@ export class Gapfiller {
           continue;
         }
 
+        const filledPriorityFee = await this.fillNextGap('priority_fee');
+        if (filledPriorityFee) {
+          updateWorkerRun(WORKER_NAME, 1);
+          await sleep(this.delayMs);
+          continue;
+        }
+
         // No gaps to fill, wait before checking again
         updateWorkerState(WORKER_NAME, 'idle');
         await sleep(EXHAUSTED_RETRY_MS);
@@ -115,7 +122,7 @@ export class Gapfiller {
     }
   }
 
-  private async fillNextGap(gapType: 'block' | 'milestone' | 'finality'): Promise<boolean> {
+  private async fillNextGap(gapType: 'block' | 'milestone' | 'finality' | 'priority_fee'): Promise<boolean> {
     // Get pending gaps (ordered by end_value DESC - recent first)
     const gaps = await getPendingGaps(gapType, 1);
     if (gaps.length === 0) {
@@ -142,6 +149,9 @@ export class Gapfiller {
           break;
         case 'finality':
           await this.fillFinalityGap(gap);
+          break;
+        case 'priority_fee':
+          await this.fillPriorityFeeGap(gap);
           break;
       }
 
@@ -357,5 +367,90 @@ export class Gapfiller {
     // Mark gap as filled
     await markGapFilled(gap.id);
     console.log(`[Gapfiller] Completed finality gap ${gap.id}`);
+  }
+
+  private async fillPriorityFeeGap(gap: Gap): Promise<void> {
+    // Priority fee gaps are blocks that EXIST but have null priority fee metrics
+    // We need to fetch receipts and recalculate the metrics
+    const rpc = getRpcClient();
+    const startBlock = gap.startValue;
+    const endBlock = gap.endValue;
+
+    console.log(`[Gapfiller] Filling priority fee gap ${gap.id}: blocks ${startBlock} to ${endBlock}`);
+
+    // First, get the block data from DB to get timestamps and transaction hashes
+    const blocksData = await query<{
+      block_number: string;
+      timestamp: Date;
+      base_fee_gwei: number;
+      gas_used: string;
+    }>(
+      `SELECT block_number::text, timestamp, base_fee_gwei, gas_used::text
+       FROM blocks
+       WHERE block_number BETWEEN $1 AND $2
+         AND (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
+         AND tx_count > 0
+       ORDER BY block_number`,
+      [startBlock.toString(), endBlock.toString()]
+    );
+
+    if (blocksData.length === 0) {
+      // No blocks need updating in this range
+      await markGapFilled(gap.id);
+      console.log(`[Gapfiller] No blocks with null priority fees in gap ${gap.id}`);
+      return;
+    }
+
+    const blockNumbers = blocksData.map(b => BigInt(b.block_number));
+
+    // Fetch blocks with transactions and receipts from RPC
+    const [blocksMap, receiptsMap] = await Promise.all([
+      rpc.getBlocksWithTransactions(blockNumbers),
+      rpc.getBlocksReceipts(blockNumbers),
+    ]);
+
+    let updated = 0;
+    for (const dbBlock of blocksData) {
+      const blockNum = BigInt(dbBlock.block_number);
+      const block = blocksMap.get(blockNum);
+      const receipts = receiptsMap.get(blockNum);
+
+      if (!block || !receipts) continue;
+
+      // Merge gasUsed from receipts into transactions
+      const receiptMap = new Map(receipts.map(r => [r.transactionHash, r]));
+      const transactionsWithGasUsed = block.transactions.map(tx => {
+        if (typeof tx === 'string') return tx;
+        const receipt = receiptMap.get(tx.hash);
+        return { ...tx, gasUsed: receipt?.gasUsed };
+      });
+
+      // Calculate metrics with actual gasUsed
+      const metrics = calculateBlockMetrics({
+        baseFeePerGas: block.baseFeePerGas ?? 0n,
+        gasUsed: BigInt(dbBlock.gas_used),
+        timestamp: block.timestamp,
+        transactions: transactionsWithGasUsed,
+      });
+
+      // Skip if still missing gasUsed data
+      if (metrics.avgPriorityFeeGwei === null || metrics.totalPriorityFeeGwei === null) {
+        continue;
+      }
+
+      // Update the block with correct priority fee values
+      // Include timestamp for efficient TimescaleDB chunk pruning
+      await updateBlockPriorityFees(
+        blockNum,
+        dbBlock.timestamp,
+        metrics.avgPriorityFeeGwei,
+        metrics.totalPriorityFeeGwei
+      );
+      updated++;
+    }
+
+    // Mark gap as filled
+    await markGapFilled(gap.id);
+    console.log(`[Gapfiller] Updated ${updated} blocks with priority fees for gap ${gap.id}`);
   }
 }

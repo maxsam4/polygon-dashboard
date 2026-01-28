@@ -59,6 +59,7 @@ export class GapAnalyzer {
     await this.analyzeBlocks();
     await this.analyzeMilestones();
     await this.analyzeFinalityGaps();
+    await this.analyzePriorityFeeGaps();
 
     const elapsed = Date.now() - startTime;
     console.log(`[GapAnalyzer] Analysis complete in ${elapsed}ms`);
@@ -252,6 +253,44 @@ export class GapAnalyzer {
 
     if (gapsInserted > 0) {
       console.log(`[GapAnalyzer] Found ${gapsInserted} finality gap(s) covering ${unfinalizedBlocks.length} blocks (uncompressed only)`);
+    }
+  }
+
+  private async analyzePriorityFeeGaps(): Promise<void> {
+    // Only analyze recent blocks in uncompressed chunks
+    // Compressed chunks can't be efficiently updated, so we ignore them
+    const compressionThreshold = new Date();
+    compressionThreshold.setDate(compressionThreshold.getDate() - 10); // 10 days ago
+
+    // Find blocks with null priority fee metrics (missing gasUsed data)
+    // These blocks exist but have incomplete data that needs to be filled
+    const blocksWithNullFees = await query<{ block_number: string }>(
+      `SELECT block_number::text FROM blocks
+       WHERE (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
+         AND tx_count > 0
+         AND timestamp >= $1
+       ORDER BY block_number DESC
+       LIMIT $2`,
+      [compressionThreshold, BATCH_SIZE]
+    );
+
+    if (blocksWithNullFees.length === 0) {
+      return;
+    }
+
+    // Group consecutive blocks into ranges for efficient gap processing
+    const gaps = this.groupConsecutiveBlocks(
+      blocksWithNullFees.map(row => BigInt(row.block_number))
+    );
+
+    let gapsInserted = 0;
+    for (const gap of gaps) {
+      await insertGap('priority_fee', gap.start, gap.end, 'analyzer');
+      gapsInserted++;
+    }
+
+    if (gapsInserted > 0) {
+      console.log(`[GapAnalyzer] Found ${gapsInserted} priority fee gap(s) covering ${blocksWithNullFees.length} blocks`);
     }
   }
 
