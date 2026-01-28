@@ -255,9 +255,13 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
 /**
  * Update priority fee metrics for a single block after receipts are fetched.
  * Used by LivePoller to fill in pending metrics asynchronously.
+ *
+ * Requires timestamp for efficient TimescaleDB chunk pruning - without it,
+ * the query would scan all chunks including compressed ones.
  */
 export async function updateBlockPriorityFees(
   blockNumber: bigint,
+  timestamp: Date,
   avgPriorityFeeGwei: number,
   totalPriorityFeeGwei: number
 ): Promise<void> {
@@ -266,8 +270,8 @@ export async function updateBlockPriorityFees(
      SET avg_priority_fee_gwei = $1,
          total_priority_fee_gwei = $2,
          updated_at = NOW()
-     WHERE block_number = $3`,
-    [avgPriorityFeeGwei, totalPriorityFeeGwei, blockNumber.toString()]
+     WHERE block_number = $3 AND timestamp = $4`,
+    [avgPriorityFeeGwei, totalPriorityFeeGwei, blockNumber.toString(), timestamp]
   );
 }
 

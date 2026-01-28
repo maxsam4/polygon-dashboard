@@ -20,6 +20,12 @@ const EXHAUSTED_RETRY_MS = 5000; // 5 seconds - keep trying, don't wait long
 const MAX_GAP = 30; // If gap > 30 blocks, skip to latest and let backfiller handle
 const BATCH_SIZE = 10; // Process up to 10 blocks at a time when slightly behind
 
+interface PriorityFeeTask {
+  blockNumber: bigint;
+  wsBlock: WsBlock;
+  blockTimestamp: Date;
+}
+
 export class LivePoller {
   private running = false;
   private lastProcessedBlock: bigint | null = null;
@@ -27,6 +33,10 @@ export class LivePoller {
   private processing = false; // Mutex to prevent concurrent processing
   private pendingBlockNumber: bigint | null = null; // Track latest notification during processing
   private useSubscriptions = false;
+
+  // Queue for serializing async priority fee updates (prevents DB overload)
+  private priorityFeeQueue: PriorityFeeTask[] = [];
+  private priorityFeeProcessing = false;
 
   async start(): Promise<void> {
     if (this.running) return;
@@ -149,10 +159,8 @@ export class LivePoller {
       updateWorkerRun(WORKER_NAME, 1);
       console.log(`[LivePoller] Block ${blockNumber} published instantly`);
 
-      // Fetch receipts async to fill in priority fee metrics (fire-and-forget)
-      this.fillPriorityFeesAsync(blockNumber, wsBlock, blockTimestamp).catch(err =>
-        console.warn(`[LivePoller] Failed to fill priority fees for block ${blockNumber}:`, err)
-      );
+      // Queue async priority fee filling (serialized to prevent DB overload)
+      this.enqueuePriorityFeeUpdate(blockNumber, wsBlock, blockTimestamp);
     } catch (error) {
       console.error('[LivePoller] Error processing WebSocket block:', error);
       updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
@@ -201,8 +209,10 @@ export class LivePoller {
     }
 
     // Update DB with correct priority fee values
+    // Pass timestamp for efficient TimescaleDB chunk pruning
     await updateBlockPriorityFees(
       blockNumber,
+      blockTimestamp,
       metrics.avgPriorityFeeGwei,
       metrics.totalPriorityFeeGwei
     );
@@ -234,6 +244,38 @@ export class LivePoller {
 
     blockChannel.publish(updatedBlock as Block);
     console.log(`[LivePoller] Block ${blockNumber} priority fees filled`);
+  }
+
+  /**
+   * Enqueue a priority fee update task. Tasks are processed serially to avoid DB overload.
+   */
+  private enqueuePriorityFeeUpdate(blockNumber: bigint, wsBlock: WsBlock, blockTimestamp: Date): void {
+    this.priorityFeeQueue.push({ blockNumber, wsBlock, blockTimestamp });
+    // Start processing if not already running
+    if (!this.priorityFeeProcessing) {
+      this.processPriorityFeeQueue();
+    }
+  }
+
+  /**
+   * Process the priority fee queue one task at a time.
+   */
+  private async processPriorityFeeQueue(): Promise<void> {
+    if (this.priorityFeeProcessing) return;
+    this.priorityFeeProcessing = true;
+
+    while (this.priorityFeeQueue.length > 0) {
+      const task = this.priorityFeeQueue.shift();
+      if (!task) break;
+
+      try {
+        await this.fillPriorityFeesAsync(task.blockNumber, task.wsBlock, task.blockTimestamp);
+      } catch (err) {
+        console.warn(`[LivePoller] Failed to fill priority fees for block ${task.blockNumber}:`, err);
+      }
+    }
+
+    this.priorityFeeProcessing = false;
   }
 
   /**
