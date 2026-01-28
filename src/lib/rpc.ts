@@ -47,8 +47,25 @@ function parseReceipt(raw: RawReceipt): TransactionReceipt {
   };
 }
 
-// Callback type for block subscriptions
-export type BlockCallback = (blockNumber: bigint) => void;
+// Block data from WebSocket subscription
+export interface WsBlock {
+  number: bigint;
+  hash: `0x${string}`;
+  parentHash: `0x${string}`;
+  timestamp: bigint;
+  gasUsed: bigint;
+  gasLimit: bigint;
+  baseFeePerGas: bigint | null;
+  transactions: Array<{
+    hash: `0x${string}`;
+    maxPriorityFeePerGas?: bigint | null;
+    gasPrice?: bigint | null;
+    gas: bigint;
+  }>;
+}
+
+// Callback type for block subscriptions - passes full block for immediate processing
+export type BlockCallback = (block: WsBlock) => void;
 
 interface RetryConfig {
   maxRetries: number;
@@ -360,14 +377,40 @@ export class BlockSubscriptionManager {
 
       this.clients.set(url, client);
 
-      // Subscribe to new blocks
+      // Subscribe to new blocks with full transaction data for immediate processing
       const unsubscribe = await client.watchBlocks({
+        includeTransactions: true,
         onBlock: (block) => {
+          // Guard against undefined block or block.number (can happen with some endpoints)
+          if (!block || block.number === undefined || block.number === null) {
+            return;
+          }
           // Only process if this is a new block we haven't seen
-          if (block.number && block.number > this.lastBlockNumber) {
+          if (block.number > this.lastBlockNumber) {
             this.lastBlockNumber = block.number;
             if (this.callback) {
-              this.callback(block.number);
+              // Pass full block data for immediate processing
+              const wsBlock: WsBlock = {
+                number: block.number,
+                hash: block.hash,
+                parentHash: block.parentHash,
+                timestamp: block.timestamp,
+                gasUsed: block.gasUsed,
+                gasLimit: block.gasLimit,
+                baseFeePerGas: block.baseFeePerGas ?? null,
+                transactions: (block.transactions as Array<{
+                  hash: `0x${string}`;
+                  maxPriorityFeePerGas?: bigint | null;
+                  gasPrice?: bigint | null;
+                  gas: bigint;
+                }>).map(tx => ({
+                  hash: tx.hash,
+                  maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+                  gasPrice: tx.gasPrice,
+                  gas: tx.gas,
+                })),
+              };
+              this.callback(wsBlock);
             }
           }
         },

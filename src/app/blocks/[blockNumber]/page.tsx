@@ -16,12 +16,12 @@ interface BlockDetails {
   gasLimit: string;
   gasUsedPercent: number;
   baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;  // null = pending (receipt data not yet fetched)
   medianPriorityFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   totalBaseFeeGwei: number;
-  totalPriorityFeeGwei: number;
+  totalPriorityFeeGwei: number | null;  // null = pending (receipt data not yet fetched)
   txCount: number;
   blockTimeSec: number | null;
   mgasPerSec: number | null;
@@ -162,7 +162,9 @@ export default function BlockDetailsPage() {
   }
 
   const { block, transactions } = data;
-  const totalFeePOL = (block.totalBaseFeeGwei + block.totalPriorityFeeGwei) / 1e9;
+  const totalFeePOL = block.totalPriorityFeeGwei !== null
+    ? (block.totalBaseFeeGwei + block.totalPriorityFeeGwei) / 1e9
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -258,11 +260,13 @@ export default function BlockDetailsPage() {
             />
             <InfoRow
               label="Total Priority Fee"
-              value={`${(block.totalPriorityFeeGwei / 1e9).toFixed(4)} POL`}
+              value={block.totalPriorityFeeGwei !== null
+                ? `${(block.totalPriorityFeeGwei / 1e9).toFixed(4)} POL`
+                : '...'}
             />
             <InfoRow
               label="Total Fees"
-              value={`${totalFeePOL.toFixed(4)} POL`}
+              value={totalFeePOL !== null ? `${totalFeePOL.toFixed(4)} POL` : '...'}
             />
           </Card>
         </div>
@@ -276,7 +280,9 @@ export default function BlockDetailsPage() {
             </div>
             <div className="text-center p-3 bg-gray-100 dark:bg-gray-800 rounded">
               <div className="text-sm text-gray-500 dark:text-gray-400">Avg</div>
-              <div className="font-mono">{block.avgPriorityFeeGwei.toFixed(2)} Gwei</div>
+              <div className="font-mono">
+                {block.avgPriorityFeeGwei !== null ? `${block.avgPriorityFeeGwei.toFixed(2)} Gwei` : '...'}
+              </div>
             </div>
             <div className="text-center p-3 bg-gray-100 dark:bg-gray-800 rounded">
               <div className="text-sm text-gray-500 dark:text-gray-400">Median</div>

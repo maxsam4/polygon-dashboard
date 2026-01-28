@@ -38,6 +38,7 @@ export class PriorityFeeFixer {
     while (this.running) {
       try {
         updateWorkerState(WORKER_NAME, 'running');
+        console.log('[PriorityFeeFixer] Run loop iteration');
 
         // Get current fix status
         const status = await queryOne<PriorityFeeFixStatus>(
@@ -71,6 +72,7 @@ export class PriorityFeeFixer {
 
         const fixDeployedAt = BigInt(status.fix_deployed_at_block);
         const lastFixed = status.last_fixed_block ? BigInt(status.last_fixed_block) : fixDeployedAt;
+        console.log(`[PriorityFeeFixer] Status: fixDeployedAt=${fixDeployedAt}, lastFixed=${lastFixed}`);
 
         // Get the earliest block in our database
         const stats = await getTableStats('blocks');

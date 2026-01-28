@@ -49,8 +49,9 @@ export function formatGas(gas: string): string {
  * Convert gwei to POL with comma formatting
  * 1 POL = 1,000,000,000 gwei (10^9)
  */
-export function formatGweiToPol(gwei: number | undefined, decimals = 4): string {
+export function formatGweiToPol(gwei: number | undefined | null, decimals = 4): string {
   if (gwei === undefined) return '-';
+  if (gwei === null) return '...';  // null = pending (receipt data not yet fetched)
   const pol = gwei / GWEI_PER_POL;
   return pol.toLocaleString('en-US', {
     minimumFractionDigits: decimals,

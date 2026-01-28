@@ -9,7 +9,7 @@ interface BlockData {
   timestamp: string;
   gasUsedPercent: number;
   baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;  // null = pending (receipt data not yet fetched)
   medianPriorityFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
@@ -20,7 +20,7 @@ interface BlockData {
   mgasPerSec?: number | null;
   tps?: number | null;
   totalBaseFeeGwei: number;
-  totalPriorityFeeGwei: number;
+  totalPriorityFeeGwei: number | null;  // null = pending (receipt data not yet fetched)
   finalized: boolean;
   timeToFinalitySec: number | null;
 }

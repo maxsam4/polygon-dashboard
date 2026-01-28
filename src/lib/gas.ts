@@ -25,10 +25,10 @@ export function calculateBlockMetrics(
   baseFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
-  avgPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;  // null when gasUsed not available for all txs
   medianPriorityFeeGwei: number;
   totalBaseFeeGwei: number;
-  totalPriorityFeeGwei: number;
+  totalPriorityFeeGwei: number | null;  // null when gasUsed not available for all txs
   blockTimeSec: number | null;
   mgasPerSec: number | null;
   tps: number | null;
@@ -46,6 +46,7 @@ export function calculateBlockMetrics(
   let minPriorityFee = BigInt(Number.MAX_SAFE_INTEGER);
   let maxPriorityFee = 0n;
   let totalPriorityFee = 0n;
+  let hasAllGasUsed = true;  // Track if all txs have gasUsed (from receipts)
   const priorityFees: bigint[] = [];
 
   if (txCount === 0) {
@@ -69,18 +70,25 @@ export function calculateBlockMetrics(
       priorityFees.push(priorityFee);
       if (priorityFee < minPriorityFee) minPriorityFee = priorityFee;
       if (priorityFee > maxPriorityFee) maxPriorityFee = priorityFee;
-      // Use gasUsed (from receipt) if available, otherwise fall back to gas limit
-      const gasForCalc = tx.gasUsed ?? tx.gas ?? 0n;
-      totalPriorityFee += priorityFee * gasForCalc;
+
+      // Only use gasUsed from receipts - NEVER fall back to gas limit
+      // Gas limit can be wildly different from actual gas used
+      if (tx.gasUsed !== undefined && tx.gasUsed !== null) {
+        totalPriorityFee += priorityFee * tx.gasUsed;
+      } else {
+        hasAllGasUsed = false;
+      }
     }
   } else {
     // Only have transaction hashes, not full transactions
     minPriorityFee = 0n;
+    hasAllGasUsed = false;
   }
 
-  const avgPriorityFee = txCount > 0
+  // Only calculate avgPriorityFee if we have gasUsed for all transactions
+  const avgPriorityFee = hasAllGasUsed && txCount > 0
     ? totalPriorityFee / BigInt(txCount) / (gasUsed > 0n ? gasUsed / BigInt(txCount) : 1n)
-    : 0n;
+    : null;
 
   // Calculate median priority fee
   let medianPriorityFee = 0n;
@@ -94,7 +102,8 @@ export function calculateBlockMetrics(
 
   // Calculate totals
   const totalBaseFeeGwei = weiToGwei(baseFeePerGas * gasUsed);
-  const totalPriorityFeeGwei = weiToGwei(totalPriorityFee);
+  // Only return totalPriorityFeeGwei if we have gasUsed for all transactions
+  const totalPriorityFeeGwei = hasAllGasUsed ? weiToGwei(totalPriorityFee) : null;
 
   // Calculate throughput metrics
   let blockTimeSec: number | null = null;
@@ -113,7 +122,7 @@ export function calculateBlockMetrics(
     baseFeeGwei,
     minPriorityFeeGwei: weiToGwei(minPriorityFee),
     maxPriorityFeeGwei: weiToGwei(maxPriorityFee),
-    avgPriorityFeeGwei: weiToGwei(avgPriorityFee),
+    avgPriorityFeeGwei: avgPriorityFee !== null ? weiToGwei(avgPriorityFee) : null,
     medianPriorityFeeGwei: weiToGwei(medianPriorityFee),
     totalBaseFeeGwei,
     totalPriorityFeeGwei,

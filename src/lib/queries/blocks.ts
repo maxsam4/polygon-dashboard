@@ -252,6 +252,25 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
   );
 }
 
+/**
+ * Update priority fee metrics for a single block after receipts are fetched.
+ * Used by LivePoller to fill in pending metrics asynchronously.
+ */
+export async function updateBlockPriorityFees(
+  blockNumber: bigint,
+  avgPriorityFeeGwei: number,
+  totalPriorityFeeGwei: number
+): Promise<void> {
+  await query(
+    `UPDATE blocks
+     SET avg_priority_fee_gwei = $1,
+         total_priority_fee_gwei = $2,
+         updated_at = NOW()
+     WHERE block_number = $3`,
+    [avgPriorityFeeGwei, totalPriorityFeeGwei, blockNumber.toString()]
+  );
+}
+
 export async function updateBlockFinality(
   blockNumber: bigint,
   milestoneId: bigint,

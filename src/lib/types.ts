@@ -8,10 +8,10 @@ export interface Block {
   baseFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
-  avgPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;  // null when gasUsed not yet available (pending receipt data)
   medianPriorityFeeGwei: number;
   totalBaseFeeGwei: number;
-  totalPriorityFeeGwei: number;
+  totalPriorityFeeGwei: number | null;  // null when gasUsed not yet available (pending receipt data)
   txCount: number;
   blockTimeSec: number | null;
   mgasPerSec: number | null;
@@ -47,10 +47,10 @@ export interface BlockRow {
   base_fee_gwei: number;
   min_priority_fee_gwei: number;
   max_priority_fee_gwei: number;
-  avg_priority_fee_gwei: number;
+  avg_priority_fee_gwei: number | null;  // null when gasUsed not yet available
   median_priority_fee_gwei: number;
   total_base_fee_gwei: number;
-  total_priority_fee_gwei: number;
+  total_priority_fee_gwei: number | null;  // null when gasUsed not yet available
   tx_count: number;
   block_time_sec: number | null;
   mgas_per_sec: number | null;
@@ -69,7 +69,7 @@ export interface BlockDataUI {
   timestamp: string;
   gasUsedPercent: number;
   baseFeeGwei: number;
-  avgPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;  // null = pending (receipt data not yet fetched)
   medianPriorityFeeGwei: number;
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
@@ -80,7 +80,7 @@ export interface BlockDataUI {
   mgasPerSec?: number | null;
   tps?: number | null;
   totalBaseFeeGwei?: number;
-  totalPriorityFeeGwei?: number;
+  totalPriorityFeeGwei?: number | null;  // null = pending (receipt data not yet fetched)
   finalized: boolean;
   timeToFinalitySec: number | null;
 }

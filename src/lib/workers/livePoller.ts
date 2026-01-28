@@ -1,10 +1,10 @@
-import { getRpcClient, RpcExhaustedError, getBlockSubscriptionManager } from '@/lib/rpc';
+import { getRpcClient, RpcExhaustedError, getBlockSubscriptionManager, WsBlock } from '@/lib/rpc';
 import { calculateBlockMetrics } from '@/lib/gas';
 import {
   getHighestBlockNumber,
-  getBlockByNumber,
   insertBlock,
-  insertBlocksBatch
+  insertBlocksBatch,
+  updateBlockPriorityFees
 } from '@/lib/queries/blocks';
 import { Block } from '@/lib/types';
 import { sleep } from '@/lib/utils';
@@ -23,7 +23,9 @@ const BATCH_SIZE = 10; // Process up to 10 blocks at a time when slightly behind
 export class LivePoller {
   private running = false;
   private lastProcessedBlock: bigint | null = null;
+  private lastBlockTimestamp: bigint | null = null; // Cache for previous block timestamp
   private processing = false; // Mutex to prevent concurrent processing
+  private pendingBlockNumber: bigint | null = null; // Track latest notification during processing
   private useSubscriptions = false;
 
   async start(): Promise<void> {
@@ -62,31 +64,176 @@ export class LivePoller {
   }
 
   /**
-   * Called when WebSocket receives a new block notification.
-   * Processes the block immediately.
+   * Called when WebSocket receives a new block with full data.
+   * Processes immediately without any RPC calls for instant frontend updates.
    */
-  private async onNewBlock(blockNumber: bigint): Promise<void> {
-    if (!this.running || this.processing) return;
+  private async onNewBlock(wsBlock: WsBlock): Promise<void> {
+    if (!this.running) return;
 
-    this.processing = true;
+    const blockNumber = wsBlock.number;
+
+    // Skip if we've already processed this block
+    if (this.lastProcessedBlock !== null && blockNumber <= this.lastProcessedBlock) {
+      return;
+    }
+
+    // Check for gaps - if we missed blocks, record them for gapfiller
+    if (this.lastProcessedBlock !== null) {
+      const gap = blockNumber - this.lastProcessedBlock - 1n;
+      if (gap > 0n) {
+        const skippedFrom = this.lastProcessedBlock + 1n;
+        const skippedTo = blockNumber - 1n;
+        // Record gap async (don't block)
+        insertGap('block', skippedFrom, skippedTo, 'live_poller').catch(err =>
+          console.warn('[LivePoller] Failed to record gap:', err)
+        );
+        console.log(`[LivePoller] Gap detected: ${skippedFrom}-${skippedTo}, recorded for gapfiller`);
+      }
+    }
+
     try {
       updateWorkerState(WORKER_NAME, 'running');
-      console.log(`[LivePoller] New block notification: ${blockNumber}`);
-      const processed = await this.processNewBlocks();
-      if (processed > 0) {
-        updateWorkerRun(WORKER_NAME, processed);
-      }
+
+      // Calculate metrics using cached previous timestamp (no RPC call needed!)
+      const previousTimestamp = this.lastBlockTimestamp ?? undefined;
+      const metrics = calculateBlockMetrics({
+        baseFeePerGas: wsBlock.baseFeePerGas,
+        gasUsed: wsBlock.gasUsed,
+        timestamp: wsBlock.timestamp,
+        transactions: wsBlock.transactions,
+      }, previousTimestamp);
+
+      const blockTimestamp = new Date(Number(wsBlock.timestamp) * 1000);
+
+      const blockData: Omit<Block, 'createdAt' | 'updatedAt'> = {
+        blockNumber,
+        timestamp: blockTimestamp,
+        blockHash: wsBlock.hash,
+        parentHash: wsBlock.parentHash,
+        gasUsed: wsBlock.gasUsed,
+        gasLimit: wsBlock.gasLimit,
+        baseFeeGwei: metrics.baseFeeGwei,
+        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+        totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+        txCount: wsBlock.transactions.length,
+        blockTimeSec: metrics.blockTimeSec,
+        mgasPerSec: metrics.mgasPerSec,
+        tps: metrics.tps,
+        finalized: false,
+        finalizedAt: null,
+        milestoneId: null,
+        timeToFinalitySec: null,
+      };
+
+      // IMMEDIATELY publish to SSE for instant frontend update (before DB insert)
+      blockChannel.publish(blockData as Block);
+
+      // Update state
+      this.lastProcessedBlock = blockNumber;
+      this.lastBlockTimestamp = wsBlock.timestamp;
+
+      // Insert to DB async (fire-and-forget) - don't block the notification handler
+      insertBlock(blockData).catch(err =>
+        console.error('[LivePoller] DB insert failed:', err)
+      );
+
+      // Update stats cache async (fire-and-forget)
+      updateTableStats('blocks', blockNumber, blockNumber, 1).catch(err =>
+        console.warn('[LivePoller] Stats update failed:', err)
+      );
+
+      updateWorkerRun(WORKER_NAME, 1);
+      console.log(`[LivePoller] Block ${blockNumber} published instantly`);
+
+      // Fetch receipts async to fill in priority fee metrics (fire-and-forget)
+      this.fillPriorityFeesAsync(blockNumber, wsBlock, blockTimestamp).catch(err =>
+        console.warn(`[LivePoller] Failed to fill priority fees for block ${blockNumber}:`, err)
+      );
     } catch (error) {
-      if (error instanceof RpcExhaustedError) {
-        console.error('[LivePoller] RPC exhausted on subscription callback');
-        updateWorkerError(WORKER_NAME, 'RPC exhausted');
-      } else {
-        console.error('[LivePoller] Error processing subscription block:', error);
-        updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
-      }
-    } finally {
-      this.processing = false;
+      console.error('[LivePoller] Error processing WebSocket block:', error);
+      updateWorkerError(WORKER_NAME, error instanceof Error ? error.message : 'Unknown error');
     }
+  }
+
+  /**
+   * Fetch receipts and fill in priority fee metrics asynchronously.
+   * Called after instant publish to update the block with accurate gasUsed-based metrics.
+   */
+  private async fillPriorityFeesAsync(
+    blockNumber: bigint,
+    wsBlock: WsBlock,
+    blockTimestamp: Date
+  ): Promise<void> {
+    const rpc = getRpcClient();
+
+    // Fetch receipts for this block
+    const receipts = await rpc.getBlockReceipts(blockNumber);
+    if (!receipts || receipts.length === 0) {
+      // No receipts (empty block or RPC issue), nothing to update
+      return;
+    }
+
+    // Build transaction map with gasUsed from receipts
+    const receiptMap = new Map(receipts.map(r => [r.transactionHash, r]));
+    const transactionsWithGasUsed = wsBlock.transactions.map(tx => {
+      const receipt = receiptMap.get(tx.hash);
+      return {
+        ...tx,
+        gasUsed: receipt?.gasUsed,
+      };
+    });
+
+    // Recalculate metrics with actual gasUsed
+    const metrics = calculateBlockMetrics({
+      baseFeePerGas: wsBlock.baseFeePerGas,
+      gasUsed: wsBlock.gasUsed,
+      timestamp: wsBlock.timestamp,
+      transactions: transactionsWithGasUsed,
+    });
+
+    // Skip if we still don't have all gasUsed values (shouldn't happen but be safe)
+    if (metrics.avgPriorityFeeGwei === null || metrics.totalPriorityFeeGwei === null) {
+      return;
+    }
+
+    // Update DB with correct priority fee values
+    await updateBlockPriorityFees(
+      blockNumber,
+      metrics.avgPriorityFeeGwei,
+      metrics.totalPriorityFeeGwei
+    );
+
+    // Publish update to SSE so frontend gets the corrected values
+    const updatedBlock = {
+      blockNumber,
+      timestamp: blockTimestamp,
+      blockHash: wsBlock.hash,
+      parentHash: wsBlock.parentHash,
+      gasUsed: wsBlock.gasUsed,
+      gasLimit: wsBlock.gasLimit,
+      baseFeeGwei: metrics.baseFeeGwei,
+      minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+      maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+      avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+      medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+      totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+      totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+      txCount: wsBlock.transactions.length,
+      blockTimeSec: metrics.blockTimeSec,
+      mgasPerSec: metrics.mgasPerSec,
+      tps: metrics.tps,
+      finalized: false,
+      finalizedAt: null,
+      milestoneId: null,
+      timeToFinalitySec: null,
+    };
+
+    blockChannel.publish(updatedBlock as Block);
+    console.log(`[LivePoller] Block ${blockNumber} priority fees filled`);
   }
 
   /**
@@ -194,80 +341,82 @@ export class LivePoller {
     );
 
     // Fetch all blocks and receipts in parallel
-    const blockPromises = blockNumbers.map(async (blockNumber) => {
+    const [blockResults, receiptResults] = await Promise.all([
+      rpc.getBlocksWithTransactions(blockNumbers),
+      rpc.getBlocksReceipts(blockNumbers),
+    ]);
+
+    // Get first block's previous timestamp (use cache or fetch)
+    let prevTimestamp = this.lastBlockTimestamp;
+    if (prevTimestamp === null && startBlock > 0n) {
       try {
-        const [block, receipts] = await Promise.all([
-          rpc.getBlockWithTransactions(blockNumber),
-          rpc.getBlockReceipts(blockNumber),
-        ]);
-
-        // Merge gasUsed from receipts into transactions
-        const receiptMap = new Map(
-          (receipts ?? []).map(r => [r.transactionHash, r])
-        );
-        const transactionsWithGasUsed = block.transactions.map(tx => {
-          if (typeof tx === 'string') return tx;
-          const receipt = receiptMap.get(tx.hash);
-          return { ...tx, gasUsed: receipt?.gasUsed };
-        });
-        const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
-
-        // Get previous block timestamp
-        let previousTimestamp: bigint | undefined;
-        if (blockNumber > 0n) {
-          const prevBlock = await getBlockByNumber(blockNumber - 1n);
-          if (prevBlock) {
-            previousTimestamp = BigInt(Math.floor(prevBlock.timestamp.getTime() / 1000));
-          } else {
-            const prevBlockRpc = await rpc.getBlock(blockNumber - 1n);
-            previousTimestamp = prevBlockRpc.timestamp;
-          }
-        }
-
-        const metrics = calculateBlockMetrics(blockWithReceipts, previousTimestamp);
-        const blockTimestamp = new Date(Number(block.timestamp) * 1000);
-
-        return {
-          blockNumber,
-          timestamp: blockTimestamp,
-          blockHash: block.hash,
-          parentHash: block.parentHash,
-          gasUsed: block.gasUsed,
-          gasLimit: block.gasLimit,
-          baseFeeGwei: metrics.baseFeeGwei,
-          minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-          maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-          avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
-          medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
-          totalBaseFeeGwei: metrics.totalBaseFeeGwei,
-          totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
-          txCount: block.transactions.length,
-          blockTimeSec: metrics.blockTimeSec,
-          mgasPerSec: metrics.mgasPerSec,
-          tps: metrics.tps,
-          finalized: false,
-          finalizedAt: null,
-          milestoneId: null,
-          timeToFinalitySec: null,
-        };
-      } catch (error) {
-        console.error(`[LivePoller] Error fetching block ${blockNumber}:`, error instanceof Error ? error.message : error);
-        return null;
+        const prevBlock = await rpc.getBlock(startBlock - 1n);
+        prevTimestamp = prevBlock.timestamp;
+      } catch {
+        // If we can't get previous timestamp, block time will be null
       }
-    });
+    }
 
-    const results = await Promise.all(blockPromises);
-    blocks.push(...results.filter((b): b is NonNullable<typeof b> => b !== null));
+    // Process blocks in order
+    for (const blockNumber of blockNumbers) {
+      const block = blockResults.get(blockNumber);
+      if (!block) continue;
+
+      const receipts = receiptResults.get(blockNumber) ?? [];
+
+      // Merge gasUsed from receipts into transactions
+      const receiptMap = new Map(receipts.map(r => [r.transactionHash, r]));
+      const transactionsWithGasUsed = block.transactions.map(tx => {
+        if (typeof tx === 'string') return tx;
+        const receipt = receiptMap.get(tx.hash);
+        return { ...tx, gasUsed: receipt?.gasUsed };
+      });
+      const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
+
+      const metrics = calculateBlockMetrics(blockWithReceipts, prevTimestamp ?? undefined);
+      const blockTimestamp = new Date(Number(block.timestamp) * 1000);
+
+      blocks.push({
+        blockNumber,
+        timestamp: blockTimestamp,
+        blockHash: block.hash,
+        parentHash: block.parentHash,
+        gasUsed: block.gasUsed,
+        gasLimit: block.gasLimit,
+        baseFeeGwei: metrics.baseFeeGwei,
+        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,
+        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+        totalBaseFeeGwei: metrics.totalBaseFeeGwei,
+        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei,
+        txCount: block.transactions.length,
+        blockTimeSec: metrics.blockTimeSec,
+        mgasPerSec: metrics.mgasPerSec,
+        tps: metrics.tps,
+        finalized: false,
+        finalizedAt: null,
+        milestoneId: null,
+        timeToFinalitySec: null,
+      });
+
+      // Update prevTimestamp for next block in batch
+      prevTimestamp = block.timestamp;
+    }
 
     if (blocks.length > 0) {
       blocks.sort((a, b) => Number(a.blockNumber - b.blockNumber));
       await insertBlocksBatch(blocks);
       this.lastProcessedBlock = blocks[blocks.length - 1].blockNumber;
+      // Cache the last block's timestamp for next iteration
+      this.lastBlockTimestamp = prevTimestamp;
 
-      // Update stats cache with batch min/max
+      // Update stats cache async (fire-and-forget)
       const minBlock = blocks[0].blockNumber;
       const maxBlock = blocks[blocks.length - 1].blockNumber;
-      await updateTableStats('blocks', minBlock, maxBlock, blocks.length);
+      updateTableStats('blocks', minBlock, maxBlock, blocks.length).catch(err =>
+        console.warn('[LivePoller] Stats update failed:', err)
+      );
 
       // Publish to channel for real-time SSE updates
       blockChannel.publishBatch(blocks as Block[]);
@@ -298,15 +447,14 @@ export class LivePoller {
     });
     const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
 
-    // Get previous block timestamp for block time calculation
-    let previousTimestamp: bigint | undefined;
-    if (blockNumber > 0n) {
-      const prevBlock = await getBlockByNumber(blockNumber - 1n);
-      if (prevBlock) {
-        previousTimestamp = BigInt(Math.floor(prevBlock.timestamp.getTime() / 1000));
-      } else {
+    // Use cached timestamp if available, otherwise fetch from RPC (not DB)
+    let previousTimestamp: bigint | undefined = this.lastBlockTimestamp ?? undefined;
+    if (previousTimestamp === undefined && blockNumber > 0n) {
+      try {
         const prevBlockRpc = await rpc.getBlock(blockNumber - 1n);
         previousTimestamp = prevBlockRpc.timestamp;
+      } catch {
+        // If we can't get previous timestamp, block time will be null
       }
     }
 
@@ -314,17 +462,8 @@ export class LivePoller {
     const metrics = calculateBlockMetrics(blockWithReceipts, previousTimestamp);
     const blockTimestamp = new Date(Number(block.timestamp) * 1000);
 
-    // Check for reorg
-    const existingBlock = await getBlockByNumber(blockNumber);
-    if (existingBlock && existingBlock.blockHash !== block.hash) {
-      if (existingBlock.finalized) {
-        console.error(`[LivePoller] Data discrepancy on finalized block ${blockNumber}! Skipping.`);
-        return;
-      }
-      console.warn(`[LivePoller] Reorg detected at block ${blockNumber}, overwriting.`);
-    }
-
     // Insert/update block - finality is set by the reconciler, not here
+    // INSERT ON CONFLICT handles reorgs automatically (updates if hash differs and not finalized)
     const blockData: Omit<Block, 'createdAt' | 'updatedAt'> = {
       blockNumber,
       timestamp: blockTimestamp,
@@ -351,8 +490,13 @@ export class LivePoller {
 
     await insertBlock(blockData);
 
-    // Update stats cache with new max
-    await updateTableStats('blocks', blockNumber, blockNumber, 1);
+    // Cache this block's timestamp for next iteration
+    this.lastBlockTimestamp = block.timestamp;
+
+    // Update stats cache async (fire-and-forget)
+    updateTableStats('blocks', blockNumber, blockNumber, 1).catch(err =>
+      console.warn('[LivePoller] Stats update failed:', err)
+    );
 
     // Publish to channel for real-time SSE updates
     blockChannel.publish(blockData as Block);

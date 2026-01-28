@@ -7,9 +7,9 @@ export function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 20,
+      max: 30, // Increased from 20 to handle more concurrent queries
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000, // Increased from 2s to 10s
     });
 
     pool.on('error', (err) => {

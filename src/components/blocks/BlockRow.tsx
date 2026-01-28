@@ -35,7 +35,7 @@ export function BlockRow({ block }: BlockRowProps) {
           <span className="text-sm">{block.gasUsedPercent.toFixed(1)}%</span>
           <span className="text-sm font-medium">{block.baseFeeGwei.toFixed(2)} gwei</span>
           <span className="text-sm text-gray-600 dark:text-gray-400">
-            +{block.avgPriorityFeeGwei.toFixed(2)}
+            +{block.avgPriorityFeeGwei !== null ? block.avgPriorityFeeGwei.toFixed(2) : '...'}
           </span>
           <span className="text-sm">{block.txCount} txs</span>
           {block.finalized ? (
@@ -80,12 +80,12 @@ export function BlockRow({ block }: BlockRowProps) {
               {block.totalBaseFeeGwei.toFixed(4)} gwei
             </div>
           )}
-          {block.totalPriorityFeeGwei !== undefined && (
-            <div>
-              <span className="text-gray-500">Total Priority Fee:</span>{' '}
-              {block.totalPriorityFeeGwei.toFixed(4)} gwei
-            </div>
-          )}
+          <div>
+            <span className="text-gray-500">Total Priority Fee:</span>{' '}
+            {block.totalPriorityFeeGwei !== undefined && block.totalPriorityFeeGwei !== null
+              ? `${block.totalPriorityFeeGwei.toFixed(4)} gwei`
+              : '...'}
+          </div>
           <div className="col-span-2 md:col-span-4">
             <a
               href={polygonscanUrl}

@@ -34,7 +34,6 @@ SELECT create_hypertable('blocks', 'timestamp', chunk_time_interval => INTERVAL 
 
 CREATE INDEX idx_blocks_number ON blocks (block_number DESC);
 CREATE INDEX idx_blocks_pending ON blocks (block_number) WHERE finalized = FALSE;
-CREATE INDEX idx_blocks_hash ON blocks (block_hash);
 
 ALTER TABLE blocks SET (
   timescaledb.compress,
@@ -54,7 +53,6 @@ CREATE TABLE milestones (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_milestones_blocks ON milestones (start_block, end_block);
 CREATE INDEX idx_milestones_end ON milestones (end_block DESC);
 CREATE INDEX idx_milestones_sequence ON milestones (sequence_id DESC);
 

@@ -13,7 +13,7 @@ function blockToUI(b: Block): BlockDataUI {
     timestamp: b.timestamp.toISOString(),
     gasUsedPercent: gasLimit > 0 ? (gasUsed / gasLimit) * 100 : 0,
     baseFeeGwei: b.baseFeeGwei ?? 0,
-    avgPriorityFeeGwei: b.avgPriorityFeeGwei ?? 0,
+    avgPriorityFeeGwei: b.avgPriorityFeeGwei,  // null = pending (receipt data not yet fetched)
     medianPriorityFeeGwei: b.medianPriorityFeeGwei ?? 0,
     minPriorityFeeGwei: b.minPriorityFeeGwei ?? 0,
     maxPriorityFeeGwei: b.maxPriorityFeeGwei ?? 0,
@@ -24,7 +24,7 @@ function blockToUI(b: Block): BlockDataUI {
     mgasPerSec: b.mgasPerSec ?? null,
     tps: b.tps ?? null,
     totalBaseFeeGwei: b.totalBaseFeeGwei ?? 0,
-    totalPriorityFeeGwei: b.totalPriorityFeeGwei ?? 0,
+    totalPriorityFeeGwei: b.totalPriorityFeeGwei,  // null = pending (receipt data not yet fetched)
     finalized: b.finalized ?? false,
     timeToFinalitySec: b.timeToFinalitySec ?? null,
   };
@@ -63,10 +63,14 @@ export async function GET() {
         if (!isConnected) return;
 
         try {
+          const blockNumStr = block.blockNumber.toString();
           // Only send if this is a new block we haven't sent yet
-          if (block.blockNumber > lastBlockNumber) {
-            lastBlockNumber = block.blockNumber;
-            blockFinalityState.set(block.blockNumber.toString(), block.finalized);
+          // Use blockFinalityState map instead of lastBlockNumber to handle out-of-order arrivals
+          if (!blockFinalityState.has(blockNumStr)) {
+            blockFinalityState.set(blockNumStr, block.finalized);
+            if (block.blockNumber > lastBlockNumber) {
+              lastBlockNumber = block.blockNumber;
+            }
 
             const data = JSON.stringify({
               type: 'update',
