@@ -3,7 +3,7 @@ import { query, queryOne } from '../db';
 // Types
 export interface Gap {
   id: number;
-  gapType: 'block' | 'milestone' | 'finality' | 'priority_fee';
+  gapType: 'block' | 'milestone' | 'finality' | 'priority_fee' | 'block_time';
   startValue: bigint;
   endValue: bigint;
   gapSize: number;

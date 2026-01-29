@@ -60,6 +60,7 @@ export class GapAnalyzer {
     await this.analyzeMilestones();
     await this.analyzeFinalityGaps();
     await this.analyzePriorityFeeGaps();
+    await this.analyzeBlockTimeGaps();
 
     const elapsed = Date.now() - startTime;
     console.log(`[GapAnalyzer] Analysis complete in ${elapsed}ms`);
@@ -291,6 +292,48 @@ export class GapAnalyzer {
 
     if (gapsInserted > 0) {
       console.log(`[GapAnalyzer] Found ${gapsInserted} priority fee gap(s) covering ${blocksWithNullFees.length} blocks`);
+    }
+  }
+
+  private async analyzeBlockTimeGaps(): Promise<void> {
+    // Only analyze recent blocks in uncompressed chunks
+    // Compressed chunks can't be efficiently updated, so we ignore them
+    const compressionThreshold = new Date();
+    compressionThreshold.setDate(compressionThreshold.getDate() - 10); // 10 days ago
+
+    // Find blocks with null block_time_sec OR incorrect block_time_sec (> 3s where prev exists)
+    // These are blocks that exist but have missing/wrong block time data (due to gaps during ingestion)
+    const blocksNeedingFix = await query<{ block_number: string }>(
+      `SELECT b1.block_number::text FROM blocks b1
+       LEFT JOIN blocks b2 ON b1.block_number = b2.block_number + 1
+       WHERE b1.timestamp >= $1
+         AND (
+           b1.block_time_sec IS NULL
+           OR (b1.block_time_sec > 3 AND b2.block_number IS NOT NULL
+               AND b1.block_time_sec != EXTRACT(EPOCH FROM (b1.timestamp - b2.timestamp)))
+         )
+       ORDER BY b1.block_number DESC
+       LIMIT $2`,
+      [compressionThreshold, BATCH_SIZE]
+    );
+
+    if (blocksNeedingFix.length === 0) {
+      return;
+    }
+
+    // Group consecutive blocks into ranges for efficient gap processing
+    const gaps = this.groupConsecutiveBlocks(
+      blocksNeedingFix.map(row => BigInt(row.block_number))
+    );
+
+    let gapsInserted = 0;
+    for (const gap of gaps) {
+      await insertGap('block_time', gap.start, gap.end, 'analyzer');
+      gapsInserted++;
+    }
+
+    if (gapsInserted > 0) {
+      console.log(`[GapAnalyzer] Found ${gapsInserted} block_time gap(s) covering ${blocksNeedingFix.length} blocks`);
     }
   }
 

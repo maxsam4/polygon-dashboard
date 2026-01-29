@@ -101,6 +101,13 @@ export class Gapfiller {
           continue;
         }
 
+        const filledBlockTime = await this.fillNextGap('block_time');
+        if (filledBlockTime) {
+          updateWorkerRun(WORKER_NAME, 1);
+          await sleep(this.delayMs);
+          continue;
+        }
+
         // No gaps to fill, wait before checking again
         updateWorkerState(WORKER_NAME, 'idle');
         await sleep(EXHAUSTED_RETRY_MS);
@@ -122,7 +129,7 @@ export class Gapfiller {
     }
   }
 
-  private async fillNextGap(gapType: 'block' | 'milestone' | 'finality' | 'priority_fee'): Promise<boolean> {
+  private async fillNextGap(gapType: 'block' | 'milestone' | 'finality' | 'priority_fee' | 'block_time'): Promise<boolean> {
     // Get pending gaps (ordered by end_value DESC - recent first)
     const gaps = await getPendingGaps(gapType, 1);
     if (gaps.length === 0) {
@@ -152,6 +159,9 @@ export class Gapfiller {
           break;
         case 'priority_fee':
           await this.fillPriorityFeeGap(gap);
+          break;
+        case 'block_time':
+          await this.fillBlockTimeGap(gap);
           break;
       }
 
@@ -452,5 +462,56 @@ export class Gapfiller {
     // Mark gap as filled
     await markGapFilled(gap.id);
     console.log(`[Gapfiller] Updated ${updated} blocks with priority fees for gap ${gap.id}`);
+  }
+
+  private async fillBlockTimeGap(gap: Gap): Promise<void> {
+    // Block time gaps are blocks that EXIST but have null or incorrect block_time_sec
+    // We calculate block time from DB timestamps (no RPC calls needed)
+    const startBlock = gap.startValue;
+    const endBlock = gap.endValue;
+
+    console.log(`[Gapfiller] Filling block_time gap ${gap.id}: blocks ${startBlock} to ${endBlock}`);
+
+    // Query blocks with null or incorrect block_time_sec and their previous block's timestamp
+    const result = await query<{
+      block_number: string;
+      timestamp: Date;
+      gas_used: string;
+      tx_count: number;
+      prev_timestamp: Date | null;
+    }>(
+      `SELECT
+         b.block_number::text, b.timestamp, b.gas_used::text, b.tx_count,
+         prev.timestamp AS prev_timestamp
+       FROM blocks b
+       LEFT JOIN blocks prev ON prev.block_number = b.block_number - 1
+       WHERE b.block_number BETWEEN $1 AND $2
+         AND (b.block_time_sec IS NULL
+              OR (b.block_time_sec > 3 AND prev.timestamp IS NOT NULL
+                  AND b.block_time_sec != EXTRACT(EPOCH FROM (b.timestamp - prev.timestamp))))
+       ORDER BY b.block_number`,
+      [startBlock.toString(), endBlock.toString()]
+    );
+
+    let updated = 0;
+    for (const row of result) {
+      if (!row.prev_timestamp) continue; // Previous block not available yet
+
+      const blockTimeSec = (row.timestamp.getTime() - row.prev_timestamp.getTime()) / 1000;
+      const gasUsed = BigInt(row.gas_used);
+      const mgasPerSec = blockTimeSec > 0 ? Number(gasUsed) / blockTimeSec / 1_000_000 : null;
+      const tps = blockTimeSec > 0 ? row.tx_count / blockTimeSec : null;
+
+      await query(
+        `UPDATE blocks
+         SET block_time_sec = $1, mgas_per_sec = $2, tps = $3, updated_at = NOW()
+         WHERE block_number = $4`,
+        [blockTimeSec, mgasPerSec, tps, row.block_number]
+      );
+      updated++;
+    }
+
+    await markGapFilled(gap.id);
+    console.log(`[Gapfiller] Updated ${updated} blocks with block_time for gap ${gap.id}`);
   }
 }

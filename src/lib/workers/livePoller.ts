@@ -87,25 +87,27 @@ export class LivePoller {
       return;
     }
 
+    // Check if this is the immediately next block (no gap)
+    const isConsecutive = this.lastProcessedBlock !== null &&
+      blockNumber === this.lastProcessedBlock + 1n;
+
     // Check for gaps - if we missed blocks, record them for gapfiller
-    if (this.lastProcessedBlock !== null) {
-      const gap = blockNumber - this.lastProcessedBlock - 1n;
-      if (gap > 0n) {
-        const skippedFrom = this.lastProcessedBlock + 1n;
-        const skippedTo = blockNumber - 1n;
-        // Record gap async (don't block)
-        insertGap('block', skippedFrom, skippedTo, 'live_poller').catch(err =>
-          console.warn('[LivePoller] Failed to record gap:', err)
-        );
-        console.log(`[LivePoller] Gap detected: ${skippedFrom}-${skippedTo}, recorded for gapfiller`);
-      }
+    if (this.lastProcessedBlock !== null && !isConsecutive) {
+      const skippedFrom = this.lastProcessedBlock + 1n;
+      const skippedTo = blockNumber - 1n;
+      // Record gap async (don't block)
+      insertGap('block', skippedFrom, skippedTo, 'live_poller').catch(err =>
+        console.warn('[LivePoller] Failed to record gap:', err)
+      );
+      console.log(`[LivePoller] Gap detected: ${skippedFrom}-${skippedTo}, recorded for gapfiller`);
     }
 
     try {
       updateWorkerState(WORKER_NAME, 'running');
 
-      // Calculate metrics using cached previous timestamp (no RPC call needed!)
-      const previousTimestamp = this.lastBlockTimestamp ?? undefined;
+      // Only use cached timestamp if blocks are consecutive (no gap)
+      // Otherwise, block_time_sec will be null and filled by Gapfiller later
+      const previousTimestamp = isConsecutive ? this.lastBlockTimestamp ?? undefined : undefined;
       const metrics = calculateBlockMetrics({
         baseFeePerGas: wsBlock.baseFeePerGas,
         gasUsed: wsBlock.gasUsed,
@@ -388,8 +390,17 @@ export class LivePoller {
       rpc.getBlocksReceipts(blockNumbers),
     ]);
 
-    // Get first block's previous timestamp (use cache or fetch)
-    let prevTimestamp = this.lastBlockTimestamp;
+    // Check if first block is consecutive to last processed
+    const isFirstBlockConsecutive = this.lastProcessedBlock !== null &&
+      startBlock === this.lastProcessedBlock + 1n;
+
+    // Get first block's previous timestamp
+    let prevTimestamp: bigint | null = null;
+    if (isFirstBlockConsecutive) {
+      // Use cached timestamp only if consecutive
+      prevTimestamp = this.lastBlockTimestamp;
+    }
+    // If not consecutive or no cache, fetch from RPC
     if (prevTimestamp === null && startBlock > 0n) {
       try {
         const prevBlock = await rpc.getBlock(startBlock - 1n);
@@ -489,8 +500,16 @@ export class LivePoller {
     });
     const blockWithReceipts = { ...block, transactions: transactionsWithGasUsed };
 
-    // Use cached timestamp if available, otherwise fetch from RPC (not DB)
-    let previousTimestamp: bigint | undefined = this.lastBlockTimestamp ?? undefined;
+    // Check if this is the immediately next block (no gap)
+    const isConsecutive = this.lastProcessedBlock !== null &&
+      blockNumber === this.lastProcessedBlock + 1n;
+
+    // Only use cached timestamp if consecutive, otherwise fetch from RPC
+    let previousTimestamp: bigint | undefined;
+    if (isConsecutive) {
+      previousTimestamp = this.lastBlockTimestamp ?? undefined;
+    }
+    // If not consecutive and previous block exists, try to get timestamp from RPC
     if (previousTimestamp === undefined && blockNumber > 0n) {
       try {
         const prevBlockRpc = await rpc.getBlock(blockNumber - 1n);

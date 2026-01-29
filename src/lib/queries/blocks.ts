@@ -158,14 +158,27 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       base_fee_gwei = EXCLUDED.base_fee_gwei,
       min_priority_fee_gwei = EXCLUDED.min_priority_fee_gwei,
       max_priority_fee_gwei = EXCLUDED.max_priority_fee_gwei,
-      avg_priority_fee_gwei = EXCLUDED.avg_priority_fee_gwei,
+      avg_priority_fee_gwei = COALESCE(EXCLUDED.avg_priority_fee_gwei, blocks.avg_priority_fee_gwei),
       median_priority_fee_gwei = EXCLUDED.median_priority_fee_gwei,
       total_base_fee_gwei = EXCLUDED.total_base_fee_gwei,
-      total_priority_fee_gwei = EXCLUDED.total_priority_fee_gwei,
+      total_priority_fee_gwei = COALESCE(EXCLUDED.total_priority_fee_gwei, blocks.total_priority_fee_gwei),
       tx_count = EXCLUDED.tx_count,
-      block_time_sec = EXCLUDED.block_time_sec,
-      mgas_per_sec = EXCLUDED.mgas_per_sec,
-      tps = EXCLUDED.tps,
+      -- Only update block_time if new value is not null, or existing value is null/wrong (>3s)
+      block_time_sec = CASE
+        WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.block_time_sec
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.block_time_sec
+        ELSE blocks.block_time_sec
+      END,
+      mgas_per_sec = CASE
+        WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.mgas_per_sec
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.mgas_per_sec
+        ELSE blocks.mgas_per_sec
+      END,
+      tps = CASE
+        WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.tps
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.tps
+        ELSE blocks.tps
+      END,
       updated_at = NOW()
     WHERE blocks.finalized = FALSE`,
     [
