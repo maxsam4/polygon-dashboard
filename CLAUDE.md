@@ -11,7 +11,6 @@ See `prod.md` for server details. **Always deploy to local first, then prod.** C
 **NEVER drop/truncate tables** - contains months of historical data.
 
 Forbidden:
-- `docker compose down -v`
 - `DROP TABLE` / `TRUNCATE TABLE`
 
 Migrations must be additive and idempotent:
@@ -32,6 +31,19 @@ docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 Workers: LivePoller (2s), Backfiller, MilestonePoller, MilestoneBackfiller, FinalityReconciler (10s), GapAnalyzer (5m), Gapfiller
 
 Finality: Workers INSERT only, FinalityReconciler matches blocks to milestones via SQL JOIN.
+
+## Testing
+
+Run tests after making changes:
+```bash
+npm test                    # Run all tests
+npm run test:watch          # Watch mode during development
+npm run test:coverage       # Generate coverage report
+```
+
+Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
+
+**Always run tests before committing changes.**
 
 ## Key Patterns
 
