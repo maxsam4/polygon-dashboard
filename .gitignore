@@ -44,3 +44,7 @@ prompts.txt
 
 # worktrees
 .worktrees/
+
+# services subdirectories
+services/**/node_modules
+services/**/package-lock.json
