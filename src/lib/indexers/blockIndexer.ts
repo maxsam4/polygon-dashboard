@@ -7,6 +7,7 @@ import { handleReorg, getBlockByNumber } from './reorgHandler';
 import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
+import { updateTableStats } from '../queries/stats';
 
 const SERVICE_NAME = 'block_indexer';
 const WORKER_NAME = 'BlockIndexer';
@@ -125,6 +126,9 @@ export class BlockIndexer {
           const lastBlock = blocks[blocks.length - 1];
           await updateIndexerState(SERVICE_NAME, lastBlock.number, lastBlock.hash);
           this.cursor = { blockNumber: lastBlock.number, hash: lastBlock.hash };
+
+          // Update table stats for API queries
+          await updateTableStats('blocks', startBlock, lastBlock.number, blocks.length);
 
           // Queue priority fee backfill
           this.priorityFeeBackfiller.enqueueBatch(

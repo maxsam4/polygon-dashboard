@@ -453,7 +453,10 @@ export class Gapfiller {
       await updateBlockPriorityFees(
         blockNum,
         dbBlock.timestamp,
+        metrics.minPriorityFeeGwei,
+        metrics.maxPriorityFeeGwei,
         metrics.avgPriorityFeeGwei,
+        metrics.medianPriorityFeeGwei,
         metrics.totalPriorityFeeGwei
       );
       updated++;

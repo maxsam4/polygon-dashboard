@@ -6,6 +6,7 @@ import { getIndexerState, updateIndexerState, initializeIndexerState } from './i
 import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
+import { updateTableStats } from '../queries/stats';
 
 const SERVICE_NAME = 'block_backfiller';
 const WORKER_NAME = 'BlockBackfiller';
@@ -146,6 +147,10 @@ export class BlockBackfiller {
         const lowestBlock = blocks[0];
         await updateIndexerState(SERVICE_NAME, lowestBlock.number, lowestBlock.hash);
         this.cursor = lowestBlock.number;
+
+        // Update table stats for API queries
+        const highestBlock = blocks[blocks.length - 1];
+        await updateTableStats('blocks', lowestBlock.number, highestBlock.number, blocks.length);
 
         // Queue priority fee backfill
         this.priorityFeeBackfiller.enqueueBatch(

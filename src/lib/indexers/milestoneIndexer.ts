@@ -5,6 +5,7 @@ import { getIndexerState, updateIndexerState, initializeIndexerState } from './i
 import { writeFinalityBatch } from './finalityWriter';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
+import { updateTableStats } from '../queries/stats';
 
 const SERVICE_NAME = 'milestone_indexer';
 const WORKER_NAME = 'MilestoneIndexer';
@@ -130,6 +131,9 @@ export class MilestoneIndexer {
   private async processMilestone(milestone: Milestone): Promise<void> {
     // Insert milestone into milestones table
     await insertMilestone(milestone);
+
+    // Update table stats for API queries
+    await updateTableStats('milestones', BigInt(milestone.sequenceId), BigInt(milestone.sequenceId), 1);
 
     // Write finality data for all blocks in range
     const blocksUpdated = await writeFinalityBatch(milestone);

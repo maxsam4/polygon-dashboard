@@ -1,5 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import type { StreamBlock, SSEMessage } from './types.js';
+import type { StreamBlock, SSEMessage, SSEBlockUpdateMessage, BlockUpdatePayload } from './types.js';
 import { RingBuffer } from './ringBuffer.js';
 import { WSManager } from './wsManager.js';
 
@@ -25,7 +25,7 @@ export class SSEServer {
     this.server = createServer((req, res) => {
       // Enable CORS
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
       if (req.method === 'OPTIONS') {
@@ -42,6 +42,8 @@ export class SSEServer {
         this.handleHealth(req, res);
       } else if (url.pathname === '/status') {
         this.handleStatus(req, res);
+      } else if (url.pathname === '/update' && req.method === 'POST') {
+        this.handleUpdate(req, res);
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -125,6 +127,81 @@ export class SSEServer {
   }
 
   /**
+   * Handle POST /update requests for block updates.
+   */
+  private handleUpdate(req: IncomingMessage, res: ServerResponse): void {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body) as BlockUpdatePayload;
+
+        if (!payload.blockNumber) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'blockNumber is required' }));
+          return;
+        }
+
+        // Build updates object from payload
+        const updates: Partial<StreamBlock> = {};
+        if (payload.minPriorityFeeGwei !== undefined) {
+          updates.minPriorityFeeGwei = payload.minPriorityFeeGwei;
+        }
+        if (payload.maxPriorityFeeGwei !== undefined) {
+          updates.maxPriorityFeeGwei = payload.maxPriorityFeeGwei;
+        }
+        if (payload.avgPriorityFeeGwei !== undefined) {
+          updates.avgPriorityFeeGwei = payload.avgPriorityFeeGwei;
+        }
+        if (payload.medianPriorityFeeGwei !== undefined) {
+          updates.medianPriorityFeeGwei = payload.medianPriorityFeeGwei;
+        }
+        if (payload.totalPriorityFeeGwei !== undefined) {
+          updates.totalPriorityFeeGwei = payload.totalPriorityFeeGwei;
+        }
+        if (payload.finalized !== undefined) {
+          updates.finalized = payload.finalized;
+        }
+        if (payload.finalizedAt !== undefined) {
+          updates.finalizedAt = payload.finalizedAt;
+        }
+        if (payload.milestoneId !== undefined) {
+          updates.milestoneId = payload.milestoneId;
+        }
+        if (payload.timeToFinalitySec !== undefined) {
+          updates.timeToFinalitySec = payload.timeToFinalitySec;
+        }
+
+        // Update the block in the ring buffer
+        const updated = this.ringBuffer.update(payload.blockNumber, updates);
+
+        if (updated) {
+          // Broadcast update to all SSE clients
+          this.broadcastBlockUpdate(payload.blockNumber, updates);
+          console.log(`[SSE] Block #${payload.blockNumber} updated:`, Object.keys(updates).join(', '));
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, updated }));
+      } catch (error) {
+        console.error('[SSE] Error processing update:', error);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+      }
+    });
+
+    req.on('error', (error) => {
+      console.error('[SSE] Error reading request body:', error);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    });
+  }
+
+  /**
    * Broadcast a new block to all connected SSE clients.
    */
   broadcastBlock(block: StreamBlock): void {
@@ -139,9 +216,24 @@ export class SSEServer {
   }
 
   /**
+   * Broadcast a block update to all connected SSE clients.
+   */
+  broadcastBlockUpdate(blockNumber: number, updates: Partial<StreamBlock>): void {
+    const message: SSEBlockUpdateMessage = {
+      type: 'block_update',
+      blockNumber,
+      updates,
+    };
+
+    for (const client of this.clients) {
+      this.sendSSE(client, message);
+    }
+  }
+
+  /**
    * Send an SSE message to a client.
    */
-  private sendSSE(res: ServerResponse, message: SSEMessage): void {
+  private sendSSE(res: ServerResponse, message: SSEMessage | SSEBlockUpdateMessage): void {
     // Convert BigInt to string for JSON serialization
     const serialized = JSON.stringify(message, (key, value) =>
       typeof value === 'bigint' ? value.toString() : value

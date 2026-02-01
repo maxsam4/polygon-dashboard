@@ -193,6 +193,14 @@ export class WSManager {
       blockTimeSec,
       mgasPerSec,
       tps,
+      // Receipt-based metrics (null = pending, populated by indexer)
+      avgPriorityFeeGwei: null,
+      totalPriorityFeeGwei: null,
+      // Finality data (populated when milestone arrives)
+      finalized: false,
+      finalizedAt: null,
+      milestoneId: null,
+      timeToFinalitySec: null,
     };
 
     // Add to ring buffer (deduplicates)

@@ -275,16 +275,22 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
 export async function updateBlockPriorityFees(
   blockNumber: bigint,
   timestamp: Date,
+  minPriorityFeeGwei: number,
+  maxPriorityFeeGwei: number,
   avgPriorityFeeGwei: number,
+  medianPriorityFeeGwei: number,
   totalPriorityFeeGwei: number
 ): Promise<void> {
   await query(
     `UPDATE blocks
-     SET avg_priority_fee_gwei = $1,
-         total_priority_fee_gwei = $2,
+     SET min_priority_fee_gwei = $1,
+         max_priority_fee_gwei = $2,
+         avg_priority_fee_gwei = $3,
+         median_priority_fee_gwei = $4,
+         total_priority_fee_gwei = $5,
          updated_at = NOW()
-     WHERE block_number = $3 AND timestamp = $4`,
-    [avgPriorityFeeGwei, totalPriorityFeeGwei, blockNumber.toString(), timestamp]
+     WHERE block_number = $6 AND timestamp = $7`,
+    [minPriorityFeeGwei, maxPriorityFeeGwei, avgPriorityFeeGwei, medianPriorityFeeGwei, totalPriorityFeeGwei, blockNumber.toString(), timestamp]
   );
 }
 

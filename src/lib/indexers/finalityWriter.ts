@@ -1,5 +1,6 @@
 import { query, queryOne } from '../db';
 import { Milestone } from '../types';
+import { pushBlockUpdates } from '../liveStreamClient';
 
 interface BlockFinalityRow {
   block_number: string;
@@ -58,7 +59,46 @@ export async function writeFinalityBatch(milestone: Milestone): Promise<number> 
   // This allows existing queries on blocks.finalized to work
   await updateBlocksFinality(milestone);
 
+  // Push finality updates to live-stream service for recent blocks
+  // The live-stream ring buffer only holds ~25-30 blocks, so only push updates
+  // for blocks that might still be in the buffer
+  await pushFinalityUpdatesToLiveStream(milestone);
+
   return inserted;
+}
+
+/**
+ * Push finality updates to the live-stream service for blocks that might be in the ring buffer.
+ * The ring buffer typically holds ~25-30 recent blocks.
+ */
+async function pushFinalityUpdatesToLiveStream(milestone: Milestone): Promise<void> {
+  // Get the approximate current block number from the milestone's end block
+  // We only push updates for blocks within ~30 of the milestone's end block
+  // since older blocks are evicted from the live-stream ring buffer
+  const RING_BUFFER_SIZE = 30;
+  const recentThreshold = milestone.endBlock - BigInt(RING_BUFFER_SIZE);
+
+  const payloads = [];
+  const finalizedAt = Math.floor(milestone.timestamp.getTime() / 1000);
+
+  for (let blockNum = milestone.startBlock; blockNum <= milestone.endBlock; blockNum++) {
+    // Only push for blocks that might still be in the ring buffer
+    if (blockNum >= recentThreshold) {
+      // We can't calculate timeToFinalitySec without the block timestamp,
+      // but the live-stream already has block data, so just mark as finalized
+      payloads.push({
+        blockNumber: Number(blockNum),
+        finalized: true,
+        finalizedAt,
+        milestoneId: Number(milestone.milestoneId),
+        // timeToFinalitySec will be calculated by the client from block.timestamp and finalizedAt
+      });
+    }
+  }
+
+  if (payloads.length > 0) {
+    await pushBlockUpdates(payloads);
+  }
 }
 
 /**

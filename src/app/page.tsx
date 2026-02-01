@@ -50,6 +50,19 @@ export default function Home() {
               updatedBlocks.sort((a, b) => parseInt(b.blockNumber) - parseInt(a.blockNumber));
               return updatedBlocks.slice(0, 20);
             });
+          } else if (data.type === 'block_update') {
+            // Partial update for an existing block (priority fees, finality)
+            setBlocks(prev => {
+              const idx = prev.findIndex(b => b.blockNumber === data.blockNumber);
+              if (idx === -1) return prev;
+
+              const updatedBlocks = [...prev];
+              // Extract only the update fields, excluding 'type' and 'blockNumber'
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { type, blockNumber, ...updates } = data;
+              updatedBlocks[idx] = { ...updatedBlocks[idx], ...updates };
+              return updatedBlocks;
+            });
           }
         } catch (error) {
           console.error('Failed to parse SSE data:', error);

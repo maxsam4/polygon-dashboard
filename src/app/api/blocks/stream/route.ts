@@ -50,6 +50,27 @@ interface LiveStreamBlock {
   blockTimeSec: number | null;
   mgasPerSec: number | null;
   tps: number | null;
+  // Receipt-based metrics (null = pending)
+  avgPriorityFeeGwei: number | null;
+  totalPriorityFeeGwei: number | null;
+  // Finality data
+  finalized: boolean;
+  finalizedAt: number | null;
+  milestoneId: number | null;
+  timeToFinalitySec: number | null;
+}
+
+// Partial block update from live-stream
+interface LiveStreamBlockUpdate {
+  minPriorityFeeGwei?: number;
+  maxPriorityFeeGwei?: number;
+  avgPriorityFeeGwei?: number;
+  medianPriorityFeeGwei?: number;
+  totalPriorityFeeGwei?: number;
+  finalized?: boolean;
+  finalizedAt?: number;
+  milestoneId?: number;
+  timeToFinalitySec?: number;
 }
 
 function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
@@ -58,12 +79,18 @@ function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
   const gasUsedNum = Number(gasUsed);
   const gasLimitNum = Number(gasLimit);
 
+  // Calculate timeToFinalitySec from finalizedAt and timestamp if available
+  let timeToFinalitySec = b.timeToFinalitySec;
+  if (timeToFinalitySec === null && b.finalized && b.finalizedAt !== null) {
+    timeToFinalitySec = b.finalizedAt - b.timestamp;
+  }
+
   return {
     blockNumber: b.blockNumber.toString(),
     timestamp: new Date(b.timestamp * 1000).toISOString(),
     gasUsedPercent: gasLimitNum > 0 ? (gasUsedNum / gasLimitNum) * 100 : 0,
     baseFeeGwei: b.baseFeeGwei ?? 0,
-    avgPriorityFeeGwei: null,  // Live stream doesn't have receipt-based metrics
+    avgPriorityFeeGwei: b.avgPriorityFeeGwei ?? null,
     medianPriorityFeeGwei: b.medianPriorityFeeGwei ?? 0,
     minPriorityFeeGwei: b.minPriorityFeeGwei ?? 0,
     maxPriorityFeeGwei: b.maxPriorityFeeGwei ?? 0,
@@ -74,10 +101,57 @@ function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
     mgasPerSec: b.mgasPerSec ?? null,
     tps: b.tps ?? null,
     totalBaseFeeGwei: b.baseFeeGwei * gasUsedNum / 1e9,
-    totalPriorityFeeGwei: null,  // Live stream doesn't have receipt-based metrics
-    finalized: false,  // Live stream blocks are always pending finality
-    timeToFinalitySec: null,
+    totalPriorityFeeGwei: b.totalPriorityFeeGwei ?? null,
+    finalized: b.finalized ?? false,
+    timeToFinalitySec,
   };
+}
+
+// Transform block_update partial update to UI format
+function liveStreamUpdateToUI(blockNumber: number, updates: LiveStreamBlockUpdate): {
+  blockNumber: string;
+  minPriorityFeeGwei?: number;
+  maxPriorityFeeGwei?: number;
+  avgPriorityFeeGwei?: number;
+  medianPriorityFeeGwei?: number;
+  totalPriorityFeeGwei?: number;
+  finalized?: boolean;
+  timeToFinalitySec?: number;
+} {
+  const result: {
+    blockNumber: string;
+    minPriorityFeeGwei?: number;
+    maxPriorityFeeGwei?: number;
+    avgPriorityFeeGwei?: number;
+    medianPriorityFeeGwei?: number;
+    totalPriorityFeeGwei?: number;
+    finalized?: boolean;
+    timeToFinalitySec?: number;
+  } = { blockNumber: blockNumber.toString() };
+
+  if (updates.minPriorityFeeGwei !== undefined) {
+    result.minPriorityFeeGwei = updates.minPriorityFeeGwei;
+  }
+  if (updates.maxPriorityFeeGwei !== undefined) {
+    result.maxPriorityFeeGwei = updates.maxPriorityFeeGwei;
+  }
+  if (updates.avgPriorityFeeGwei !== undefined) {
+    result.avgPriorityFeeGwei = updates.avgPriorityFeeGwei;
+  }
+  if (updates.medianPriorityFeeGwei !== undefined) {
+    result.medianPriorityFeeGwei = updates.medianPriorityFeeGwei;
+  }
+  if (updates.totalPriorityFeeGwei !== undefined) {
+    result.totalPriorityFeeGwei = updates.totalPriorityFeeGwei;
+  }
+  if (updates.finalized !== undefined) {
+    result.finalized = updates.finalized;
+  }
+  if (updates.timeToFinalitySec !== undefined) {
+    result.timeToFinalitySec = updates.timeToFinalitySec;
+  }
+
+  return result;
 }
 
 // SSE endpoint for streaming new blocks to the frontend
@@ -93,37 +167,38 @@ export async function GET() {
 
 // Proxy to the live-stream service and transform the response
 async function proxyToLiveStream(): Promise<Response> {
-  try {
-    const upstream = await fetch(`${LIVE_STREAM_URL}/stream`, {
-      // Use longer timeout for SSE
-      signal: AbortSignal.timeout(300000), // 5 minutes
-    });
+  const encoder = new TextEncoder();
 
-    if (!upstream.ok) {
-      console.error(`[SSE] Live stream service returned ${upstream.status}`);
-      // Fall back to DB-backed SSE
-      return dbBackedSSE();
-    }
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Use Node.js http for proper SSE streaming support
+      const http = await import('http');
+      const url = new URL(`${LIVE_STREAM_URL}/stream`);
 
-    const reader = upstream.body?.getReader();
-    if (!reader) {
-      console.error('[SSE] Live stream service returned no body');
-      return dbBackedSSE();
-    }
+      const req = http.request(
+        {
+          hostname: url.hostname,
+          port: url.port || 80,
+          path: url.pathname,
+          method: 'GET',
+          headers: {
+            'Accept': 'text/event-stream',
+          },
+        },
+        (res) => {
+          if (res.statusCode !== 200) {
+            console.error(`[SSE] Live stream service returned ${res.statusCode}`);
+            controller.close();
+            return;
+          }
 
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
+          let buffer = '';
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            // Parse and transform the data
-            const text = decoder.decode(value);
-            const lines = text.split('\n');
+          res.on('data', (chunk: Buffer) => {
+            buffer += chunk.toString();
+            const lines = buffer.split('\n');
+            // Keep the last incomplete line in buffer
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
@@ -131,53 +206,62 @@ async function proxyToLiveStream(): Promise<Response> {
                   const data = JSON.parse(line.slice(6));
 
                   if (data.type === 'initial') {
-                    // Transform initial blocks
                     const transformed = {
                       type: 'initial',
                       blocks: (data.blocks as LiveStreamBlock[]).map(liveStreamBlockToUI),
                     };
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
                   } else if (data.type === 'update') {
-                    // Transform update block
                     const transformed = {
                       type: 'update',
                       blocks: [liveStreamBlockToUI(data.block as LiveStreamBlock)],
                     };
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
+                  } else if (data.type === 'block_update') {
+                    // Partial update message - transform and forward
+                    const transformed = {
+                      type: 'block_update',
+                      ...liveStreamUpdateToUI(data.blockNumber, data.updates as LiveStreamBlockUpdate),
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
                   }
                 } catch {
-                  // If we can't parse the data, pass it through as-is
+                  // Pass through unparseable lines
                   controller.enqueue(encoder.encode(`${line}\n`));
                 }
               } else if (line.trim()) {
-                // Pass through non-data lines (like empty lines for keepalive)
                 controller.enqueue(encoder.encode(`${line}\n`));
               }
             }
-          }
-        } catch (error) {
-          console.error('[SSE] Error reading from live stream:', error);
-        } finally {
-          reader.releaseLock();
-        }
-      },
-      cancel() {
-        reader.cancel();
-      },
-    });
+          });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-      },
-    });
-  } catch (error) {
-    console.error('[SSE] Failed to connect to live stream service:', error);
-    // Fall back to DB-backed SSE
-    return dbBackedSSE();
-  }
+          res.on('end', () => {
+            controller.close();
+          });
+
+          res.on('error', (error) => {
+            console.error('[SSE] Error reading from live stream:', error);
+            controller.close();
+          });
+        }
+      );
+
+      req.on('error', (error) => {
+        console.error('[SSE] Failed to connect to live stream service:', error);
+        controller.close();
+      });
+
+      req.end();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+    },
+  });
 }
 
 // Original DB-backed SSE implementation

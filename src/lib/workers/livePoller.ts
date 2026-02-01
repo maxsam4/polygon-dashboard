@@ -215,7 +215,10 @@ export class LivePoller {
     await updateBlockPriorityFees(
       blockNumber,
       blockTimestamp,
+      metrics.minPriorityFeeGwei,
+      metrics.maxPriorityFeeGwei,
       metrics.avgPriorityFeeGwei,
+      metrics.medianPriorityFeeGwei,
       metrics.totalPriorityFeeGwei
     );
 

@@ -34,7 +34,7 @@ export interface StreamBlock {
   gasLimit: bigint;
   baseFeeGwei: number;
   txCount: number;
-  // Priority fee metrics (calculated from transactions)
+  // Priority fee metrics (calculated from transactions in header)
   minPriorityFeeGwei: number;
   maxPriorityFeeGwei: number;
   medianPriorityFeeGwei: number;
@@ -42,6 +42,14 @@ export interface StreamBlock {
   blockTimeSec: number | null;
   mgasPerSec: number | null;
   tps: number | null;
+  // Receipt-based priority fee metrics (null = pending receipt data)
+  avgPriorityFeeGwei: number | null;
+  totalPriorityFeeGwei: number | null;
+  // Finality data (populated when milestone arrives)
+  finalized: boolean;
+  finalizedAt: number | null; // unix timestamp
+  milestoneId: number | null;
+  timeToFinalitySec: number | null;
 }
 
 // SSE message types
@@ -55,7 +63,29 @@ export interface SSEUpdateMessage {
   block: StreamBlock;
 }
 
-export type SSEMessage = SSEInitialMessage | SSEUpdateMessage;
+export interface SSEBlockUpdateMessage {
+  type: 'block_update';
+  blockNumber: number;
+  updates: Partial<StreamBlock>;
+}
+
+export type SSEMessage = SSEInitialMessage | SSEUpdateMessage | SSEBlockUpdateMessage;
+
+// Payload for POST /update endpoint
+export interface BlockUpdatePayload {
+  blockNumber: number;
+  // Priority fee metrics from receipts
+  minPriorityFeeGwei?: number;
+  maxPriorityFeeGwei?: number;
+  avgPriorityFeeGwei?: number;
+  medianPriorityFeeGwei?: number;
+  totalPriorityFeeGwei?: number;
+  // Finality data
+  finalized?: boolean;
+  finalizedAt?: number;
+  milestoneId?: number;
+  timeToFinalitySec?: number;
+}
 
 // WebSocket connection state
 export interface WSConnectionState {

@@ -82,4 +82,17 @@ export class RingBuffer {
     if (!prevBlock) return null;
     return timestamp - prevBlock.timestamp;
   }
+
+  /**
+   * Update an existing block with partial updates.
+   * Returns true if the block was found and updated, false otherwise.
+   */
+  update(blockNumber: number, updates: Partial<StreamBlock>): boolean {
+    const existing = this.buffer.get(blockNumber);
+    if (!existing) return false;
+
+    const updated = { ...existing, ...updates };
+    this.buffer.set(blockNumber, updated);
+    return true;
+  }
 }
