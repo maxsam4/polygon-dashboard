@@ -255,17 +255,23 @@ describe('blocks queries', () => {
       await updateBlockPriorityFees(
         50000000n,
         new Date('2024-01-15T12:00:00Z'),
-        25.5,
-        375000000
+        1.0,      // minPriorityFeeGwei
+        100.0,    // maxPriorityFeeGwei
+        25.5,     // avgPriorityFeeGwei
+        20.0,     // medianPriorityFeeGwei
+        375000000 // totalPriorityFeeGwei
       );
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       expect(mockQuery.mock.calls[0][0]).toContain('UPDATE blocks');
       expect(mockQuery.mock.calls[0][0]).toContain('avg_priority_fee_gwei');
       expect(mockQuery.mock.calls[0][0]).toContain('total_priority_fee_gwei');
-      expect(mockQuery.mock.calls[0][0]).toContain('timestamp = $4');
+      expect(mockQuery.mock.calls[0][0]).toContain('timestamp = $7');
       expect(mockQuery.mock.calls[0][1]).toEqual([
+        1.0,
+        100.0,
         25.5,
+        20.0,
         375000000,
         '50000000',
         new Date('2024-01-15T12:00:00Z'),

@@ -48,6 +48,13 @@ class BlockChannel {
   get subscriberCount(): number {
     return this.listeners.size;
   }
+
+  /**
+   * Clear all subscribers. Used for testing cleanup.
+   */
+  clear(): void {
+    this.listeners.clear();
+  }
 }
 
 // Singleton instance

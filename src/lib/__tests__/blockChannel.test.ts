@@ -6,12 +6,7 @@ import { createBlock } from './fixtures/blocks';
 describe('BlockChannel', () => {
   beforeEach(() => {
     // Clear all subscribers before each test
-    // We access the private listeners via subscriberCount to verify cleanup
-    while (blockChannel.subscriberCount > 0) {
-      // Force cleanup by creating and immediately unsubscribing
-      const unsub = blockChannel.subscribe(() => {});
-      unsub();
-    }
+    blockChannel.clear();
   });
 
   describe('subscribe', () => {
