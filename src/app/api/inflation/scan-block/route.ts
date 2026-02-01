@@ -59,7 +59,6 @@ export async function POST(request: Request) {
       interestPerYearLog2: interestRate,
       startSupply: INITIAL_SUPPLY, // Use standard initial supply
       startTimestamp: unixTimestamp, // Unix timestamp when rate became active
-      implementationAddress: 'user-added',
     };
 
     await insertInflationRate(newRate);

@@ -9,7 +9,6 @@ function rowToInflationRate(row: InflationRateRow): InflationRate {
     interestPerYearLog2: BigInt(row.interest_per_year_log2),
     startSupply: BigInt(row.start_supply),
     startTimestamp: BigInt(row.start_timestamp),
-    implementationAddress: row.implementation_address,
     createdAt: new Date(row.created_at),
   };
 }
@@ -43,12 +42,11 @@ export async function insertInflationRate(rate: {
   interestPerYearLog2: bigint;
   startSupply: bigint;
   startTimestamp: bigint;
-  implementationAddress: string;
 }): Promise<void> {
   await query(
     `INSERT INTO inflation_rates
-      (block_number, block_timestamp, interest_per_year_log2, start_supply, start_timestamp, implementation_address)
-     VALUES ($1, $2, $3, $4, $5, $6)
+      (block_number, block_timestamp, interest_per_year_log2, start_supply, start_timestamp)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (block_number) DO NOTHING`,
     [
       rate.blockNumber.toString(),
@@ -56,7 +54,6 @@ export async function insertInflationRate(rate: {
       rate.interestPerYearLog2.toString(),
       rate.startSupply.toString(),
       rate.startTimestamp.toString(),
-      rate.implementationAddress,
     ]
   );
 }

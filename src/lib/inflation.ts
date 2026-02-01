@@ -18,7 +18,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2023-10-25T09:06:23Z'),  // Actual block timestamp from chain
     startSupply: INITIAL_SUPPLY, // Initial deployment: 10B POL (verified on-chain)
     startTimestamp: 1698224783n, // Actual block timestamp from chain
-    implementationAddress: 'initial-deployment',
   },
   {
     blockNumber: 20678332n,
@@ -26,7 +25,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2024-09-04T16:11:59Z'), // Actual block timestamp from chain
     startSupply: 10248739753465028590240000886n, // Actual totalSupply at upgrade block (verified on-chain)
     startTimestamp: 1725466319n, // Actual block timestamp from chain
-    implementationAddress: 'upgrade-1',
   },
   {
     blockNumber: 22884776n,
@@ -34,7 +32,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2025-07-09T23:03:59Z'), // Actual block timestamp from chain
     startSupply: 10466456329199769051012729173n, // Actual totalSupply at upgrade block (verified on-chain)
     startTimestamp: 1752102239n, // Actual block timestamp from chain (current period)
-    implementationAddress: 'upgrade-2',
   },
 ] as const;
 
@@ -44,7 +41,6 @@ export interface InflationRateEntry {
   interestPerYearLog2: bigint;
   startSupply: bigint;
   startTimestamp: bigint;
-  implementationAddress: string;
 }
 
 /**
@@ -58,6 +54,5 @@ export function getAllKnownInflationRates(): InflationRateEntry[] {
     interestPerYearLog2: rate.interestPerYearLog2,
     startSupply: rate.startSupply,
     startTimestamp: rate.startTimestamp,
-    implementationAddress: rate.implementationAddress,
   }));
 }

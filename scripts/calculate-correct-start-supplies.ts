@@ -141,7 +141,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2023-10-25T19:37:11Z'),
     startSupply: ${periods[0].startSupply}n,
     startTimestamp: ${periods[0].startTimestamp}n,
-    implementationAddress: 'initial-deployment',
   },
   {
     blockNumber: ${periods[1].blockNumber}n,
@@ -149,7 +148,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2024-08-28T12:00:00Z'),
     startSupply: ${periods[1].startSupply}n, // Supply at end of Period 1 (COMPOUNDED)
     startTimestamp: ${periods[1].startTimestamp}n,
-    implementationAddress: 'upgrade-1',
   },
   {
     blockNumber: ${periods[2].blockNumber}n,
@@ -157,7 +155,6 @@ export const KNOWN_INFLATION_RATES = [
     blockTimestamp: new Date('2024-12-20T12:00:00Z'),
     startSupply: ${periods[2].startSupply}n, // Supply at end of Period 2 (COMPOUNDED)
     startTimestamp: ${periods[2].startTimestamp}n,
-    implementationAddress: 'upgrade-2',
   },
 ] as const;
 `);

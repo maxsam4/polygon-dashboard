@@ -14,7 +14,6 @@ export async function GET() {
       interestPerYearLog2: rate.interestPerYearLog2.toString(),
       startSupply: rate.startSupply.toString(),
       startTimestamp: rate.startTimestamp.toString(),
-      implementationAddress: rate.implementationAddress,
     }));
 
     return NextResponse.json({

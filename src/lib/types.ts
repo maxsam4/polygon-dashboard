@@ -123,7 +123,6 @@ export interface InflationRate {
   interestPerYearLog2: bigint;
   startSupply: bigint;
   startTimestamp: bigint;
-  implementationAddress: string;
   createdAt: Date;
 }
 
@@ -135,7 +134,6 @@ export interface InflationRateRow {
   interest_per_year_log2: string;
   start_supply: string;
   start_timestamp: string;
-  implementation_address: string;
   created_at: string;
 }
 
@@ -146,7 +144,6 @@ export interface InflationRateResponse {
   interestPerYearLog2: string;
   startSupply: string;
   startTimestamp: string;
-  implementationAddress: string;
 }
 
 // Inflation chart data point (calculated on frontend)
@@ -160,8 +157,8 @@ export interface InflationChartDataPoint {
 
 // Table statistics (materialized cache)
 export interface TableStats {
-  minValue: bigint;
-  maxValue: bigint;
+  minValue: bigint | null;  // null when no data exists
+  maxValue: bigint | null;  // null when no data exists
   totalCount: bigint;
   finalizedCount: bigint | null;
   minFinalized: bigint | null;
@@ -172,8 +169,8 @@ export interface TableStats {
 // Table statistics row from database (raw)
 export interface TableStatsRow {
   table_name: string;
-  min_value: string;
-  max_value: string;
+  min_value: string | null;  // null when no data exists
+  max_value: string | null;  // null when no data exists
   total_count: string;
   finalized_count: string | null;
   min_finalized: string | null;
