@@ -67,7 +67,7 @@ export async function getBlocksPaginated(
     total = stats ? Number(stats.totalCount) : 0;
   } else {
     // With block range filter: calculate from range (O(1))
-    if (stats) {
+    if (stats && stats.minValue !== null && stats.maxValue !== null) {
       const effectiveFrom = fromBlock ?? stats.minValue;
       const effectiveTo = toBlock ?? stats.maxValue;
       total = Number(effectiveTo - effectiveFrom + 1n);
@@ -78,7 +78,7 @@ export async function getBlocksPaginated(
 
   // For unfiltered queries, use block_number range instead of OFFSET
   // This avoids scanning compressed chunks by targeting specific block ranges
-  if (fromBlock === undefined && toBlock === undefined && stats) {
+  if (fromBlock === undefined && toBlock === undefined && stats && stats.maxValue !== null) {
     const maxBlock = stats.maxValue;
     // Calculate block range for this page (blocks are sorted DESC)
     const rangeEnd = maxBlock - BigInt(offset);
@@ -210,9 +210,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
 export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updatedAt'>[]): Promise<void> {
   if (blocks.length === 0) return;
 
-  // Simple batch insert - finality is handled separately by FinalityReconciler
-  // for uncompressed chunks. We don't do milestone lookup here to avoid
-  // adding dependencies when milestones may not exist yet.
+  // Simple batch insert - finality is reconciled after insert from block_finality table
   const values: string[] = [];
   const params: unknown[] = [];
   const PARAMS_PER_BLOCK = 21;
@@ -262,6 +260,24 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
     ) VALUES ${values.join(', ')}
     ON CONFLICT (timestamp, block_number) DO NOTHING`,
     params
+  );
+
+  // Reconcile finality from block_finality table for newly inserted blocks
+  // This handles the case where milestones arrived before blocks were indexed
+  const blockNumbers = blocks.map(b => b.blockNumber.toString());
+  await query(
+    `UPDATE blocks b
+     SET
+       finalized = TRUE,
+       finalized_at = bf.finalized_at,
+       milestone_id = bf.milestone_id,
+       time_to_finality_sec = EXTRACT(EPOCH FROM (bf.finalized_at - b.timestamp)),
+       updated_at = NOW()
+     FROM block_finality bf
+     WHERE b.block_number = bf.block_number
+       AND b.block_number = ANY($1::bigint[])
+       AND b.finalized = FALSE`,
+    [blockNumbers]
   );
 }
 

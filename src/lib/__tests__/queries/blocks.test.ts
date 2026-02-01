@@ -172,6 +172,18 @@ describe('blocks queries', () => {
 
       expect(result).toBeNull();
     });
+
+    it('returns null when minValue is null (no data)', async () => {
+      mockGetTableStats.mockResolvedValueOnce({
+        minValue: null,
+        maxValue: null,
+        totalCount: 0n,
+      });
+
+      const result = await getLowestBlockNumber();
+
+      expect(result).toBeNull();
+    });
   });
 
   describe('getHighestBlockNumber', () => {
@@ -226,7 +238,8 @@ describe('blocks queries', () => {
     });
 
     it('inserts multiple blocks in single query', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([]); // INSERT
+      mockQuery.mockResolvedValueOnce([]); // finality reconciliation UPDATE
       const blocks = [
         createBlock({ blockNumber: 100n }),
         createBlock({ blockNumber: 101n }),
@@ -234,12 +247,14 @@ describe('blocks queries', () => {
 
       await insertBlocksBatch(blocks);
 
-      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
       expect(mockQuery.mock.calls[0][0]).toContain('INSERT INTO blocks');
+      expect(mockQuery.mock.calls[1][0]).toContain('UPDATE blocks'); // finality reconciliation
     });
 
     it('uses ON CONFLICT DO NOTHING for batch', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([]); // INSERT
+      mockQuery.mockResolvedValueOnce([]); // finality reconciliation UPDATE
       const blocks = [createBlock()];
 
       await insertBlocksBatch(blocks);
