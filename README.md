@@ -6,7 +6,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 
 ## Features
 
-- **Real-time Block Monitoring** - Live updates every 2 seconds showing the latest blocks with detailed metrics
+- **Real-time Block Monitoring** - Live updates via SSE showing the latest blocks with detailed metrics
 - **Gas Price Analytics** - Track base fees and priority fees (min/max/avg/median) in gwei
 - **Fee Tracking** - Monitor total base fees and priority fees per block with cumulative graphs showing fee accumulation over time
 - **Finality Tracking** - Monitor time-to-finality using Polygon's milestone system via Heimdall API
@@ -14,7 +14,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - **Historical Analytics** - Interactive charts with configurable time ranges, granularity, and zoom selection
 - **Gas Utilization Visualization** - Color-coded progress bars showing gas usage relative to 65% target (green: 55-75%, yellow: off-target, red: extreme)
 - **Data Export** - Export block and milestone data in various formats
-- **Automatic Data Backfilling** - Background workers continuously backfill historical block and milestone data
+- **Automatic Data Backfilling** - Background indexers continuously backfill historical block and milestone data
 - **Dark/Light Mode** - Theme switching support
 
 ## Tech Stack
@@ -30,7 +30,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - **Next.js API Routes** - REST API endpoints
 - **TimescaleDB** - Time-series database (PostgreSQL extension)
 - **viem** - Ethereum/Polygon RPC client
-- **Background Workers** - Live polling, backfilling, and milestone tracking
+- **Background Indexers** - Block indexing, backfilling, and milestone tracking
 
 ### Infrastructure
 - **Docker & Docker Compose** - Containerized deployment
@@ -42,20 +42,13 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                           Next.js Application                                 │
 ├─────────────────┬─────────────────┬──────────────────────────────────────────┤
-│   Pages/UI      │   API Routes    │   Background Workers                     │
-│  - Home         │  - /blocks      │                                          │
-│  - Analytics    │  - /chart-data  │   Legacy System (default):               │
-│  - Blocks       │  - /milestones  │   - LivePoller (2s poll/WebSocket)       │
-│  - Milestones   │  - /export      │   - Backfiller (historical blocks)       │
-│  - Export       │  - /workers     │   - MilestonePoller/Backfiller           │
-│                 │  - /stream (SSE)│   - FinalityReconciler (100ms)           │
-│                 │                 │   - GapAnalyzer (5m) + Gapfiller         │
-│                 │                 │                                          │
-│                 │                 │   New Indexer System (feature flags):    │
-│                 │                 │   - BlockIndexer (cursor-based, reorg)   │
-│                 │                 │   - BlockBackfiller (reverse fill)       │
-│                 │                 │   - MilestoneIndexer (direct finality)   │
-│                 │                 │   - PriorityFeeBackfiller (async fees)   │
+│   Pages/UI      │   API Routes    │   Background Indexers                    │
+│  - Home         │  - /blocks      │   - BlockIndexer (cursor-based, reorg)   │
+│  - Analytics    │  - /chart-data  │   - BlockBackfiller (reverse fill)       │
+│  - Blocks       │  - /milestones  │   - MilestoneIndexer (direct finality)   │
+│  - Milestones   │  - /export      │   - PriorityFeeBackfiller (async fees)   │
+│  - Export       │  - /workers     │                                          │
+│                 │  - /stream (SSE)│                                          │
 └────────┬────────┴────────┬────────┴───────────┬──────────────────────────────┘
          │                 │                    │
          │                 ▼                    │
@@ -64,7 +57,6 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
          │         │   - blocks   │
          │         │   - milestones│
          │         │   - block_finality│
-         │         │   - gaps     │
          │         │   - indexer_state│
          │         └──────────────┘
          │
@@ -76,28 +68,15 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                    Live-Stream Service (optional)                            │
+│                         Live-Stream Service                                   │
 │  - Standalone Node.js service at /services/live-stream                       │
 │  - WebSocket subscriptions to multiple RPC endpoints                         │
 │  - SSE endpoint for real-time block streaming                                │
-│  - Enable with USE_LIVE_STREAM_SERVICE=true                                  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Workers
+### Indexers
 
-The system supports two worker architectures controlled by feature flags:
-
-**Legacy System** (default - `USE_NEW_BLOCK_INDEXER=false`):
-- `LivePoller` - Polls RPC every 2s or uses WebSocket subscriptions for new blocks
-- `Backfiller` - Backfills blocks from current lowest to target block (default 50M)
-- `MilestonePoller` - Polls Heimdall API for new finality milestones
-- `MilestoneBackfiller` - Backfills historical milestones
-- `FinalityReconciler` - Matches blocks to milestones via SQL JOIN (100ms interval)
-- `GapAnalyzer` - Detects gaps in blocks, milestones, finality, priority fees (5min)
-- `Gapfiller` - Fills identified gaps from RPC/Heimdall
-
-**New Indexer System** (enable with feature flags):
 - `BlockIndexer` - Cursor-based forward indexer with reorg detection and recovery
 - `BlockBackfiller` - Backwards indexer from lowest block to target
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes finality directly
@@ -109,9 +88,8 @@ The system supports two worker architectures controlled by feature flags:
 |-------|---------|
 | `blocks` | Main block data with gas metrics, finality, throughput |
 | `milestones` | Polygon finality checkpoints from Heimdall |
-| `block_finality` | Dedicated finality records (new system) |
-| `gaps` | Gap tracking for workers |
-| `indexer_state` | Cursor positions for new indexers |
+| `block_finality` | Dedicated finality records |
+| `indexer_state` | Cursor positions for indexers |
 | `reorged_blocks` | Reorg tracking |
 | `table_stats` | Cached min/max/count for performance |
 
@@ -178,11 +156,15 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `DB_NAME` | polygon_dashboard | Database name |
 | `DB_PORT` | 5432 | PostgreSQL port |
 | `APP_PORT` | 3000 | Application port |
-| `POLYGON_RPC_URLS` | https://polygon.drpc.org,https://polygon-rpc.com,https://polygon-bor-rpc.publicnode.com | Comma-separated RPC endpoints |
-| `HEIMDALL_API_URLS` | https://heimdall-api.polygon.technology,https://polygon-heimdall-rest.publicnode.com | Heimdall API endpoints |
+| `POLYGON_RPC_URLS` | https://polygon.drpc.org,... | Comma-separated RPC endpoints |
+| `POLYGON_WS_URLS` | - | WebSocket RPC URLs for live-stream service |
+| `HEIMDALL_API_URLS` | https://heimdall-api.polygon.technology,... | Heimdall API endpoints |
 | `BACKFILL_TO_BLOCK` | 50000000 | Target block for historical backfill |
 | `BACKFILL_BATCH_SIZE` | 100 | Blocks per backfill batch |
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
+| `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
+| `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |
+| `LIVE_STREAM_URL` | http://live-stream:3002 | URL for live-stream service |
 
 ## API Endpoints
 
@@ -207,18 +189,11 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 |----------|---------|-------------|
 | `DATABASE_URL` | - | PostgreSQL connection string |
 | `POLYGON_RPC_URLS` | - | Comma-separated RPC endpoints |
+| `POLYGON_WS_URLS` | - | Comma-separated WebSocket RPC endpoints |
 | `HEIMDALL_API_URLS` | - | Comma-separated Heimdall endpoints |
 | `BACKFILL_TO_BLOCK` | 50000000 | Target block for backfill |
 | `BACKFILL_BATCH_SIZE` | 100 | Blocks per backfill batch |
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
-| `INDEXER_POLL_MS` | 1000 | Poll interval for new indexers |
-| `LIVE_POLLER_BATCH_SIZE` | 100 | Max blocks to process when catching up |
-
-### Feature Flags
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `USE_NEW_BLOCK_INDEXER` | false | Enable cursor-based block indexer |
-| `USE_NEW_MILESTONE_INDEXER` | false | Enable cursor-based milestone indexer |
-| `USE_LIVE_STREAM_SERVICE` | false | Proxy stream to standalone live-stream service |
-
+| `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
+| `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |
+| `LIVE_STREAM_URL` | http://live-stream:3002 | URL for live-stream service |

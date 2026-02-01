@@ -3,26 +3,6 @@
 import { Nav } from '@/components/Nav';
 import { useEffect, useState, useRef } from 'react';
 
-interface Gap {
-  start: string;
-  end: string;
-  size: number;
-  source: string;
-  createdAt: string;
-}
-
-interface GapStats {
-  pendingCount: number;
-  totalPendingSize: number;
-  fillingCount: number;
-}
-
-interface Coverage {
-  lowWaterMark: string;
-  highWaterMark: string;
-  lastAnalyzedAt: string | null;
-}
-
 interface WorkerStatusData {
   name: string;
   state: 'running' | 'idle' | 'error' | 'stopped';
@@ -41,12 +21,10 @@ interface StatusData {
     max: string | null;
     minTimestamp: string | null;
     maxTimestamp: string | null;
-    total: number;
-    finalized: number;
+    total: string;
+    finalized: string;
     minFinalized: string | null;
     maxFinalized: string | null;
-    gaps: Gap[];
-    gapStats: GapStats;
     latest: {
       blockNumber: string;
       timestamp: string;
@@ -60,9 +38,7 @@ interface StatusData {
     maxEndBlock: string | null;
     minTimestamp: string | null;
     maxTimestamp: string | null;
-    total: number;
-    gaps: Gap[];
-    gapStats: GapStats;
+    total: string;
     latest: {
       sequenceId: string;
       endBlock: string;
@@ -70,28 +46,11 @@ interface StatusData {
       age: number;
     } | null;
   };
-  finality: {
-    gaps: Gap[];
-    gapStats: GapStats;
-  };
-  coverage: {
-    blocks: Coverage | null;
-    milestones: Coverage | null;
-  };
   inflation?: {
     rateCount: number;
     latestRate: string | null;
     lastChange: string | null;
   };
-  priorityFeeFix?: {
-    fixDeployedAtBlock: string | null;
-    lastFixedBlock: string | null;
-    earliestBlock: string | null;
-    totalToFix: string;
-    totalFixed: string;
-    percentComplete: number;
-    isComplete: boolean;
-  } | null;
 }
 
 function formatAge(seconds: number): string {
@@ -106,38 +65,29 @@ function formatTimeAgo(isoString: string | null): string {
   return formatAge(seconds) + ' ago';
 }
 
-function formatNumber(num: number): string {
-  return num.toLocaleString();
+function formatNumber(num: number | string): string {
+  const n = typeof num === 'string' ? parseInt(num, 10) : num;
+  return n.toLocaleString();
 }
 
 interface HistoricalData {
   timestamp: number;
   minBlock: string | null;
-  totalBlocks: number;
+  totalBlocks: string;
   minMilestoneSeq: string | null;
-  totalMilestones: number;
-  blockGapSize: number;
-  milestoneGapSize: number;
-  finalityGapSize: number;
-  priorityFeeLastFixedBlock?: string;
+  totalMilestones: string;
 }
 
 interface SpeedStats {
-  backfillerSpeed: number | null;      // blocks/sec (going backwards)
-  blockGapSpeed: number | null;         // blocks/sec (gap filling)
-  milestoneBackfillerSpeed: number | null; // milestones/sec
-  milestoneGapSpeed: number | null;     // milestones/sec
-  priorityFeeFixSpeed: number | null;   // blocks/sec (priority fee fixing)
+  backfillerSpeed: number | null;
+  milestoneBackfillerSpeed: number | null;
 }
 
 function calculateSpeeds(history: HistoricalData[]): SpeedStats {
   if (history.length < 2) {
     return {
       backfillerSpeed: null,
-      blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
-      milestoneGapSpeed: null,
-      priorityFeeFixSpeed: null,
     };
   }
 
@@ -148,10 +98,7 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
   if (timeDiffSec < 1) {
     return {
       backfillerSpeed: null,
-      blockGapSpeed: null,
       milestoneBackfillerSpeed: null,
-      milestoneGapSpeed: null,
-      priorityFeeFixSpeed: null,
     };
   }
 
@@ -165,12 +112,6 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     }
   }
 
-  // Block gap speed: how fast gap size is decreasing
-  let blockGapSpeed: number | null = null;
-  if (oldest.blockGapSize > newest.blockGapSize) {
-    blockGapSpeed = (oldest.blockGapSize - newest.blockGapSize) / timeDiffSec;
-  }
-
   // Milestone backfiller speed: how fast min seq is decreasing
   let milestoneBackfillerSpeed: number | null = null;
   if (oldest.minMilestoneSeq && newest.minMilestoneSeq) {
@@ -181,28 +122,9 @@ function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     }
   }
 
-  // Milestone gap speed: how fast gap size is decreasing
-  let milestoneGapSpeed: number | null = null;
-  if (oldest.milestoneGapSize > newest.milestoneGapSize) {
-    milestoneGapSpeed = (oldest.milestoneGapSize - newest.milestoneGapSize) / timeDiffSec;
-  }
-
-  // Priority fee fix speed: how fast last fixed block is decreasing
-  let priorityFeeFixSpeed: number | null = null;
-  if (oldest.priorityFeeLastFixedBlock && newest.priorityFeeLastFixedBlock) {
-    const oldBlock = BigInt(oldest.priorityFeeLastFixedBlock);
-    const newBlock = BigInt(newest.priorityFeeLastFixedBlock);
-    if (newBlock < oldBlock) {
-      priorityFeeFixSpeed = Number(oldBlock - newBlock) / timeDiffSec;
-    }
-  }
-
   return {
     backfillerSpeed,
-    blockGapSpeed,
     milestoneBackfillerSpeed,
-    milestoneGapSpeed,
-    priorityFeeFixSpeed,
   };
 }
 
@@ -237,22 +159,6 @@ function formatDateRange(minTimestamp: string | null, maxTimestamp: string | nul
   const min = new Date(minTimestamp);
   const max = new Date(maxTimestamp);
   return `${min.toLocaleString()} - ${max.toLocaleString()}`;
-}
-
-function estimateBlockDate(
-  blockNumber: string | null,
-  refBlock: string | null,
-  refTimestamp: string | null
-): string | null {
-  if (!blockNumber || !refBlock || !refTimestamp) return null;
-  const block = BigInt(blockNumber);
-  const ref = BigInt(refBlock);
-  const refTime = new Date(refTimestamp).getTime();
-  // Polygon ~2.2 seconds per block
-  const msOffset = Number(ref - block) * 2200;
-  return new Date(refTime - msOffset).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric'
-  });
 }
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -303,39 +209,6 @@ function StatRow({ label, value, warning }: { label: string; value: string | num
   );
 }
 
-function GapCard({ title, gaps, gapStats, unitLabel }: { title: string; gaps: Gap[]; gapStats: GapStats; unitLabel: string }) {
-  return (
-    <Card title={title}>
-      <div className="mb-3 text-sm">
-        <span className={gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
-          {gapStats.pendingCount} pending
-        </span>
-        {gapStats.fillingCount > 0 && (
-          <span className="text-blue-400 ml-3">{gapStats.fillingCount} filled</span>
-        )}
-        {gapStats.totalPendingSize > 0 && (
-          <span className="text-gray-500 ml-3">({formatNumber(gapStats.totalPendingSize)} total {unitLabel})</span>
-        )}
-      </div>
-      {gaps.length === 0 ? (
-        <div className="text-green-400">No gaps detected</div>
-      ) : (
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          {gaps.map((gap, i) => (
-            <div key={i} className="flex justify-between items-center py-1 border-b border-gray-700 last:border-0">
-              <div>
-                <span className="text-gray-400">{gap.start} - {gap.end}</span>
-                <span className="text-gray-600 text-xs ml-2">({gap.source})</span>
-              </div>
-              <span className="text-yellow-400">{formatNumber(gap.size)} {unitLabel}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
 const MAX_HISTORY = 12; // 12 samples at 5s = 60 seconds of history
 
 export default function StatusPage() {
@@ -344,10 +217,7 @@ export default function StatusPage() {
   const [loading, setLoading] = useState(true);
   const [speeds, setSpeeds] = useState<SpeedStats>({
     backfillerSpeed: null,
-    blockGapSpeed: null,
     milestoneBackfillerSpeed: null,
-    milestoneGapSpeed: null,
-    priorityFeeFixSpeed: null,
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
@@ -376,10 +246,6 @@ export default function StatusPage() {
         totalBlocks: data.blocks.total,
         minMilestoneSeq: data.milestones.minSeq,
         totalMilestones: data.milestones.total,
-        blockGapSize: data.blocks.gapStats.totalPendingSize,
-        milestoneGapSize: data.milestones.gapStats.totalPendingSize,
-        finalityGapSize: data.finality.gapStats.totalPendingSize,
-        priorityFeeLastFixedBlock: data.priorityFeeFix?.lastFixedBlock ?? undefined,
       };
 
       const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
@@ -474,7 +340,7 @@ export default function StatusPage() {
               <>
                 <StatusBadge
                   ok={status.workersRunning}
-                  label={status.workersRunning ? 'Workers Running' : 'Workers Stopped'}
+                  label={status.workersRunning ? 'Indexers Running' : 'Indexers Stopped'}
                 />
                 <span className="text-gray-500 text-sm">
                   Updated: {new Date(status.timestamp).toLocaleTimeString()}
@@ -529,99 +395,6 @@ export default function StatusPage() {
               </div>
             </Card>
 
-            {/* Data Coverage */}
-            <Card title="Data Coverage (Validated Ranges)">
-              <div className="space-y-4">
-                <div>
-                  <div className="text-gray-400 text-sm mb-1 font-medium">Blocks</div>
-                  {status.coverage.blocks ? (
-                    <div className="space-y-1">
-                      <StatRow label="Low Water Mark" value={status.coverage.blocks.lowWaterMark} />
-                      <StatRow label="High Water Mark" value={status.coverage.blocks.highWaterMark} />
-                      <StatRow label="Last Analyzed" value={formatTimeAgo(status.coverage.blocks.lastAnalyzedAt)} />
-                    </div>
-                  ) : (
-                    <div className="text-gray-500">Not analyzed yet</div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-gray-400 text-sm mb-1 font-medium">Milestones</div>
-                  {status.coverage.milestones ? (
-                    <div className="space-y-1">
-                      <StatRow label="Low Water Mark" value={status.coverage.milestones.lowWaterMark} />
-                      <StatRow label="High Water Mark" value={status.coverage.milestones.highWaterMark} />
-                      <StatRow label="Last Analyzed" value={formatTimeAgo(status.coverage.milestones.lastAnalyzedAt)} />
-                    </div>
-                  ) : (
-                    <div className="text-gray-500">Not analyzed yet</div>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {/* Gap Statistics */}
-            <Card title="Gap Statistics">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center py-2 border-b border-gray-700">
-                  <span className="text-gray-400">Block Gaps</span>
-                  <div className="text-right">
-                    <span className={status.blocks.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
-                      {status.blocks.gapStats.pendingCount} pending
-                    </span>
-                    {status.blocks.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.blocks.gapStats.fillingCount} filled)</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-gray-700">
-                  <span className="text-gray-400">Milestone Gaps</span>
-                  <div className="text-right">
-                    <span className={status.milestones.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
-                      {status.milestones.gapStats.pendingCount} pending
-                    </span>
-                    {status.milestones.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.milestones.gapStats.fillingCount} filled)</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-400">Finality Gaps</span>
-                  <div className="text-right">
-                    <span className={status.finality.gapStats.pendingCount > 0 ? 'text-yellow-400' : 'text-green-400'}>
-                      {status.finality.gapStats.pendingCount} pending
-                    </span>
-                    {status.finality.gapStats.fillingCount > 0 && (
-                      <span className="text-blue-400 ml-2">({status.finality.gapStats.fillingCount} filled)</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Block Gaps */}
-            <GapCard
-              title="Block Gaps"
-              gaps={status.blocks.gaps}
-              gapStats={status.blocks.gapStats}
-              unitLabel="blocks"
-            />
-
-            {/* Milestone Gaps */}
-            <GapCard
-              title="Milestone Gaps"
-              gaps={status.milestones.gaps}
-              gapStats={status.milestones.gapStats}
-              unitLabel="milestones"
-            />
-
-            {/* Finality Gaps */}
-            <GapCard
-              title="Pending Finality Gaps"
-              gaps={status.finality.gaps}
-              gapStats={status.finality.gapStats}
-              unitLabel="blocks"
-            />
-
             {/* Sync Status */}
             <Card title="Sync Status">
               <div className="space-y-3">
@@ -645,11 +418,11 @@ export default function StatusPage() {
                 </div>
                 <div>
                   <div className="text-gray-400 text-sm mb-1">Finalization Coverage</div>
-                  {status.blocks.finalized > 0 ? (
+                  {parseInt(status.blocks.finalized) > 0 ? (
                     <div className="text-gray-200">
                       {status.blocks.minFinalized} - {status.blocks.maxFinalized}
                       <span className="text-gray-500 ml-2">
-                        ({((status.blocks.finalized / status.blocks.total) * 100).toFixed(1)}% finalized)
+                        ({((parseInt(status.blocks.finalized) / parseInt(status.blocks.total)) * 100).toFixed(1)}% finalized)
                       </span>
                     </div>
                   ) : (
@@ -677,31 +450,17 @@ export default function StatusPage() {
                   />
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Block Gaps</span>
+                  <span className="text-gray-400">Indexers</span>
                   <StatusBadge
-                    ok={status.blocks.gapStats.pendingCount === 0}
-                    label={status.blocks.gapStats.pendingCount > 0 ? `${status.blocks.gapStats.pendingCount} pending` : 'None'}
-                  />
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Milestone Gaps</span>
-                  <StatusBadge
-                    ok={status.milestones.gapStats.pendingCount === 0}
-                    label={status.milestones.gapStats.pendingCount > 0 ? `${status.milestones.gapStats.pendingCount} pending` : 'None'}
-                  />
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Finality Gaps</span>
-                  <StatusBadge
-                    ok={status.finality.gapStats.pendingCount === 0}
-                    label={status.finality.gapStats.pendingCount > 0 ? `${status.finality.gapStats.pendingCount} pending` : 'None'}
+                    ok={status.workersRunning}
+                    label={status.workersRunning ? 'Running' : 'Stopped'}
                   />
                 </div>
               </div>
             </Card>
 
             {/* Progress Stats - Speed and ETA */}
-            <Card title="Progress Stats">
+            <Card title="Backfill Progress">
               <div className="space-y-3 text-sm">
                 <div className="text-gray-500 text-xs mb-2">
                   {historyRef.current.length < 2
@@ -713,7 +472,7 @@ export default function StatusPage() {
                 {/* Blocks Backfiller */}
                 <div className="py-2 border-b border-gray-700">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Blocks Backfiller</span>
+                    <span className="text-gray-400">Block Backfiller</span>
                     <span className={`font-mono ${status.blocks.min === '0' ? 'text-green-400' : 'text-blue-400'}`}>
                       {formatSpeed(
                         speeds.backfillerSpeed,
@@ -730,26 +489,8 @@ export default function StatusPage() {
                   )}
                 </div>
 
-                {/* Block Gap Filler */}
-                {status.blocks.gapStats.totalPendingSize > 0 && (
-                  <div className="py-2 border-b border-gray-700">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-400">Block Gap Filler</span>
-                      <span className={`font-mono ${speeds.blockGapSpeed ? 'text-yellow-400' : 'text-gray-400'}`}>
-                        {formatSpeed(speeds.blockGapSpeed, 'blk', false, historyRef.current.length >= 2)}
-                      </span>
-                    </div>
-                    {speeds.blockGapSpeed && (
-                      <div className="text-gray-500 text-xs mt-1">
-                        ETA: {formatEta(status.blocks.gapStats.totalPendingSize, speeds.blockGapSpeed)}
-                        <span className="ml-2">({formatNumber(status.blocks.gapStats.totalPendingSize)} remaining)</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Milestone Backfiller */}
-                <div className="py-2 border-b border-gray-700">
+                <div className="py-2">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Milestone Backfiller</span>
                     <span className={`font-mono ${status.milestones.minSeq === '1' ? 'text-green-400' : 'text-purple-400'}`}>
@@ -767,101 +508,8 @@ export default function StatusPage() {
                     </div>
                   )}
                 </div>
-
-                {/* Milestone Gap Filler */}
-                {status.milestones.gapStats.totalPendingSize > 0 && (
-                  <div className="py-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-400">Milestone Gap Filler</span>
-                      <span className={`font-mono ${speeds.milestoneGapSpeed ? 'text-orange-400' : 'text-gray-400'}`}>
-                        {formatSpeed(speeds.milestoneGapSpeed, 'ms', false, historyRef.current.length >= 2)}
-                      </span>
-                    </div>
-                    {speeds.milestoneGapSpeed && (
-                      <div className="text-gray-500 text-xs mt-1">
-                        ETA: {formatEta(status.milestones.gapStats.totalPendingSize, speeds.milestoneGapSpeed)}
-                        <span className="ml-2">({formatNumber(status.milestones.gapStats.totalPendingSize)} remaining)</span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </Card>
-
-            {/* Priority Fee Fix Progress */}
-            {status.priorityFeeFix && (
-              <Card title="Priority Fee Data Fix">
-                <div className="space-y-3">
-                  <div className="mb-3">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-gray-400 text-sm">Progress</span>
-                      <span className={status.priorityFeeFix.isComplete ? 'text-green-400' : 'text-blue-400'}>
-                        {status.priorityFeeFix.percentComplete.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${status.priorityFeeFix.isComplete ? 'bg-green-500' : 'bg-blue-500'}`}
-                        style={{ width: `${Math.min(100, status.priorityFeeFix.percentComplete)}%` }}
-                      />
-                    </div>
-                  </div>
-                  <StatRow
-                    label="Status"
-                    value={status.priorityFeeFix.isComplete ? 'Complete' : 'In Progress'}
-                  />
-                  <StatRow
-                    label="Blocks Fixed"
-                    value={`${formatNumber(parseInt(status.priorityFeeFix.totalFixed))} / ${formatNumber(parseInt(status.priorityFeeFix.totalToFix))}`}
-                  />
-                  {!status.priorityFeeFix.isComplete && (
-                    <div className="py-2 border-b border-gray-700">
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-400">Speed</span>
-                        <span className={`font-mono ${speeds.priorityFeeFixSpeed ? 'text-blue-400' : 'text-gray-400'}`}>
-                          {formatSpeed(speeds.priorityFeeFixSpeed, 'blk', false, historyRef.current.length >= 2)}
-                        </span>
-                      </div>
-                      {speeds.priorityFeeFixSpeed && (
-                        <div className="text-gray-500 text-xs mt-1">
-                          ETA: {formatEta(
-                            parseInt(status.priorityFeeFix.totalToFix) - parseInt(status.priorityFeeFix.totalFixed),
-                            speeds.priorityFeeFixSpeed
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <StatRow
-                    label="Correct Data From"
-                    value={
-                      status.priorityFeeFix.fixDeployedAtBlock
-                        ? `${formatNumber(parseInt(status.priorityFeeFix.fixDeployedAtBlock))} (${estimateBlockDate(status.priorityFeeFix.fixDeployedAtBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
-                        : 'N/A'
-                    }
-                  />
-                  <StatRow
-                    label="Last Fixed Block"
-                    value={
-                      status.priorityFeeFix.lastFixedBlock
-                        ? `${formatNumber(parseInt(status.priorityFeeFix.lastFixedBlock))} (${estimateBlockDate(status.priorityFeeFix.lastFixedBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
-                        : 'N/A'
-                    }
-                  />
-                  <StatRow
-                    label="Earliest Block"
-                    value={
-                      status.priorityFeeFix.earliestBlock
-                        ? `${formatNumber(parseInt(status.priorityFeeFix.earliestBlock))} (${estimateBlockDate(status.priorityFeeFix.earliestBlock, status.blocks.latest?.blockNumber ?? null, status.blocks.latest?.timestamp ?? null) ?? 'N/A'})`
-                        : 'N/A'
-                    }
-                  />
-                  <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-700">
-                    Fixing historical priority fee calculations (using gasUsed instead of gas limit)
-                  </div>
-                </div>
-              </Card>
-            )}
 
             {/* POL Inflation Rate */}
             <Card title="POL Inflation Rate">
@@ -936,10 +584,10 @@ export default function StatusPage() {
             </Card>
 
             {/* Worker Health */}
-            <Card title="Worker Health">
+            <Card title="Indexer Health">
               <div className="space-y-2">
                 {status.workerStatuses.length === 0 ? (
-                  <div className="text-gray-500">No worker status data yet</div>
+                  <div className="text-gray-500">No indexer status data yet</div>
                 ) : (
                   status.workerStatuses.map((worker) => (
                     <div key={worker.name} className="py-2 border-b border-gray-700 last:border-0">
