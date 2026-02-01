@@ -7,6 +7,8 @@ const LIVE_STREAM_URL = process.env.LIVE_STREAM_URL || 'http://live-stream:3002'
 
 export interface BlockUpdatePayload {
   blockNumber: number;
+  // Block metrics
+  txCount?: number;
   // Priority fee metrics from receipts
   minPriorityFeeGwei?: number;
   maxPriorityFeeGwei?: number;

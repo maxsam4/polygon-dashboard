@@ -55,6 +55,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const [isDataComplete, setIsDataComplete] = useState(true);
   const timeRangeRef = useRef(timeRange);
 
+  // Store the requested time range bounds for proper chart scaling
+  const [timeRangeBounds, setTimeRangeBounds] = useState<{ from: number; to: number } | null>(null);
+
   // Custom date range state
   const now = new Date();
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
@@ -356,6 +359,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
     }
 
+    // Store the requested time range for proper chart scaling
+    setTimeRangeBounds({ from: fromTime, to: toTime });
+
     try {
       const endpoint = metric === 'heimdallBlockTime'
         ? '/api/milestone-chart-data'
@@ -591,8 +597,16 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         seriesRefs.current.set(opt.key, series);
       });
 
-    chartRef.current.timeScale().fitContent();
-  }, [data, seriesOptions, metric]);
+    // Use setVisibleRange with the requested time bounds to ensure chart extends to the full range
+    if (timeRangeBounds) {
+      chartRef.current.timeScale().setVisibleRange({
+        from: timeRangeBounds.from as UTCTimestamp,
+        to: timeRangeBounds.to as UTCTimestamp,
+      });
+    } else {
+      chartRef.current.timeScale().fitContent();
+    }
+  }, [data, seriesOptions, metric, timeRangeBounds]);
 
   const handleSeriesToggle = (key: string) => {
     setSeriesOptions((prev) =>
@@ -602,7 +616,15 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   const handleResetZoom = () => {
     if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+      // Reset to the full requested time range, not just the data bounds
+      if (timeRangeBounds) {
+        chartRef.current.timeScale().setVisibleRange({
+          from: timeRangeBounds.from as UTCTimestamp,
+          to: timeRangeBounds.to as UTCTimestamp,
+        });
+      } else {
+        chartRef.current.timeScale().fitContent();
+      }
       setIsZoomed(false);
     }
   };

@@ -89,10 +89,15 @@ export default function Home() {
 
   const latestBlock = blocks[0];
   const lastFinalizedBlock = blocks.find(b => b.timeToFinalitySec !== null);
+  const lastCalculatedBlock = blocks.find(b => b.avgPriorityFeeGwei !== null && b.tps !== null);
 
   // Memoize chart data to avoid recalculating on every render
   const chartData = useMemo(() => {
     const reversed = blocks.slice().reverse();
+    // Filter blocks with calculated values for charts that depend on receipt/finality data
+    const withFinality = reversed.filter(b => b.timeToFinalitySec !== null);
+    const withTps = reversed.filter(b => b.tps !== null && b.avgPriorityFeeGwei !== null);
+
     return {
       gas: reversed.map((b, i) => ({
         time: i,
@@ -100,7 +105,7 @@ export default function Home() {
         blockNumber: parseInt(b.blockNumber, 10),
         timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
       })),
-      finality: reversed.map((b, i) => ({
+      finality: withFinality.map((b, i) => ({
         time: i,
         value: b.timeToFinalitySec ?? 0,
         blockNumber: parseInt(b.blockNumber, 10),
@@ -112,7 +117,7 @@ export default function Home() {
         blockNumber: parseInt(b.blockNumber, 10),
         timestamp: Math.floor(new Date(b.timestamp).getTime() / 1000),
       })),
-      tps: reversed.map((b, i) => ({
+      tps: withTps.map((b, i) => ({
         time: i,
         value: b.tps ?? 0,
         blockNumber: parseInt(b.blockNumber, 10),
@@ -151,7 +156,7 @@ export default function Home() {
           <MiniChart
             title="TPS"
             data={chartData.tps}
-            currentValue={latestBlock?.tps?.toFixed(0) ?? '-'}
+            currentValue={lastCalculatedBlock?.tps?.toFixed(0) ?? '-'}
             unit=""
             color="#AA00FF"
           />

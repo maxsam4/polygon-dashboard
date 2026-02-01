@@ -51,7 +51,7 @@ export function formatGas(gas: string): string {
  */
 export function formatGweiToPol(gwei: number | undefined | null, decimals = 4): string {
   if (gwei === undefined) return '-';
-  if (gwei === null) return '...';  // null = pending (receipt data not yet fetched)
+  if (gwei === null) return 'calculating';  // null = pending (receipt data not yet fetched)
   const pol = gwei / GWEI_PER_POL;
   return pol.toLocaleString('en-US', {
     minimumFractionDigits: decimals,

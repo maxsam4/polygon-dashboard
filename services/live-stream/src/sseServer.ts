@@ -148,6 +148,14 @@ export class SSEServer {
 
         // Build updates object from payload
         const updates: Partial<StreamBlock> = {};
+        if (payload.txCount !== undefined) {
+          updates.txCount = payload.txCount;
+          // Recalculate TPS if we have blockTimeSec
+          const existingBlock = this.ringBuffer.get(payload.blockNumber);
+          if (existingBlock?.blockTimeSec && existingBlock.blockTimeSec > 0) {
+            updates.tps = payload.txCount / existingBlock.blockTimeSec;
+          }
+        }
         if (payload.minPriorityFeeGwei !== undefined) {
           updates.minPriorityFeeGwei = payload.minPriorityFeeGwei;
         }
@@ -168,6 +176,13 @@ export class SSEServer {
         }
         if (payload.finalizedAt !== undefined) {
           updates.finalizedAt = payload.finalizedAt;
+          // Calculate timeToFinalitySec if not provided and block data exists
+          if (payload.timeToFinalitySec === undefined) {
+            const existingBlock = this.ringBuffer.get(payload.blockNumber);
+            if (existingBlock?.timestamp) {
+              updates.timeToFinalitySec = payload.finalizedAt - existingBlock.timestamp;
+            }
+          }
         }
         if (payload.milestoneId !== undefined) {
           updates.milestoneId = payload.milestoneId;

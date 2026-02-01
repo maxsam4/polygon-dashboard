@@ -122,6 +122,7 @@ export class PriorityFeeBackfiller {
         // Push update to live-stream service (fire-and-forget)
         pushBlockUpdate({
           blockNumber: Number(block.blockNumber),
+          txCount: receipts.length,
           minPriorityFeeGwei: metrics.minPriorityFeeGwei,
           maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
           avgPriorityFeeGwei: metrics.avgPriorityFeeGwei,

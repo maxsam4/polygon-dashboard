@@ -22,16 +22,16 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Block</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Time</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '120px' }}>Gas Used</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Base Fee</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Min Priority</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Median Priority</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Max Priority</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" title="Total Base Fee (POL)">Base (POL)</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" title="Total Priority Fee (POL)">Priority (POL)</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Txs</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">MGAS/s</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">TPS</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300">Finality</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '70px' }}>Base Fee</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '75px' }}>Min Priority</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '75px' }}>Median Priority</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '75px' }}>Max Priority</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '75px' }} title="Total Base Fee (POL)">Base (POL)</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '75px' }} title="Total Priority Fee (POL)">Priority (POL)</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '70px' }}>Txs</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '55px' }}>MGAS/s</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '40px' }}>TPS</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-300" style={{ minWidth: '60px' }}>Finality</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -73,12 +73,20 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right font-medium">{block.baseFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right">{block.minPriorityFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right">{block.medianPriorityFeeGwei.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right">{block.maxPriorityFeeGwei.toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {block.avgPriorityFeeGwei !== null ? block.minPriorityFeeGwei.toFixed(2) : <span className="text-gray-400">calculating</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {block.avgPriorityFeeGwei !== null ? block.medianPriorityFeeGwei.toFixed(2) : <span className="text-gray-400">calculating</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {block.avgPriorityFeeGwei !== null ? block.maxPriorityFeeGwei.toFixed(2) : <span className="text-gray-400">calculating</span>}
+                  </td>
                   <td className="px-3 py-2 text-right">{formatGweiToPol(block.totalBaseFeeGwei)}</td>
                   <td className="px-3 py-2 text-right">{formatGweiToPol(block.totalPriorityFeeGwei)}</td>
-                  <td className="px-3 py-2 text-right">{block.txCount}</td>
+                  <td className="px-3 py-2 text-right">
+                    {block.avgPriorityFeeGwei !== null ? block.txCount : <span className="text-gray-400">calculating</span>}
+                  </td>
                   <td className="px-3 py-2 text-right">{block.mgasPerSec?.toFixed(1) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">

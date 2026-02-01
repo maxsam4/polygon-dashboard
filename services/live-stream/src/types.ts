@@ -74,6 +74,8 @@ export type SSEMessage = SSEInitialMessage | SSEUpdateMessage | SSEBlockUpdateMe
 // Payload for POST /update endpoint
 export interface BlockUpdatePayload {
   blockNumber: number;
+  // Block metrics
+  txCount?: number;
   // Priority fee metrics from receipts
   minPriorityFeeGwei?: number;
   maxPriorityFeeGwei?: number;

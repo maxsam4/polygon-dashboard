@@ -116,6 +116,9 @@ export function CustomizableChart({
   const [leftSeries, setLeftSeries] = useState<DataOptionValue>(defaultLeftSeries);
   const [rightSeries, setRightSeries] = useState<DataOptionValue>(defaultRightSeries);
 
+  // Store the requested time range bounds for proper chart scaling
+  const [timeRangeBounds, setTimeRangeBounds] = useState<{ from: number; to: number } | null>(null);
+
   // Custom date range state
   const now = new Date();
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -207,6 +210,9 @@ export function CustomizableChart({
       const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
       fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
     }
+
+    // Store the requested time range for proper chart scaling
+    setTimeRangeBounds({ from: fromTime, to: toTime });
 
     try {
       const response = await fetch(
@@ -353,12 +359,28 @@ export function CustomizableChart({
     rightSeriesObj.setData(rightSeriesData);
     seriesRefs.current.set('right', rightSeriesObj);
 
-    chartRef.current.timeScale().fitContent();
-  }, [data, leftSeries, rightSeries, dualAxis]);
+    // Use setVisibleRange with the requested time bounds to ensure chart extends to the full range
+    if (timeRangeBounds) {
+      chartRef.current.timeScale().setVisibleRange({
+        from: timeRangeBounds.from as UTCTimestamp,
+        to: timeRangeBounds.to as UTCTimestamp,
+      });
+    } else {
+      chartRef.current.timeScale().fitContent();
+    }
+  }, [data, leftSeries, rightSeries, dualAxis, timeRangeBounds]);
 
   const handleResetZoom = () => {
     if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+      // Reset to the full requested time range, not just the data bounds
+      if (timeRangeBounds) {
+        chartRef.current.timeScale().setVisibleRange({
+          from: timeRangeBounds.from as UTCTimestamp,
+          to: timeRangeBounds.to as UTCTimestamp,
+        });
+      } else {
+        chartRef.current.timeScale().fitContent();
+      }
       setIsZoomed(false);
     }
   };
