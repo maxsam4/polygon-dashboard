@@ -1,11 +1,12 @@
 import { getHeimdallClient } from '../heimdall';
-import { insertMilestone, getHighestSequenceId } from '../queries/milestones';
+import { insertMilestone, getHighestSequenceId, sequenceIdExists } from '../queries/milestones';
 import { Milestone } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
 import { writeFinalityBatch } from './finalityWriter';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
+import { SequenceCache } from './sequenceCache';
 
 const SERVICE_NAME = 'milestone_indexer';
 const WORKER_NAME = 'MilestoneIndexer';
@@ -23,10 +24,12 @@ export class MilestoneIndexer {
   private running = false;
   private pollMs: number;
   private batchSize: number;
+  private sequenceCache: SequenceCache;
 
   constructor() {
     this.pollMs = parseInt(process.env.MILESTONE_POLL_MS || '1000', 10);
     this.batchSize = parseInt(process.env.MILESTONE_BATCH_SIZE || '50', 10);
+    this.sequenceCache = new SequenceCache(1000);
   }
 
   /**
@@ -68,6 +71,11 @@ export class MilestoneIndexer {
       }
     }
 
+    // Warm the cache with the current cursor value (the predecessor is known to exist)
+    if (this.cursor !== null) {
+      this.sequenceCache.add(this.cursor);
+    }
+
     // Start main loop
     this.runLoop();
   }
@@ -93,25 +101,18 @@ export class MilestoneIndexer {
         if (count > this.cursor!) {
           // Calculate how many milestones to fetch
           const fetchCount = Math.min(count - this.cursor!, this.batchSize);
-          const sequenceIds = this.range(this.cursor! + 1, this.cursor! + fetchCount);
+          const requestedIds = this.range(this.cursor! + 1, this.cursor! + fetchCount);
 
           // Fetch milestones in parallel
-          const milestones = await heimdall.getMilestones(sequenceIds);
+          const milestones = await heimdall.getMilestones(requestedIds);
 
-          // Sort by sequence_id to process in order
-          milestones.sort((a, b) => a.sequenceId - b.sequenceId);
+          // Process with gap detection
+          const processed = await this.processWithGapDetection(milestones, requestedIds);
 
-          // Process each milestone
-          for (const milestone of milestones) {
-            await this.processMilestone(milestone);
-
-            // Update cursor after each milestone
-            this.cursor = milestone.sequenceId;
-            await updateIndexerState(SERVICE_NAME, BigInt(this.cursor), '');
+          if (processed > 0) {
+            updateWorkerRun(WORKER_NAME, processed);
+            console.log(`[${WORKER_NAME}] Processed ${processed} milestones (requested ${requestedIds[0]}-${requestedIds[requestedIds.length - 1]})`);
           }
-
-          updateWorkerRun(WORKER_NAME, milestones.length);
-          console.log(`[${WORKER_NAME}] Processed ${milestones.length} milestones (seq ${sequenceIds[0]}-${sequenceIds[sequenceIds.length - 1]})`);
         }
 
         // Wait before checking again
@@ -123,6 +124,79 @@ export class MilestoneIndexer {
         await sleep(this.pollMs);
       }
     }
+  }
+
+  /**
+   * Process milestones with gap detection.
+   * Ensures no gaps in sequence_ids by validating predecessors exist.
+   * Returns number of successfully processed milestones.
+   */
+  private async processWithGapDetection(
+    milestones: Milestone[],
+    requestedIds: number[]
+  ): Promise<number> {
+    // Build set of received sequence_ids
+    const receivedIds = new Set(milestones.map(m => m.sequenceId));
+
+    // Check for gaps in the requested range - find first missing ID
+    for (const id of requestedIds) {
+      if (!receivedIds.has(id)) {
+        console.warn(`[${WORKER_NAME}] Gap detected: sequence_id ${id} not returned by API, stopping at cursor ${this.cursor}`);
+        // Stop processing - don't advance cursor past the gap
+        return 0;
+      }
+    }
+
+    // Sort by sequence_id to process in order
+    milestones.sort((a, b) => a.sequenceId - b.sequenceId);
+
+    let processed = 0;
+    for (const milestone of milestones) {
+      // Check predecessor exists (cache first, then DB)
+      const predecessorId = milestone.sequenceId - 1;
+      const predecessorExists = await this.checkPredecessorExists(predecessorId);
+
+      if (!predecessorExists) {
+        console.warn(`[${WORKER_NAME}] Predecessor ${predecessorId} missing for sequence_id ${milestone.sequenceId}, stopping`);
+        // Stop processing - don't advance cursor past the gap
+        break;
+      }
+
+      // Process the milestone
+      await this.processMilestone(milestone);
+
+      // Add to cache and update cursor
+      this.sequenceCache.add(milestone.sequenceId);
+      this.cursor = milestone.sequenceId;
+      await updateIndexerState(SERVICE_NAME, BigInt(this.cursor), '');
+      processed++;
+    }
+
+    return processed;
+  }
+
+  /**
+   * Check if predecessor sequence_id exists (cache first, then DB).
+   * For the first milestone (cursor + 1), the cursor itself is the predecessor.
+   */
+  private async checkPredecessorExists(predecessorId: number): Promise<boolean> {
+    // If predecessor is 0 or less, there's no predecessor needed
+    if (predecessorId <= 0) {
+      return true;
+    }
+
+    // Check cache first
+    if (this.sequenceCache.has(predecessorId)) {
+      return true;
+    }
+
+    // Fall back to DB check
+    const exists = await sequenceIdExists(predecessorId);
+    if (exists) {
+      // Add to cache for future lookups
+      this.sequenceCache.add(predecessorId);
+    }
+    return exists;
   }
 
   /**

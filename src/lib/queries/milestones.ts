@@ -96,6 +96,14 @@ export async function getHighestSequenceId(): Promise<number | null> {
   return row?.max ?? null;
 }
 
+export async function sequenceIdExists(sequenceId: number): Promise<boolean> {
+  const row = await queryOne<{ exists: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM milestones WHERE sequence_id = $1) as exists`,
+    [sequenceId]
+  );
+  return row?.exists ?? false;
+}
+
 export async function getLowestMilestoneId(): Promise<bigint | null> {
   const row = await queryOne<{ min: string }>(`SELECT MIN(milestone_id) as min FROM milestones`);
   return row?.min ? BigInt(row.min) : null;
