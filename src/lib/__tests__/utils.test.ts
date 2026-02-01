@@ -119,8 +119,8 @@ describe('formatGweiToPol', () => {
     expect(formatGweiToPol(undefined)).toBe('-');
   });
 
-  it('returns ellipsis for null (pending)', () => {
-    expect(formatGweiToPol(null)).toBe('...');
+  it('returns "calculating" for null (pending)', () => {
+    expect(formatGweiToPol(null)).toBe('calculating');
   });
 
   it('respects custom decimal places', () => {
