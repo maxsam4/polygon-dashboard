@@ -3,7 +3,6 @@ import { insertBlocksBatch, getLowestBlockNumber } from '../queries/blocks';
 import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
-import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -25,7 +24,6 @@ export class BlockBackfiller {
   private running = false;
   private batchSize: number;
   private delayMs: number;
-  private priorityFeeBackfiller = getPriorityFeeBackfiller();
 
   constructor() {
     this.targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '50000000');
@@ -76,9 +74,6 @@ export class BlockBackfiller {
       updateWorkerState(WORKER_NAME, 'idle');
       return;
     }
-
-    // Start priority fee backfiller if not already running
-    this.priorityFeeBackfiller.start();
 
     // Start main loop
     this.runLoop();
@@ -152,14 +147,9 @@ export class BlockBackfiller {
         const highestBlock = blocks[blocks.length - 1];
         await updateTableStats('blocks', lowestBlock.number, highestBlock.number, blocks.length);
 
-        // Queue priority fee backfill
-        this.priorityFeeBackfiller.enqueueBatch(
-          blockData.map(b => ({
-            blockNumber: b.blockNumber,
-            timestamp: b.timestamp,
-            baseFeeGwei: b.baseFeeGwei,
-          }))
-        );
+        // Note: Historical blocks don't need immediate priority fee calculation.
+        // They will be backfilled separately by getBlocksMissingPriorityFees
+        // to avoid overwhelming the priority fee queue.
 
         updateWorkerRun(WORKER_NAME, blocks.length);
 

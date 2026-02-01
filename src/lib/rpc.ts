@@ -87,7 +87,6 @@ export class RpcExhaustedError extends Error {
 export class RpcClient {
   private urls: string[];
   private clients: PublicClient[];
-  private currentIndex = 0;
   private retryConfig: RetryConfig;
 
   constructor(urls: string[], retryConfig = DEFAULT_RETRY_CONFIG) {
@@ -108,68 +107,70 @@ export class RpcClient {
     return this.urls.length;
   }
 
-  private get client(): PublicClient {
-    return this.clients[this.currentIndex];
-  }
-
-  private rotateEndpoint(): void {
-    this.currentIndex = (this.currentIndex + 1) % this.urls.length;
-  }
-
-  // Get client for a specific endpoint index (for parallel requests)
+  // Get client for a specific endpoint index
   private getClientByIndex(index: number): PublicClient {
     return this.clients[index % this.urls.length];
   }
 
+  // Primary-first strategy: try first endpoint with retries, then fall back to others
   async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
     let lastError: Error | undefined;
 
-    // Try each endpoint up to maxRetries rounds
-    for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
-      for (let attempt = 0; attempt < this.urls.length; attempt++) {
+    // Try each endpoint in order (primary first)
+    for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
+      const client = this.getClientByIndex(endpointIndex);
+
+      // Try this endpoint up to maxRetries times
+      for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
         try {
-          return await fn(this.client);
+          return await fn(client);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          // Only log occasionally to avoid spam
-          if (attempt === 0 && retry === 0) {
-            console.warn(`RPC ${this.urls[this.currentIndex]} failed: ${lastError.message}, rotating...`);
+          // Log on first failure of primary endpoint
+          if (endpointIndex === 0 && retry === 0) {
+            console.warn(`RPC ${this.urls[endpointIndex]} failed: ${lastError.message}, retrying...`);
           }
-          this.rotateEndpoint();
+          // Delay before retry (but not after last retry on this endpoint)
+          if (retry < this.retryConfig.maxRetries) {
+            await sleep(this.retryConfig.delayMs);
+          }
         }
       }
 
-      // Small fixed delay between retry rounds
-      if (retry < this.retryConfig.maxRetries) {
-        await sleep(this.retryConfig.delayMs);
+      // All retries exhausted on this endpoint, try next one
+      if (endpointIndex < this.urls.length - 1) {
+        console.warn(`RPC ${this.urls[endpointIndex]} exhausted retries, falling back to ${this.urls[endpointIndex + 1]}`);
       }
     }
 
-    // Throw error but callers should handle gracefully and retry
     throw new RpcExhaustedError(
-      `All RPC endpoints failed after ${this.retryConfig.maxRetries} retries`,
+      `All RPC endpoints failed after ${this.retryConfig.maxRetries} retries each`,
       lastError
     );
   }
 
-  // Execute multiple calls in parallel across ALL endpoints
+  // Execute multiple calls in parallel using primary-first strategy
   // Returns array with null for failed requests (preserves indices)
   async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<(T | null)[]> {
     const errors: Error[] = [];
 
-    // Distribute requests across endpoints
-    const promises = fns.map(async (fn, i) => {
-      const clientIndex = i % this.urls.length;
+    // All requests start with primary endpoint (index 0), fall back on failure
+    const promises = fns.map(async (fn) => {
       let lastError: Error | undefined;
 
-      // Try with retries
-      for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
-        try {
-          return await fn(this.getClientByIndex(clientIndex + retry));
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          if (retry < this.retryConfig.maxRetries) {
-            await sleep(this.retryConfig.delayMs);
+      // Try each endpoint in order
+      for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
+        const client = this.getClientByIndex(endpointIndex);
+
+        // Try this endpoint up to maxRetries times
+        for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
+          try {
+            return await fn(client);
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (retry < this.retryConfig.maxRetries) {
+              await sleep(this.retryConfig.delayMs);
+            }
           }
         }
       }

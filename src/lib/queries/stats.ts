@@ -20,8 +20,8 @@ export async function updateTableStats(
     `INSERT INTO table_stats (table_name, min_value, max_value, total_count, updated_at)
      VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (table_name) DO UPDATE SET
-       min_value = LEAST(table_stats.min_value, EXCLUDED.min_value),
-       max_value = GREATEST(table_stats.max_value, EXCLUDED.max_value),
+       min_value = LEAST(COALESCE(table_stats.min_value, EXCLUDED.min_value), EXCLUDED.min_value),
+       max_value = GREATEST(COALESCE(table_stats.max_value, EXCLUDED.max_value), EXCLUDED.max_value),
        total_count = table_stats.total_count + $5,
        updated_at = NOW()`,
     [tableName, minValue.toString(), maxValue.toString(), incrementCount, incrementCount]
@@ -76,8 +76,8 @@ export async function getTableStats(
   }
 
   return {
-    minValue: BigInt(row.min_value),
-    maxValue: BigInt(row.max_value),
+    minValue: row.min_value ? BigInt(row.min_value) : null,
+    maxValue: row.max_value ? BigInt(row.max_value) : null,
     totalCount: BigInt(row.total_count),
     finalizedCount: row.finalized_count ? BigInt(row.finalized_count) : null,
     minFinalized: row.min_finalized ? BigInt(row.min_finalized) : null,
@@ -149,8 +149,8 @@ export async function refreshTableStats(tableName: 'blocks' | 'milestones'): Pro
       `INSERT INTO table_stats (table_name, min_value, max_value, total_count, finalized_count, min_finalized, max_finalized, updated_at)
        SELECT
          'blocks',
-         COALESCE(MIN(block_number), 0)::BIGINT,
-         COALESCE(MAX(block_number), 0)::BIGINT,
+         MIN(block_number)::BIGINT,
+         MAX(block_number)::BIGINT,
          COUNT(*)::BIGINT,
          COUNT(*) FILTER (WHERE finalized = true)::BIGINT,
          MIN(block_number) FILTER (WHERE finalized = true)::BIGINT,
@@ -171,8 +171,8 @@ export async function refreshTableStats(tableName: 'blocks' | 'milestones'): Pro
       `INSERT INTO table_stats (table_name, min_value, max_value, total_count, updated_at)
        SELECT
          'milestones',
-         COALESCE(MIN(sequence_id), 0)::BIGINT,
-         COALESCE(MAX(sequence_id), 0)::BIGINT,
+         MIN(sequence_id)::BIGINT,
+         MAX(sequence_id)::BIGINT,
          COUNT(*)::BIGINT,
          NOW()
        FROM milestones

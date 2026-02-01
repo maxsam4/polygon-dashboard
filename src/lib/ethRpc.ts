@@ -23,7 +23,6 @@ export class EthRpcExhaustedError extends Error {
 export class EthRpcClient {
   private urls: string[];
   private clients: PublicClient[];
-  private currentIndex = 0;
   private retryConfig: RetryConfig;
 
   constructor(urls: string[], retryConfig = DEFAULT_RETRY_CONFIG) {
@@ -40,37 +39,44 @@ export class EthRpcClient {
     );
   }
 
-  private get client(): PublicClient {
-    return this.clients[this.currentIndex];
+  // Get client for a specific endpoint index
+  private getClientByIndex(index: number): PublicClient {
+    return this.clients[index % this.urls.length];
   }
 
-  private rotateEndpoint(): void {
-    this.currentIndex = (this.currentIndex + 1) % this.urls.length;
-  }
-
+  // Primary-first strategy: try first endpoint with retries, then fall back to others
   async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
     let lastError: Error | undefined;
 
-    for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
-      for (let attempt = 0; attempt < this.urls.length; attempt++) {
+    // Try each endpoint in order (primary first)
+    for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
+      const client = this.getClientByIndex(endpointIndex);
+
+      // Try this endpoint up to maxRetries times
+      for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
         try {
-          return await fn(this.client);
+          return await fn(client);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          if (attempt === 0 && retry === 0) {
-            console.warn(`ETH RPC ${this.urls[this.currentIndex]} failed: ${lastError.message}, rotating...`);
+          // Log on first failure of primary endpoint
+          if (endpointIndex === 0 && retry === 0) {
+            console.warn(`ETH RPC ${this.urls[endpointIndex]} failed: ${lastError.message}, retrying...`);
           }
-          this.rotateEndpoint();
+          // Delay before retry (but not after last retry on this endpoint)
+          if (retry < this.retryConfig.maxRetries) {
+            await sleep(this.retryConfig.delayMs);
+          }
         }
       }
 
-      if (retry < this.retryConfig.maxRetries) {
-        await sleep(this.retryConfig.delayMs);
+      // All retries exhausted on this endpoint, try next one
+      if (endpointIndex < this.urls.length - 1) {
+        console.warn(`ETH RPC ${this.urls[endpointIndex]} exhausted retries, falling back to ${this.urls[endpointIndex + 1]}`);
       }
     }
 
     throw new EthRpcExhaustedError(
-      `All Ethereum RPC endpoints failed after ${this.retryConfig.maxRetries} retries`,
+      `All Ethereum RPC endpoints failed after ${this.retryConfig.maxRetries} retries each`,
       lastError
     );
   }

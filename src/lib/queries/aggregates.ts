@@ -8,13 +8,13 @@ import { getTableStats } from './stats';
 export async function getBlockAggregates() {
   const stats = await getTableStats('blocks');
 
-  if (!stats) {
-    // Fallback to empty stats if table not initialized yet
+  if (!stats || stats.minValue === null || stats.maxValue === null) {
+    // Fallback to empty stats if table not initialized yet or no data
     return {
       minBlock: null,
       maxBlock: null,
-      totalCount: 0,
-      finalizedCount: 0,
+      totalCount: stats ? Number(stats.totalCount) : 0,
+      finalizedCount: stats?.finalizedCount ? Number(stats.finalizedCount) : 0,
       minFinalized: null,
       maxFinalized: null,
       minTimestamp: null,
@@ -51,12 +51,12 @@ export async function getBlockAggregates() {
 export async function getMilestoneAggregates() {
   const stats = await getTableStats('milestones');
 
-  if (!stats) {
-    // Fallback to empty stats if table not initialized yet
+  if (!stats || stats.minValue === null || stats.maxValue === null) {
+    // Fallback to empty stats if table not initialized yet or no data
     return {
       minSeq: null,
       maxSeq: null,
-      totalCount: 0,
+      totalCount: stats ? Number(stats.totalCount) : 0,
       minStartBlock: null,
       maxEndBlock: null,
       minTimestamp: null,

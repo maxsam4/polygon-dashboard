@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     milestones: milestones.map((m) => ({
-      milestoneId: m.milestoneId.toString(),
+      milestoneId: m.sequenceId.toString(),
       startBlock: m.startBlock.toString(),
       endBlock: m.endBlock.toString(),
       blockCount: Number(m.endBlock - m.startBlock) + 1,

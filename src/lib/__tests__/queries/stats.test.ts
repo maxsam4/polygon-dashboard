@@ -25,14 +25,14 @@ describe('stats queries', () => {
   });
 
   describe('updateTableStats', () => {
-    it('uses LEAST/GREATEST to maintain min/max', async () => {
+    it('uses LEAST/GREATEST with COALESCE to maintain min/max (handles NULL)', async () => {
       mockQuery.mockResolvedValueOnce([]);
 
       await updateTableStats('blocks', 45000000n, 50000000n, 100);
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('LEAST(table_stats.min_value, EXCLUDED.min_value)');
-      expect(mockQuery.mock.calls[0][0]).toContain('GREATEST(table_stats.max_value, EXCLUDED.max_value)');
+      expect(mockQuery.mock.calls[0][0]).toContain('LEAST(COALESCE(table_stats.min_value, EXCLUDED.min_value), EXCLUDED.min_value)');
+      expect(mockQuery.mock.calls[0][0]).toContain('GREATEST(COALESCE(table_stats.max_value, EXCLUDED.max_value), EXCLUDED.max_value)');
     });
 
     it('increments total_count', async () => {
@@ -139,6 +139,25 @@ describe('stats queries', () => {
       expect(result?.finalizedCount).toBeNull();
       expect(result?.minFinalized).toBeNull();
       expect(result?.maxFinalized).toBeNull();
+    });
+
+    it('handles null min_value/max_value (no data)', async () => {
+      mockQueryOne.mockResolvedValueOnce({
+        table_name: 'blocks',
+        min_value: null,
+        max_value: null,
+        total_count: '0',
+        finalized_count: null,
+        min_finalized: null,
+        max_finalized: null,
+        updated_at: new Date('2024-01-15T12:00:00Z'),
+      });
+
+      const result = await getTableStats('blocks');
+
+      expect(result?.minValue).toBeNull();
+      expect(result?.maxValue).toBeNull();
+      expect(result?.totalCount).toBe(0n);
     });
   });
 

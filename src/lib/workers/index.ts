@@ -5,6 +5,7 @@ import type { WorkerStatus } from './workerStatus';
 import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
 import { MilestoneIndexer, getMilestoneIndexer } from '../indexers/milestoneIndexer';
 import { BlockBackfiller, getBlockBackfiller } from '../indexers/blockBackfiller';
+import { HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller } from '../indexers/priorityFeeBackfill';
 
 export { getAllWorkerStatuses };
 export type { WorkerStatus };
@@ -15,6 +16,7 @@ const globalState = globalThis as typeof globalThis & {
   __blockIndexer?: BlockIndexer;
   __milestoneIndexer?: MilestoneIndexer;
   __blockBackfiller?: BlockBackfiller;
+  __historicalPriorityFeeBackfiller?: HistoricalPriorityFeeBackfiller;
 };
 
 export function areWorkersRunning(): boolean {
@@ -32,11 +34,13 @@ export async function startWorkers(): Promise<void> {
   globalState.__blockIndexer = getBlockIndexer();
   globalState.__blockBackfiller = getBlockBackfiller();
   globalState.__milestoneIndexer = getMilestoneIndexer();
+  globalState.__historicalPriorityFeeBackfiller = getHistoricalPriorityFeeBackfiller();
 
   await Promise.all([
     globalState.__blockIndexer.start(),
     globalState.__blockBackfiller.start(),
     globalState.__milestoneIndexer.start(),
+    globalState.__historicalPriorityFeeBackfiller.start(),
   ]);
 
   globalState.__workersStarted = true;
@@ -49,6 +53,7 @@ export function stopWorkers(): void {
   globalState.__blockIndexer?.stop();
   globalState.__milestoneIndexer?.stop();
   globalState.__blockBackfiller?.stop();
+  globalState.__historicalPriorityFeeBackfiller?.stop();
 
   globalState.__workersStarted = false;
   console.log('[Workers] All indexers stopped');

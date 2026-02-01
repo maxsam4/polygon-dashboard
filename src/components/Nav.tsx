@@ -19,7 +19,7 @@ export function Nav() {
     <header className="bg-white dark:bg-gray-900 shadow">
       <div className="max-w-full mx-auto px-4 py-4 flex justify-between items-center">
         <div className="flex items-center gap-6">
-          <h1 className="text-xl font-bold">Polygon Gas Tracker</h1>
+          <h1 className="text-xl font-bold">Polygon Dashboard</h1>
           <nav className="flex gap-4">
             {links.map((link) => (
               <Link

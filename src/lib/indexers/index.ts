@@ -3,7 +3,7 @@
 
 export { getIndexerState, updateIndexerState, initializeIndexerState, deleteIndexerState, getAllIndexerStates, type IndexerCursor } from './indexerState';
 export { handleReorg, moveToReorgedBlocks, getBlockByNumber, getRecentReorgedBlocks, getReorgStats } from './reorgHandler';
-export { PriorityFeeBackfiller, getPriorityFeeBackfiller, calculatePriorityFeeMetrics, getBlocksMissingPriorityFees } from './priorityFeeBackfill';
+export { PriorityFeeBackfiller, getPriorityFeeBackfiller, calculatePriorityFeeMetrics, getBlocksMissingPriorityFees, HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller } from './priorityFeeBackfill';
 export { BlockIndexer, getBlockIndexer } from './blockIndexer';
 export { MilestoneIndexer, getMilestoneIndexer } from './milestoneIndexer';
 export { BlockBackfiller, getBlockBackfiller } from './blockBackfiller';
