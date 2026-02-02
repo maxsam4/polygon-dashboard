@@ -3,13 +3,171 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 243, 244, 246;
-  --background-end-rgb: 243, 244, 246;
+  /* Polygon Brand Colors */
+  --polygon-purple: 123 63 228;
+  --polygon-magenta: 255 0 102;
+  --polygon-blue: 45 100 255;
+
+  /* Semantic Colors - Light Mode */
+  --background: 250 248 255;
+  --background-start: 250 248 255;
+  --background-end: 243 240 252;
+  --foreground: 26 20 51;
+  --surface: 255 255 255;
+  --surface-elevated: 255 255 255;
+  --surface-hover: 248 245 255;
+  --border-subtle: 123 63 228 / 0.15;
+  --text-secondary: 107 98 128;
+
+  /* Status Colors */
+  --success: 16 185 129;
+  --warning: 245 158 11;
+  --danger: 239 68 68;
 }
 
 .dark {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 3, 7, 18;
-  --background-end-rgb: 3, 7, 18;
+  /* Semantic Colors - Dark Mode */
+  --background: 10 7 20;
+  --background-start: 10 7 20;
+  --background-end: 15 10 30;
+  --foreground: 248 245 255;
+  --surface: 20 15 35;
+  --surface-elevated: 35 28 60;
+  --surface-hover: 45 38 75;
+  --border-subtle: 123 63 228 / 0.25;
+  --text-secondary: 168 162 182;
+}
+
+/* Glass-morphism utilities */
+@layer components {
+  .glass-card {
+    @apply bg-white/80 dark:bg-surface-elevated/80 backdrop-blur-xl;
+    @apply border border-polygon-purple/10 dark:border-polygon-purple/20;
+    @apply shadow-lg shadow-polygon-purple/5;
+  }
+
+  .glass-card-solid {
+    @apply bg-white dark:bg-surface-elevated;
+    @apply border border-polygon-purple/10 dark:border-polygon-purple/20;
+    @apply shadow-lg shadow-polygon-purple/5;
+  }
+
+  .glass-header {
+    @apply bg-white/90 dark:bg-surface/90 backdrop-blur-xl;
+    @apply border-b border-polygon-purple/10 dark:border-polygon-purple/20;
+  }
+
+  .glass-tooltip {
+    @apply bg-white/95 dark:bg-surface-elevated/95 backdrop-blur-xl;
+    @apply border border-polygon-purple/15 dark:border-polygon-purple/25;
+    @apply shadow-xl shadow-polygon-purple/10;
+  }
+
+  .glass-button {
+    @apply bg-surface-elevated/60 dark:bg-surface-elevated/40 backdrop-blur-sm;
+    @apply border border-polygon-purple/20 dark:border-polygon-purple/30;
+    @apply hover:border-polygon-purple/40 dark:hover:border-polygon-purple/50;
+    @apply transition-all duration-200;
+  }
+
+  /* Gradient utilities */
+  .gradient-polygon {
+    @apply bg-gradient-to-r from-polygon-magenta via-polygon-purple to-polygon-blue;
+  }
+
+  .gradient-polygon-subtle {
+    @apply bg-gradient-to-r from-polygon-magenta/80 via-polygon-purple/80 to-polygon-blue/80;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-polygon-magenta via-polygon-purple to-polygon-blue;
+    @apply bg-clip-text text-transparent;
+  }
+
+  .gradient-accent-top {
+    @apply before:absolute before:top-0 before:left-0 before:right-0 before:h-0.5;
+    @apply before:bg-gradient-to-r before:from-polygon-magenta before:via-polygon-purple before:to-polygon-blue;
+  }
+
+  /* Active button with gradient and glow */
+  .btn-gradient-active {
+    @apply bg-gradient-to-r from-polygon-magenta via-polygon-purple to-polygon-blue;
+    @apply text-white font-medium;
+    @apply shadow-md shadow-polygon-purple/30;
+    @apply hover:shadow-lg hover:shadow-polygon-purple/40;
+    @apply transition-all duration-200;
+  }
+
+  /* Inactive button style */
+  .btn-surface {
+    @apply bg-surface dark:bg-surface-elevated;
+    @apply text-foreground/80;
+    @apply hover:bg-surface-hover dark:hover:bg-surface-hover;
+    @apply border border-transparent hover:border-polygon-purple/20;
+    @apply transition-all duration-200;
+  }
+
+  /* Glow effects */
+  .glow-sm {
+    @apply shadow-sm shadow-polygon-purple/20;
+  }
+
+  .glow-md {
+    @apply shadow-md shadow-polygon-purple/30;
+  }
+
+  /* Card accent bar */
+  .accent-bar {
+    @apply absolute top-0 left-0 right-0 h-1 rounded-t-lg;
+  }
+}
+
+/* Base body styles with gradient background */
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  min-height: 100vh;
+}
+
+/* Dark mode gradient orbs background */
+.dark body {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(123, 63, 228, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(45, 100, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 50%, rgba(255, 0, 102, 0.05) 0%, transparent 50%),
+    rgb(var(--background));
+}
+
+/* Light mode subtle gradient */
+body:not(.dark body) {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(123, 63, 228, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(45, 100, 255, 0.03) 0%, transparent 50%),
+    rgb(var(--background));
+}
+
+/* Custom scrollbar for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgb(var(--surface));
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(var(--polygon-purple) / 0.3);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--polygon-purple) / 0.5);
+}
+
+/* Focus ring with Polygon purple */
+@layer utilities {
+  .focus-polygon {
+    @apply focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 focus:ring-offset-2 focus:ring-offset-background;
+  }
 }

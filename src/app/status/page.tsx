@@ -72,7 +72,7 @@ interface StatusData {
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={`px-2 py-1 rounded text-sm font-medium ${
-      ok ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'
+      ok ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'
     }`}>
       {label}
     </span>
@@ -81,10 +81,10 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 
 function WorkerStateBadge({ state }: { state: WorkerStatusData['state'] }) {
   const colors = {
-    running: 'bg-blue-900 text-blue-200',
-    idle: 'bg-green-900 text-green-200',
-    error: 'bg-red-900 text-red-200',
-    stopped: 'bg-gray-700 text-gray-300',
+    running: 'bg-polygon-blue/20 text-polygon-blue',
+    idle: 'bg-success/20 text-success',
+    error: 'bg-danger/20 text-danger',
+    stopped: 'bg-text-secondary/20 text-text-secondary',
   };
   const labels = {
     running: 'Running',
@@ -101,8 +101,9 @@ function WorkerStateBadge({ state }: { state: WorkerStatusData['state'] }) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <h3 className="text-lg font-semibold text-gray-200 mb-3">{title}</h3>
+    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+      <h3 className="text-lg font-semibold text-foreground mb-3 pt-1">{title}</h3>
       {children}
     </div>
   );
@@ -110,9 +111,9 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function StatRow({ label, value, warning }: { label: string; value: string | number; warning?: boolean | null }) {
   return (
-    <div className="flex justify-between py-1 border-b border-gray-700 last:border-0">
-      <span className="text-gray-400">{label}</span>
-      <span className={warning ? 'text-yellow-400 font-medium' : 'text-gray-200'}>{value}</span>
+    <div className="flex justify-between py-1 border-b border-polygon-purple/10 last:border-0">
+      <span className="text-text-secondary">{label}</span>
+      <span className={warning ? 'text-warning font-medium' : 'text-foreground'}>{value}</span>
     </div>
   );
 }
@@ -237,12 +238,12 @@ export default function StatusPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen bg-background">
       <Nav />
 
       <main className="w-full px-4 py-6 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-100">System Status</h1>
+          <h1 className="text-2xl font-bold text-foreground">System Status</h1>
           <div className="flex items-center gap-3">
             {status && (
               <>
@@ -250,7 +251,7 @@ export default function StatusPage() {
                   ok={status.workersRunning}
                   label={status.workersRunning ? 'Indexers Running' : 'Indexers Stopped'}
                 />
-                <span className="text-gray-500 text-sm">
+                <span className="text-text-secondary text-sm">
                   Updated: {new Date(status.timestamp).toLocaleTimeString()}
                 </span>
               </>
@@ -259,11 +260,11 @@ export default function StatusPage() {
         </div>
 
         {loading && !status && (
-          <div className="text-gray-400">Loading...</div>
+          <div className="text-text-secondary">Loading...</div>
         )}
 
         {error && (
-          <div className="bg-red-900 text-red-200 p-4 rounded-lg mb-4">
+          <div className="bg-danger/20 text-danger p-4 rounded-lg mb-4">
             Error: {error}
           </div>
         )}
@@ -307,35 +308,35 @@ export default function StatusPage() {
             <Card title="Sync Status">
               <div className="space-y-3">
                 <div>
-                  <div className="text-gray-400 text-sm mb-1">Block to Milestone Sync</div>
+                  <div className="text-text-secondary text-sm mb-1">Block to Milestone Sync</div>
                   {status.blocks.latest && status.milestones.latest ? (
-                    <div className="text-gray-200">
+                    <div className="text-foreground">
                       {(() => {
                         const blockDiff = BigInt(status.blocks.latest.blockNumber) - BigInt(status.milestones.latest.endBlock);
                         const isAhead = blockDiff > 0n;
                         const absDiff = blockDiff > 0n ? blockDiff : -blockDiff;
                         return (
-                          <span className={absDiff > STATUS_THRESHOLDS.BLOCK_DIFF_WARNING ? 'text-yellow-400' : 'text-green-400'}>
+                          <span className={absDiff > STATUS_THRESHOLDS.BLOCK_DIFF_WARNING ? 'text-warning' : 'text-success'}>
                             Blocks {isAhead ? 'ahead' : 'behind'} milestones by {formatNumber(Math.abs(Number(blockDiff)))}
                           </span>
                         );
                       })()}
                     </div>
                   ) : (
-                    <div className="text-gray-500">N/A</div>
+                    <div className="text-text-secondary">N/A</div>
                   )}
                 </div>
                 <div>
-                  <div className="text-gray-400 text-sm mb-1">Finalization Coverage</div>
+                  <div className="text-text-secondary text-sm mb-1">Finalization Coverage</div>
                   {parseInt(status.blocks.finalized) > 0 ? (
-                    <div className="text-gray-200">
+                    <div className="text-foreground">
                       {status.blocks.minFinalized} - {status.blocks.maxFinalized}
-                      <span className="text-gray-500 ml-2">
+                      <span className="text-text-secondary ml-2">
                         ({((parseInt(status.blocks.finalized) / parseInt(status.blocks.total)) * 100).toFixed(1)}% finalized)
                       </span>
                     </div>
                   ) : (
-                    <div className="text-yellow-400">No finalized blocks yet</div>
+                    <div className="text-warning">No finalized blocks yet</div>
                   )}
                 </div>
               </div>
@@ -345,21 +346,21 @@ export default function StatusPage() {
             <Card title="Health Indicators">
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Block Freshness</span>
+                  <span className="text-text-secondary">Block Freshness</span>
                   <StatusBadge
                     ok={!status.blocks.latest || status.blocks.latest.age < STATUS_THRESHOLDS.BLOCK_FRESHNESS_SEC}
                     label={status.blocks.latest && status.blocks.latest.age > STATUS_THRESHOLDS.BLOCK_FRESHNESS_SEC ? 'Stale' : 'OK'}
                   />
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Milestone Freshness</span>
+                  <span className="text-text-secondary">Milestone Freshness</span>
                   <StatusBadge
                     ok={!status.milestones.latest || status.milestones.latest.age < STATUS_THRESHOLDS.MILESTONE_AGE_WARNING_SEC}
                     label={status.milestones.latest && status.milestones.latest.age > STATUS_THRESHOLDS.MILESTONE_AGE_WARNING_SEC ? 'Stale' : 'OK'}
                   />
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Indexers</span>
+                  <span className="text-text-secondary">Indexers</span>
                   <StatusBadge
                     ok={status.workersRunning}
                     label={status.workersRunning ? 'Running' : 'Stopped'}
@@ -371,7 +372,7 @@ export default function StatusPage() {
             {/* Progress Stats - Speed and ETA */}
             <Card title="Backfill Progress">
               <div className="space-y-3 text-sm">
-                <div className="text-gray-500 text-xs mb-2">
+                <div className="text-text-secondary text-xs mb-2">
                   {historyRef.current.length < 2
                     ? 'Collecting data...'
                     : `Based on ${historyRef.current.length} samples (${Math.round((historyRef.current[historyRef.current.length - 1].timestamp - historyRef.current[0].timestamp) / 1000)}s)`
@@ -387,10 +388,10 @@ export default function StatusPage() {
                     ? Math.max(0, parseInt(status.blocks.min, 10) - blockTarget)
                     : 0;
                   return (
-                    <div className="py-2 border-b border-gray-700">
+                    <div className="py-2 border-b border-polygon-purple/10">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400">Block Backfiller</span>
-                        <span className={`font-mono ${isBlockBackfillFinished ? 'text-green-400' : 'text-blue-400'}`}>
+                        <span className="text-text-secondary">Block Backfiller</span>
+                        <span className={`font-mono ${isBlockBackfillFinished ? 'text-success' : 'text-polygon-blue'}`}>
                           {formatSpeed(
                             speeds.backfillerSpeed,
                             'blk',
@@ -400,7 +401,7 @@ export default function StatusPage() {
                         </span>
                       </div>
                       {speeds.backfillerSpeed && status.blocks.min && !isBlockBackfillFinished && (
-                        <div className="text-gray-500 text-xs mt-1">
+                        <div className="text-text-secondary text-xs mt-1">
                           ETA to target: {formatEta(remainingBlocks, speeds.backfillerSpeed)}
                         </div>
                       )}
@@ -419,8 +420,8 @@ export default function StatusPage() {
                   return (
                     <div className="py-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-400">Milestone Backfiller</span>
-                        <span className={`font-mono ${isMilestoneBackfillFinished ? 'text-green-400' : 'text-purple-400'}`}>
+                        <span className="text-text-secondary">Milestone Backfiller</span>
+                        <span className={`font-mono ${isMilestoneBackfillFinished ? 'text-success' : 'text-polygon-purple'}`}>
                           {formatSpeed(
                             speeds.milestoneBackfillerSpeed,
                             'ms',
@@ -430,7 +431,7 @@ export default function StatusPage() {
                         </span>
                       </div>
                       {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && !isMilestoneBackfillFinished && (
-                        <div className="text-gray-500 text-xs mt-1">
+                        <div className="text-text-secondary text-xs mt-1">
                           ETA to target: {formatEta(remainingMilestones, speeds.milestoneBackfillerSpeed)}
                         </div>
                       )}
@@ -459,11 +460,11 @@ export default function StatusPage() {
               </div>
 
               {/* Add New Inflation Rate */}
-              <div className="pt-4 border-t border-gray-700">
-                <label className="block text-gray-400 text-sm mb-2">
+              <div className="pt-4 border-t border-polygon-purple/10">
+                <label className="block text-text-secondary text-sm mb-2">
                   Add New Inflation Rate Change
                 </label>
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-text-secondary/70 mb-3">
                   Enter the Ethereum block number and INTEREST_PER_YEAR_LOG2 value (in wei, e.g., 28569152196770890)
                 </p>
                 <div className="space-y-2">
@@ -472,37 +473,37 @@ export default function StatusPage() {
                     value={blockNumberInput}
                     onChange={(e) => setBlockNumberInput(e.target.value)}
                     placeholder="Block number (e.g., 22884776)"
-                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-polygon-purple/20 focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 transition-all"
                   />
                   <input
                     type="text"
                     value={interestRateInput}
                     onChange={(e) => setInterestRateInput(e.target.value)}
                     placeholder="Interest rate (e.g., 28569152196770890)"
-                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-polygon-purple/20 focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 transition-all"
                   />
                   <input
                     type="password"
                     value={addRatePassword}
                     onChange={(e) => setAddRatePassword(e.target.value)}
                     placeholder="Password"
-                    className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-polygon-purple/20 focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 transition-all"
                   />
                   <button
                     onClick={handleScanBlock}
                     disabled={isScanningBlock}
-                    className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
+                    className="w-full px-4 py-2 btn-gradient-active rounded-lg transition-all disabled:opacity-50"
                   >
                     {isScanningBlock ? 'Adding...' : 'Add Rate'}
                   </button>
                 </div>
                 {scanBlockResult && (
-                  <div className={`mt-2 text-sm ${scanBlockResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`mt-2 text-sm ${scanBlockResult.success ? 'text-success' : 'text-danger'}`}>
                     {scanBlockResult.message}
                   </div>
                 )}
-                <div className="mt-3 text-xs text-gray-500">
-                  <p className="font-medium mb-1">Known values:</p>
+                <div className="mt-3 text-xs text-text-secondary/70">
+                  <p className="font-medium mb-1 text-text-secondary">Known values:</p>
                   <ul className="space-y-1 list-disc list-inside">
                     <li>Initial (block 18426253): 42644337408493720</li>
                     <li>Upgrade 1 (block 20678332): 35623909730721220</li>
@@ -516,24 +517,24 @@ export default function StatusPage() {
             <Card title="Indexer Health">
               <div className="space-y-2">
                 {status.workerStatuses.length === 0 ? (
-                  <div className="text-gray-500">No indexer status data yet</div>
+                  <div className="text-text-secondary">No indexer status data yet</div>
                 ) : (
                   status.workerStatuses.map((worker) => (
-                    <div key={worker.name} className="py-2 border-b border-gray-700 last:border-0">
+                    <div key={worker.name} className="py-2 border-b border-polygon-purple/10 last:border-0">
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-300 font-medium">{worker.name}</span>
+                        <span className="text-foreground font-medium">{worker.name}</span>
                         <WorkerStateBadge state={worker.state} />
                       </div>
                       <div className="flex justify-between items-center mt-1 text-xs">
-                        <span className="text-gray-500">
+                        <span className="text-text-secondary">
                           Last run: {worker.lastRunAt ? formatTimeAgo(worker.lastRunAt) : 'Never'}
                         </span>
-                        <span className="text-gray-500">
+                        <span className="text-text-secondary">
                           {formatNumber(worker.itemsProcessed)} processed
                         </span>
                       </div>
                       {worker.state === 'error' && worker.lastError && (
-                        <div className="mt-1 text-xs text-red-400 truncate">
+                        <div className="mt-1 text-xs text-danger truncate">
                           Error: {worker.lastError}
                         </div>
                       )}

@@ -33,30 +33,30 @@ export const ChartTooltip = forwardRef<HTMLDivElement, ChartTooltipProps>(
     return (
       <div
         ref={ref}
-        className="absolute pointer-events-none z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-sm transition-colors duration-200"
+        className="absolute pointer-events-none z-10 glass-tooltip rounded-lg px-3 py-2 text-sm transition-colors duration-200"
         style={{
           left: position.x,
           top: position.y,
           minWidth: '180px',
         }}
       >
-        <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
+        <div className="font-medium text-foreground mb-1">
           {content.time}
         </div>
         {content.blockRange && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+          <div className="text-xs text-text-secondary mb-1">
             {content.blockRange}
-            <span className="ml-1 text-blue-500 dark:text-blue-400">(click to copy)</span>
+            <span className="ml-1 text-polygon-purple">(click to copy)</span>
           </div>
         )}
         {content.values.map((v, i) => (
           <div key={i} className="flex items-center gap-2">
             <span
-              className="w-2 h-2 rounded-full"
+              className="w-2 h-2 rounded-full ring-1 ring-white/20"
               style={{ backgroundColor: v.color }}
             />
-            <span className="text-gray-600 dark:text-gray-300">{v.label}:</span>
-            <span className="font-medium text-gray-900 dark:text-gray-100">{v.value}</span>
+            <span className="text-text-secondary">{v.label}:</span>
+            <span className="font-medium text-foreground">{v.value}</span>
           </div>
         ))}
       </div>

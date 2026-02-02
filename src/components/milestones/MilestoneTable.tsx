@@ -31,70 +31,76 @@ function getTimeAgo(date: Date): string {
 
 export function MilestoneTable({ milestones, title = 'Milestones' }: Props) {
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-lg font-semibold">{title}</h2>
+    <div className="glass-card-solid rounded-xl overflow-hidden relative">
+      {/* Gradient accent at top */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+      <div className="p-4 border-b border-polygon-purple/10 dark:border-polygon-purple/20">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-800">
+          <thead className="bg-surface dark:bg-surface-elevated/50">
             <tr>
-              <th className="px-3 py-2 text-left">ID</th>
-              <th className="px-3 py-2 text-right">From Block</th>
-              <th className="px-3 py-2 text-right">To Block</th>
-              <th className="px-3 py-2 text-right">Expected</th>
-              <th className="px-3 py-2 text-right">In DB</th>
-              <th className="px-3 py-2 text-right">Coverage</th>
-              <th className="px-3 py-2 text-left">Proposer</th>
-              <th className="px-3 py-2 text-left">Time</th>
-              <th className="px-3 py-2 text-right">Avg Finality</th>
+              <th className="px-3 py-2 text-left text-text-secondary font-medium">ID</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">From Block</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">To Block</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">Expected</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">In DB</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">Coverage</th>
+              <th className="px-3 py-2 text-left text-text-secondary font-medium">Proposer</th>
+              <th className="px-3 py-2 text-left text-text-secondary font-medium">Time</th>
+              <th className="px-3 py-2 text-right text-text-secondary font-medium">Avg Finality</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody className="divide-y divide-polygon-purple/10 dark:divide-polygon-purple/15">
             {milestones.map((m) => {
               const coverage = m.blockCount > 0 ? (m.blocksInDb / m.blockCount) * 100 : 0;
               const isComplete = m.blocksInDb === m.blockCount;
 
               return (
-                <tr key={m.milestoneId} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                  <td className="px-3 py-2 font-mono text-xs">{m.milestoneId}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">
+                <tr key={m.milestoneId} className="hover:bg-surface-hover transition-colors">
+                  <td className="px-3 py-2 font-mono text-xs text-polygon-purple">{m.milestoneId}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-foreground">
                     {parseInt(m.startBlock).toLocaleString()}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">
+                  <td className="px-3 py-2 text-right font-mono text-xs text-foreground">
                     {parseInt(m.endBlock).toLocaleString()}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">
+                  <td className="px-3 py-2 text-right font-mono text-xs text-foreground">
                     {m.blockCount.toLocaleString()}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs">
-                    <span className={isComplete ? 'text-green-500' : 'text-yellow-500'}>
+                    <span className={isComplete ? 'text-success' : 'text-warning'}>
                       {m.blocksInDb.toLocaleString()}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div className="w-16 bg-surface dark:bg-surface-elevated rounded-full h-2 overflow-hidden">
                         <div
-                          className={`h-2 rounded-full ${
-                            isComplete ? 'bg-green-500' : coverage > 50 ? 'bg-yellow-500' : 'bg-red-500'
+                          className={`h-2 rounded-full transition-all ${
+                            isComplete ? 'bg-success' : coverage > 50 ? 'bg-warning' : 'bg-danger'
                           }`}
                           style={{ width: `${Math.min(coverage, 100)}%` }}
                         />
                       </div>
-                      <span className="text-xs text-gray-500 w-12 text-right">
+                      <span className="text-xs text-text-secondary w-12 text-right">
                         {coverage.toFixed(0)}%
                       </span>
                     </div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">
+                  <td className="px-3 py-2 font-mono text-xs text-text-secondary">
                     {m.proposer ? `${m.proposer.slice(0, 8)}...${m.proposer.slice(-4)}` : '-'}
                   </td>
-                  <td className="px-3 py-2 text-xs" title={m.timestamp}>
+                  <td className="px-3 py-2 text-xs text-text-secondary" title={m.timestamp}>
                     {getTimeAgo(new Date(m.timestamp))}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs">
-                    {m.avgFinalityTime !== null ? `${m.avgFinalityTime.toFixed(1)}s` : '-'}
+                    {m.avgFinalityTime !== null ? (
+                      <span className="text-success">{m.avgFinalityTime.toFixed(1)}s</span>
+                    ) : (
+                      <span className="text-text-secondary">-</span>
+                    )}
                   </td>
                 </tr>
               );

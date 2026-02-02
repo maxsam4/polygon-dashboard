@@ -60,20 +60,20 @@ export const WORKER_INTERVALS = {
   RECONCILER_INTERVAL_MS: 10 * 1000,
 } as const;
 
-// Chart colors
+// Chart colors - Polygon brand palette
 export const CHART_COLORS = {
-  PRIMARY: '#2962FF',
-  SECONDARY: '#FF6D00',
-  SUCCESS: '#00C853',
-  PURPLE: '#AA00FF',
-  DANGER: '#FF1744',
+  PRIMARY: '#7B3FE4',    // Polygon purple
+  SECONDARY: '#FF0066',  // Polygon magenta
+  SUCCESS: '#10B981',    // Emerald green
+  TERTIARY: '#2D64FF',   // Polygon blue
+  DANGER: '#EF4444',     // Red
 } as const;
 
 export const CHART_COLOR_PALETTE = [
   CHART_COLORS.PRIMARY,
   CHART_COLORS.SECONDARY,
   CHART_COLORS.SUCCESS,
-  CHART_COLORS.PURPLE,
+  CHART_COLORS.TERTIARY,
   CHART_COLORS.DANGER,
 ] as const;
 

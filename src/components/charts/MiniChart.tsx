@@ -26,7 +26,7 @@ interface MiniChartProps {
   color?: string;
 }
 
-export function MiniChart({ title, data, series, currentValue, unit, color = '#2962FF' }: MiniChartProps) {
+export function MiniChart({ title, data, series, currentValue, unit, color = '#7B3FE4' }: MiniChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<ISeriesApi<'Line'>[]>([]);
@@ -51,11 +51,11 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#2
       height: 180,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+        textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
       },
       grid: {
         vertLines: { visible: false },
-        horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
       },
       rightPriceScale: {
         borderVisible: false,
@@ -149,12 +149,17 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#2
   }, [data, series, color]);
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-      <div className="flex justify-between items-start mb-2">
-        <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</h3>
+    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+      {/* Colored accent bar at top */}
+      <div
+        className="accent-bar"
+        style={{ background: `linear-gradient(to right, ${color}, ${color}aa)` }}
+      />
+      <div className="flex justify-between items-start mb-2 pt-1">
+        <h3 className="text-sm font-medium text-text-secondary">{title}</h3>
         <div className="text-right">
-          <span className="text-xl font-bold">{currentValue}</span>
-          <span className="text-sm text-gray-500 ml-1">{unit}</span>
+          <span className="text-xl font-bold" style={{ color }}>{currentValue}</span>
+          <span className="text-sm text-text-secondary ml-1">{unit}</span>
         </div>
       </div>
       <div
@@ -165,11 +170,11 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#2
       <div className="text-xs mt-1 flex justify-between items-center h-4">
         {hoveredBlock !== null ? (
           <>
-            <span className="text-gray-500 dark:text-gray-400">Block: {hoveredBlock.toLocaleString()}</span>
+            <span className="text-text-secondary">Block: {hoveredBlock.toLocaleString()}</span>
             {copied ? (
-              <span className="text-green-500">Copied!</span>
+              <span className="text-success">Copied!</span>
             ) : (
-              <span className="text-gray-400">Click to copy</span>
+              <span className="text-polygon-purple/60">Click to copy</span>
             )}
           </>
         ) : (

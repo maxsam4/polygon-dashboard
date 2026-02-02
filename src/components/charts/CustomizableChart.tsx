@@ -225,8 +225,8 @@ export function CustomizableChart({
         textColor: theme === 'dark' ? '#d1d5db' : '#374151',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-        horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
       },
       rightPriceScale: { visible: dualAxis, borderVisible: false },
       leftPriceScale: { visible: true, borderVisible: false },
@@ -284,8 +284,8 @@ export function CustomizableChart({
           textColor: theme === 'dark' ? '#d1d5db' : '#374151',
         },
         grid: {
-          vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-          horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
         },
       });
     }
@@ -391,33 +391,34 @@ export function CustomizableChart({
   const seriesOptions: { key: string; label: string; enabled: boolean }[] = [];
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-      <div className="flex justify-between items-start mb-4">
-        <h3 className="text-lg font-semibold">{title}</h3>
+    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+      <div className="flex justify-between items-start mb-4 pt-1">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <div className="flex flex-col items-end gap-2">
           {/* Cumulative totals display */}
           {(cumulativeTotals.baseFee !== null || cumulativeTotals.priorityFee !== null || cumulativeTotals.totalFee !== null) && (
             <div className="text-right text-sm">
               {cumulativeTotals.baseFee !== null && (
                 <div>
-                  <span className="text-gray-500 dark:text-gray-400">Base Fee: </span>
-                  <span className="font-semibold text-blue-600 dark:text-blue-400">
+                  <span className="text-text-secondary">Base Fee: </span>
+                  <span className="font-semibold text-polygon-purple">
                     {formatFeeAsPol(cumulativeTotals.baseFee)} POL
                   </span>
                 </div>
               )}
               {cumulativeTotals.priorityFee !== null && (
                 <div>
-                  <span className="text-gray-500 dark:text-gray-400">Priority Fee: </span>
-                  <span className="font-semibold text-orange-600 dark:text-orange-400">
+                  <span className="text-text-secondary">Priority Fee: </span>
+                  <span className="font-semibold text-polygon-magenta">
                     {formatFeeAsPol(cumulativeTotals.priorityFee)} POL
                   </span>
                 </div>
               )}
               {cumulativeTotals.totalFee !== null && (
                 <div>
-                  <span className="text-gray-500 dark:text-gray-400">Total Fee: </span>
-                  <span className="font-semibold text-green-600 dark:text-green-400">
+                  <span className="text-text-secondary">Total Fee: </span>
+                  <span className="font-semibold text-success">
                     {formatFeeAsPol(cumulativeTotals.totalFee)} POL
                   </span>
                 </div>
@@ -427,7 +428,7 @@ export function CustomizableChart({
           {isZoomed && (
             <button
               onClick={handleResetZoom}
-              className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
+              className="px-2 py-1 text-xs btn-surface rounded transition-colors"
               title="Reset zoom to show all data"
             >
               Reset Zoom
@@ -443,7 +444,7 @@ export function CustomizableChart({
           <select
             value={leftSeries}
             onChange={(e) => setLeftSeries(e.target.value as DataOptionValue)}
-            className="text-sm border rounded px-2 py-1 bg-white dark:bg-gray-800 dark:border-gray-600"
+            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
           >
             {DATA_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -451,14 +452,14 @@ export function CustomizableChart({
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500">(Left axis)</span>
+          <span className="text-xs text-text-secondary">(Left axis)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS.SECONDARY }} />
           <select
             value={rightSeries}
             onChange={(e) => setRightSeries(e.target.value as DataOptionValue)}
-            className="text-sm border rounded px-2 py-1 bg-white dark:bg-gray-800 dark:border-gray-600"
+            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
           >
             {DATA_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -466,7 +467,7 @@ export function CustomizableChart({
               </option>
             ))}
           </select>
-          <span className="text-xs text-gray-500">({dualAxis ? 'Right' : 'Left'} axis)</span>
+          <span className="text-xs text-text-secondary">({dualAxis ? 'Right' : 'Left'} axis)</span>
         </div>
       </div>
 

@@ -233,11 +233,11 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       height: 300,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+        textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-        horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
+        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
       },
       rightPriceScale: { visible: true, borderVisible: false },
       leftPriceScale: { visible: true, borderVisible: false },
@@ -303,11 +303,11 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     if (chartRef.current) {
       chartRef.current.applyOptions({
         layout: {
-          textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+          textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
         },
         grid: {
-          vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-          horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
+          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
         },
       });
     }
@@ -491,14 +491,16 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">{title}</h3>
+    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+      {/* Gradient accent at top */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+      <div className="flex justify-between items-center mb-4 pt-1">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <div className="flex items-center gap-3">
           {periodTotal !== null && (
             <div className="text-right">
-              <span className="text-sm text-gray-500 dark:text-gray-400">Period Total: </span>
-              <span className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+              <span className="text-sm text-text-secondary">Period Total: </span>
+              <span className="text-lg font-semibold text-polygon-purple">
                 {formatFeeAsPol(periodTotal)} POL
               </span>
             </div>
@@ -506,7 +508,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           {isZoomed && (
             <button
               onClick={handleResetZoom}
-              className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
+              className="px-3 py-1.5 text-xs btn-surface rounded-lg transition-all hover:shadow-glow-sm"
               title="Reset zoom to show all data"
             >
               Reset Zoom

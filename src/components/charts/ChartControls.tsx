@@ -44,10 +44,10 @@ const ChartControlsComponent = ({
             <button
               key={range}
               onClick={() => onTimeRangeChange(range)}
-              className={`px-2 py-1 rounded ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
                 timeRange === range
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? 'btn-gradient-active'
+                  : 'btn-surface'
               }`}
             >
               {range}
@@ -58,7 +58,7 @@ const ChartControlsComponent = ({
         <select
           value={bucketSize}
           onChange={(e) => onBucketSizeChange(e.target.value)}
-          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700"
+          className="px-2.5 py-1.5 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 transition-all"
         >
           {bucketsToShow.map((size) => (
             <option key={size} value={size}>
@@ -70,20 +70,22 @@ const ChartControlsComponent = ({
         {seriesOptions.length > 0 && (
           <div className="flex gap-3">
             {seriesOptions.map((option) => (
-              <label key={option.key} className="flex items-center gap-1.5 cursor-pointer">
+              <label key={option.key} className="flex items-center gap-1.5 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={option.enabled}
                   onChange={() => onSeriesToggle(option.key)}
-                  className="rounded"
+                  className="rounded border-polygon-purple/30 text-polygon-purple focus:ring-polygon-purple/50 bg-surface"
                 />
                 {option.color && (
                   <span
-                    className="w-3 h-3 rounded-full"
+                    className="w-3 h-3 rounded-full ring-1 ring-white/20"
                     style={{ backgroundColor: option.color }}
                   />
                 )}
-                <span className={option.enabled ? '' : 'text-gray-400'}>{option.label}</span>
+                <span className={`transition-colors ${option.enabled ? 'text-foreground' : 'text-text-secondary'} group-hover:text-foreground`}>
+                  {option.label}
+                </span>
               </label>
             ))}
           </div>
@@ -91,28 +93,28 @@ const ChartControlsComponent = ({
       </div>
 
       {timeRange === 'Custom' && (
-        <div className="flex flex-wrap gap-3 items-center p-3 bg-gray-100 dark:bg-gray-800 rounded">
+        <div className="flex flex-wrap gap-3 items-center p-3 glass-card rounded-lg">
           <div className="flex items-center gap-2">
-            <label className="text-gray-600 dark:text-gray-400">From:</label>
+            <label className="text-text-secondary">From:</label>
             <input
               type="datetime-local"
               value={customStartTime}
               onChange={(e) => onCustomStartTimeChange(e.target.value)}
-              className="px-2 py-1 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
+              className="px-2 py-1 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-gray-600 dark:text-gray-400">To:</label>
+            <label className="text-text-secondary">To:</label>
             <input
               type="datetime-local"
               value={customEndTime}
               onChange={(e) => onCustomEndTimeChange(e.target.value)}
-              className="px-2 py-1 rounded bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600"
+              className="px-2 py-1 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
             />
           </div>
           <button
             onClick={onApplyCustomRange}
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-4 py-1.5 btn-gradient-active rounded-lg text-sm"
           >
             Apply
           </button>

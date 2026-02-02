@@ -70,27 +70,31 @@ export default function MilestonesPage() {
   const overallCoverage = totalBlocksExpected > 0 ? (totalBlocksInDb / totalBlocksExpected) * 100 : 0;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       <Nav />
 
       <main className="w-full px-4 py-6">
         {/* Summary stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Total Milestones</div>
-            <div className="text-2xl font-bold">{pagination?.total.toLocaleString() ?? '-'}</div>
+          <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-purple" />
+            <div className="text-sm text-text-secondary pt-1">Total Milestones</div>
+            <div className="text-2xl font-bold text-foreground">{pagination?.total.toLocaleString() ?? '-'}</div>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Blocks Expected (page)</div>
-            <div className="text-2xl font-bold">{totalBlocksExpected.toLocaleString()}</div>
+          <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-magenta" />
+            <div className="text-sm text-text-secondary pt-1">Blocks Expected (page)</div>
+            <div className="text-2xl font-bold text-foreground">{totalBlocksExpected.toLocaleString()}</div>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Blocks In DB (page)</div>
-            <div className="text-2xl font-bold">{totalBlocksInDb.toLocaleString()}</div>
+          <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-blue" />
+            <div className="text-sm text-text-secondary pt-1">Blocks In DB (page)</div>
+            <div className="text-2xl font-bold text-foreground">{totalBlocksInDb.toLocaleString()}</div>
           </div>
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Coverage (page)</div>
-            <div className={`text-2xl font-bold ${overallCoverage === 100 ? 'text-green-500' : 'text-yellow-500'}`}>
+          <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+            <div className="text-sm text-text-secondary pt-1">Coverage (page)</div>
+            <div className={`text-2xl font-bold ${overallCoverage === 100 ? 'text-success' : 'text-warning'}`}>
               {overallCoverage.toFixed(1)}%
             </div>
           </div>
@@ -99,11 +103,11 @@ export default function MilestonesPage() {
         {/* Controls */}
         <div className="flex flex-wrap gap-4 mb-6 items-center">
           <div className="flex gap-2 items-center">
-            <span className="text-sm text-gray-600 dark:text-gray-400">Per page:</span>
+            <span className="text-sm text-text-secondary">Per page:</span>
             <select
               value={milestonesPerPage}
               onChange={(e) => handleMilestonesPerPageChange(parseInt(e.target.value, 10))}
-              className="px-3 py-2 border rounded dark:bg-gray-800 dark:border-gray-700"
+              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
             >
               {MILESTONES_PER_PAGE_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>
@@ -113,7 +117,7 @@ export default function MilestonesPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8">Loading...</div>
+          <div className="text-center py-8 text-text-secondary">Loading...</div>
         ) : (
           <>
             <MilestoneTable milestones={milestones} />
@@ -123,31 +127,31 @@ export default function MilestonesPage() {
                 <button
                   onClick={() => setPage(1)}
                   disabled={page === 1}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50"
+                  className="px-3 py-2 btn-surface rounded-lg disabled:opacity-50"
                 >
                   First
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50"
+                  className="px-4 py-2 btn-surface rounded-lg disabled:opacity-50"
                 >
                   Prev
                 </button>
-                <span>
+                <span className="text-foreground">
                   Page {pagination.page} of {pagination.totalPages.toLocaleString()}
                 </span>
                 <button
                   onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
                   disabled={page === pagination.totalPages}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50"
+                  className="px-4 py-2 btn-surface rounded-lg disabled:opacity-50"
                 >
                   Next
                 </button>
                 <button
                   onClick={() => setPage(pagination.totalPages)}
                   disabled={page === pagination.totalPages}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50"
+                  className="px-3 py-2 btn-surface rounded-lg disabled:opacity-50"
                 >
                   Last
                 </button>
@@ -158,11 +162,11 @@ export default function MilestonesPage() {
                     onChange={(e) => setGoToPage(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleGoToPage()}
                     placeholder="Page #"
-                    className="px-3 py-2 border rounded dark:bg-gray-800 dark:border-gray-700 w-20"
+                    className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 w-20"
                   />
                   <button
                     onClick={handleGoToPage}
-                    className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    className="px-3 py-2 btn-gradient-active rounded-lg"
                   >
                     Go
                   </button>

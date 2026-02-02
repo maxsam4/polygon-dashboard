@@ -316,8 +316,8 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         textColor: theme === 'dark' ? '#d1d5db' : '#374151',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-        horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
       },
       leftPriceScale: {
         visible: metric === 'netInflation', // Show left axis for net inflation chart (annualized %)
@@ -360,8 +360,8 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       chartRef.current.applyOptions({
         layout: { textColor: theme === 'dark' ? '#d1d5db' : '#374151' },
         grid: {
-          vertLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
-          horzLines: { color: theme === 'dark' ? '#374151' : '#e5e7eb' },
+          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
         },
       });
     }
@@ -472,14 +472,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   }, [chartData, isDataComplete]);
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-4">
-      <div className="flex justify-between items-start mb-4">
-        <h3 className="text-lg font-semibold">{title}</h3>
+    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+      <div className="flex justify-between items-start mb-4 pt-1">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <div className="flex items-center gap-3">
           {isZoomed && (
             <button
               onClick={handleResetZoom}
-              className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded"
+              className="px-2 py-1 text-xs btn-surface rounded transition-colors"
             >
               Reset Zoom
             </button>
@@ -492,26 +493,26 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         <div className="mb-4 text-sm">
           <div className="grid grid-cols-2 gap-4 mb-2">
             <div>
-              <div className="text-gray-500 dark:text-gray-400 mb-1">Period Total:</div>
-              <div className="font-semibold text-lg">
+              <div className="text-text-secondary mb-1">Period Total:</div>
+              <div className="font-semibold text-lg text-foreground">
                 {(periodTotals[metric === 'issuance' ? 'totalIssuance' : 'netInflation']).toLocaleString('en-US', {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 })} POL
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-text-secondary/70">
                 ({(periodTotals[metric === 'issuance' ? 'issuancePercent' : 'netInflationPercent']).toFixed(4)}% of supply)
               </div>
             </div>
             <div>
-              <div className="text-gray-500 dark:text-gray-400 mb-1">Annualized:</div>
-              <div className="font-semibold text-lg">
+              <div className="text-text-secondary mb-1">Annualized:</div>
+              <div className="font-semibold text-lg text-foreground">
                 {(periodTotals[metric === 'issuance' ? 'annualizedIssuance' : 'annualizedNetInflation']).toLocaleString('en-US', {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 })} POL/yr
               </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-sm text-text-secondary/70">
                 ({(periodTotals[metric === 'issuance' ? 'annualizedIssuancePercent' : 'annualizedNetInflationPercent']).toFixed(2)}%/yr)
               </div>
             </div>

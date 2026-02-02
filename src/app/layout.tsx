@@ -38,7 +38,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+      <body className="font-sans bg-background text-foreground min-h-screen">
         <ThemeProvider>
           {children}
         </ThemeProvider>
