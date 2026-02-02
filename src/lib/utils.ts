@@ -78,13 +78,14 @@ export function formatPol(pol: number, decimals = 2): string {
 export function getGasUtilizationColor(percent: number): string {
   const { GREEN_MIN, GREEN_MAX, YELLOW_MIN, YELLOW_MAX } = GAS_THRESHOLDS;
 
+  // Using 60% opacity for muted but visible progress bars
   if (percent > YELLOW_MAX || percent < YELLOW_MIN) {
-    return 'bg-danger';
+    return 'bg-danger/60';
   }
   if (percent > GREEN_MAX || percent < GREEN_MIN) {
-    return 'bg-warning';
+    return 'bg-warning/60';
   }
-  return 'bg-success';
+  return 'bg-success/60';
 }
 
 /**

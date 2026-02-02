@@ -146,24 +146,24 @@ describe('formatPol', () => {
 });
 
 describe('getGasUtilizationColor', () => {
-  it('returns green for optimal range (55-75%)', () => {
-    expect(getGasUtilizationColor(55)).toBe('bg-green-500');
-    expect(getGasUtilizationColor(65)).toBe('bg-green-500');
-    expect(getGasUtilizationColor(75)).toBe('bg-green-500');
+  it('returns muted green for optimal range (55-75%)', () => {
+    expect(getGasUtilizationColor(55)).toBe('bg-success/60');
+    expect(getGasUtilizationColor(65)).toBe('bg-success/60');
+    expect(getGasUtilizationColor(75)).toBe('bg-success/60');
   });
 
-  it('returns yellow for suboptimal range (15-55% or 75-85%)', () => {
-    expect(getGasUtilizationColor(15)).toBe('bg-yellow-500');
-    expect(getGasUtilizationColor(54)).toBe('bg-yellow-500');
-    expect(getGasUtilizationColor(76)).toBe('bg-yellow-500');
-    expect(getGasUtilizationColor(85)).toBe('bg-yellow-500');
+  it('returns muted yellow for suboptimal range (15-55% or 75-85%)', () => {
+    expect(getGasUtilizationColor(15)).toBe('bg-warning/60');
+    expect(getGasUtilizationColor(54)).toBe('bg-warning/60');
+    expect(getGasUtilizationColor(76)).toBe('bg-warning/60');
+    expect(getGasUtilizationColor(85)).toBe('bg-warning/60');
   });
 
-  it('returns red for extreme values (<15% or >85%)', () => {
-    expect(getGasUtilizationColor(0)).toBe('bg-red-500');
-    expect(getGasUtilizationColor(14)).toBe('bg-red-500');
-    expect(getGasUtilizationColor(86)).toBe('bg-red-500');
-    expect(getGasUtilizationColor(100)).toBe('bg-red-500');
+  it('returns muted red for extreme values (<15% or >85%)', () => {
+    expect(getGasUtilizationColor(0)).toBe('bg-danger/60');
+    expect(getGasUtilizationColor(14)).toBe('bg-danger/60');
+    expect(getGasUtilizationColor(86)).toBe('bg-danger/60');
+    expect(getGasUtilizationColor(100)).toBe('bg-danger/60');
   });
 });
 
