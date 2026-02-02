@@ -39,7 +39,7 @@ ALTER TABLE blocks SET (
   timescaledb.compress,
   timescaledb.compress_orderby = 'timestamp DESC, block_number DESC'
 );
-SELECT add_compression_policy('blocks', INTERVAL '7 days');
+SELECT add_compression_policy('blocks', INTERVAL '35 days');
 
 -- Milestones table
 CREATE TABLE milestones (
