@@ -1,5 +1,6 @@
 import { getAllWorkerStatuses } from './workerStatus';
 import type { WorkerStatus } from './workerStatus';
+import { waitForMigrations } from '../waitForMigrations';
 
 // Indexers
 import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
@@ -30,6 +31,9 @@ export async function startWorkers(): Promise<void> {
     console.log('[Workers] Workers already started, skipping...');
     return;
   }
+
+  // Wait for database migrations to complete before starting workers
+  await waitForMigrations();
 
   console.log('[Workers] Starting indexers...');
 
