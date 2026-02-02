@@ -9,11 +9,7 @@ jest.mock('@/lib/db', () => ({
 import { query, queryOne } from '@/lib/db';
 import {
   updateTableStats,
-  updateFinalityStats,
   getTableStats,
-  getPendingUnfinalizedCount,
-  refreshFinalityStats,
-  refreshTableStats,
 } from '@/lib/queries/stats';
 
 const mockQuery = query as jest.Mock;
@@ -61,29 +57,6 @@ describe('stats queries', () => {
 
       expect(mockQuery.mock.calls[0][1][0]).toBe('blocks');
       expect(mockQuery.mock.calls[1][1][0]).toBe('milestones');
-    });
-  });
-
-  describe('updateFinalityStats', () => {
-    it('updates finality fields for blocks table', async () => {
-      mockQuery.mockResolvedValueOnce([]);
-
-      await updateFinalityStats(1000n, 45000000n, 50000000n);
-
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized_count = $1');
-      expect(mockQuery.mock.calls[0][0]).toContain('min_finalized = $2');
-      expect(mockQuery.mock.calls[0][0]).toContain('max_finalized = $3');
-      expect(mockQuery.mock.calls[0][0]).toContain("table_name = 'blocks'");
-      expect(mockQuery.mock.calls[0][1]).toEqual(['1000', '45000000', '50000000']);
-    });
-
-    it('handles null min/max finalized', async () => {
-      mockQuery.mockResolvedValueOnce([]);
-
-      await updateFinalityStats(0n, null, null);
-
-      expect(mockQuery.mock.calls[0][1]).toEqual(['0', null, null]);
     });
   });
 
@@ -161,89 +134,4 @@ describe('stats queries', () => {
     });
   });
 
-  describe('getPendingUnfinalizedCount', () => {
-    it('counts unfinalized blocks with timestamp filter', async () => {
-      mockQueryOne.mockResolvedValueOnce({ count: '500' });
-
-      const result = await getPendingUnfinalizedCount();
-
-      expect(mockQueryOne.mock.calls[0][0]).toContain('finalized = false');
-      expect(mockQueryOne.mock.calls[0][0]).toContain('timestamp >= $1');
-      expect(result).toBe(500);
-    });
-
-    it('returns 0 when no unfinalized blocks', async () => {
-      mockQueryOne.mockResolvedValueOnce(null);
-
-      const result = await getPendingUnfinalizedCount();
-
-      expect(result).toBe(0);
-    });
-  });
-
-  describe('refreshFinalityStats', () => {
-    it('performs full table scan to get finality stats', async () => {
-      mockQueryOne.mockResolvedValueOnce({
-        finalized_count: '4999000',
-        min_finalized: '45000000',
-        max_finalized: '49999000',
-      });
-      mockQuery.mockResolvedValueOnce([]);
-
-      await refreshFinalityStats();
-
-      // First call is the SELECT
-      expect(mockQueryOne.mock.calls[0][0]).toContain("COUNT(*) FILTER (WHERE finalized = true)");
-      expect(mockQueryOne.mock.calls[0][0]).toContain("MIN(block_number) FILTER (WHERE finalized = true)");
-      expect(mockQueryOne.mock.calls[0][0]).toContain("MAX(block_number) FILTER (WHERE finalized = true)");
-    });
-
-    it('updates table_stats with refreshed values', async () => {
-      mockQueryOne.mockResolvedValueOnce({
-        finalized_count: '1000',
-        min_finalized: '100',
-        max_finalized: '1100',
-      });
-      mockQuery.mockResolvedValueOnce([]);
-
-      await refreshFinalityStats();
-
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('UPDATE table_stats');
-    });
-  });
-
-  describe('refreshTableStats', () => {
-    it('refreshes blocks stats with finality info', async () => {
-      mockQuery.mockResolvedValueOnce([]);
-
-      await refreshTableStats('blocks');
-
-      expect(mockQuery.mock.calls[0][0]).toContain("'blocks'");
-      expect(mockQuery.mock.calls[0][0]).toContain('MIN(block_number)');
-      expect(mockQuery.mock.calls[0][0]).toContain('MAX(block_number)');
-      expect(mockQuery.mock.calls[0][0]).toContain("COUNT(*) FILTER (WHERE finalized = true)");
-    });
-
-    it('refreshes milestones stats without finality', async () => {
-      mockQuery.mockResolvedValueOnce([]);
-
-      await refreshTableStats('milestones');
-
-      expect(mockQuery.mock.calls[0][0]).toContain("'milestones'");
-      expect(mockQuery.mock.calls[0][0]).toContain('MIN(sequence_id)');
-      expect(mockQuery.mock.calls[0][0]).toContain('MAX(sequence_id)');
-      expect(mockQuery.mock.calls[0][0]).not.toContain('finalized');
-    });
-
-    it('uses ON CONFLICT for upsert', async () => {
-      mockQuery.mockResolvedValue([]);
-
-      await refreshTableStats('blocks');
-      await refreshTableStats('milestones');
-
-      expect(mockQuery.mock.calls[0][0]).toContain('ON CONFLICT (table_name) DO UPDATE');
-      expect(mockQuery.mock.calls[1][0]).toContain('ON CONFLICT (table_name) DO UPDATE');
-    });
-  });
 });

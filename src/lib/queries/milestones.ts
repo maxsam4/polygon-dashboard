@@ -296,16 +296,3 @@ export async function getMilestonesPaginated(
   };
 }
 
-// Get count of unfinalized blocks within milestone coverage (for logging)
-export async function getUnfinalizedBlockCount(): Promise<number> {
-  // Only count unfinalized blocks that are within milestone coverage range
-  // to avoid scanning millions of blocks outside milestone range
-  const result = await queryOne<{ count: string }>(
-    `SELECT COUNT(*) as count
-     FROM blocks b
-     WHERE b.finalized = FALSE
-       AND b.block_number >= (SELECT COALESCE(MIN(start_block), 0) FROM milestones)
-       AND b.block_number <= (SELECT COALESCE(MAX(end_block), 0) FROM milestones)`
-  );
-  return parseInt(result?.count ?? '0', 10);
-}

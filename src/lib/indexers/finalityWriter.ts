@@ -211,30 +211,3 @@ export async function getFinalityStats(): Promise<{
   };
 }
 
-/**
- * Backfill time_to_finality_sec for block_finality records that have block data.
- * Used when blocks are indexed after finality data was written.
- */
-export async function backfillFinalityTiming(limit: number = 1000): Promise<number> {
-  const result = await query<{ count: string }>(
-    `WITH to_update AS (
-       SELECT bf.block_number
-       FROM block_finality bf
-       JOIN blocks b ON b.block_number = bf.block_number
-       WHERE bf.time_to_finality_sec IS NULL
-       LIMIT $1
-     ),
-     updated AS (
-       UPDATE block_finality bf
-       SET time_to_finality_sec = EXTRACT(EPOCH FROM (bf.finalized_at - b.timestamp))
-       FROM blocks b, to_update
-       WHERE bf.block_number = to_update.block_number
-         AND b.block_number = bf.block_number
-       RETURNING 1
-     )
-     SELECT COUNT(*) as count FROM updated`,
-    [limit]
-  );
-
-  return parseInt(result[0]?.count ?? '0', 10);
-}

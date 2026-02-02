@@ -30,7 +30,6 @@ import {
   insertBlock,
   insertBlocksBatch,
   updateBlockPriorityFees,
-  updateBlockFinality,
 } from '@/lib/queries/blocks';
 
 const mockQuery = query as jest.Mock;
@@ -294,29 +293,4 @@ describe('blocks queries', () => {
     });
   });
 
-  describe('updateBlockFinality', () => {
-    it('calculates time_to_finality_sec from timestamps', async () => {
-      const blockTimestamp = new Date('2024-01-15T12:00:00Z');
-      const finalizedAt = new Date('2024-01-15T12:00:30Z');
-
-      mockQueryOne.mockResolvedValueOnce({ block_timestamp: blockTimestamp });
-      mockQuery.mockResolvedValueOnce([]);
-
-      await updateBlockFinality(50000000n, 50000100n, finalizedAt);
-
-      expect(mockQueryOne).toHaveBeenCalledTimes(1);
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized = TRUE');
-      expect(mockQuery.mock.calls[0][1]).toContain(30); // 30 seconds
-    });
-
-    it('only updates non-finalized blocks', async () => {
-      mockQueryOne.mockResolvedValueOnce({ block_timestamp: new Date() });
-      mockQuery.mockResolvedValueOnce([]);
-
-      await updateBlockFinality(50000000n, 50000100n, new Date());
-
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized = FALSE');
-    });
-  });
 });

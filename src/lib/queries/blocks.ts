@@ -1,4 +1,4 @@
-import { query, queryOne, getPool } from '../db';
+import { query, queryOne } from '../db';
 import { Block, BlockRow } from '../types';
 import { getTableStats } from './stats';
 
@@ -320,32 +320,6 @@ export async function updateBlockPriorityFees(
   );
 }
 
-export async function updateBlockFinality(
-  blockNumber: bigint,
-  milestoneId: bigint,
-  finalizedAt: Date
-): Promise<void> {
-  const timeToFinality = await queryOne<{ block_timestamp: Date }>(
-    `SELECT timestamp as block_timestamp FROM blocks WHERE block_number = $1`,
-    [blockNumber.toString()]
-  );
-
-  const timeToFinalitySec = timeToFinality
-    ? (finalizedAt.getTime() - timeToFinality.block_timestamp.getTime()) / 1000
-    : null;
-
-  await query(
-    `UPDATE blocks SET
-      finalized = TRUE,
-      finalized_at = $1,
-      milestone_id = $2,
-      time_to_finality_sec = $3,
-      updated_at = NOW()
-    WHERE block_number = $4 AND finalized = FALSE`,
-    [finalizedAt, milestoneId.toString(), timeToFinalitySec, blockNumber.toString()]
-  );
-}
-
 export async function resetInvalidFinalityData(maxValidFinalitySec = 300): Promise<number> {
   // Reset finality data for blocks with unreasonably high finality times
   // This allows the milestone backfiller to recalculate the correct values
@@ -360,103 +334,6 @@ export async function resetInvalidFinalityData(maxValidFinalitySec = 300): Promi
     [maxValidFinalitySec]
   );
   return (result as unknown as { rowCount: number }).rowCount ?? 0;
-}
-
-export async function updateBlocksPriorityFeeBatch(
-  updates: Array<{ blockNumber: bigint; totalPriorityFeeGwei: number }>
-): Promise<number> {
-  if (updates.length === 0) return 0;
-
-  // Process in chunks to avoid TimescaleDB decompression limits
-  // With timestamp filter, we can use larger chunks for uncompressed data
-  const CHUNK_SIZE = 50;
-  let totalUpdated = 0;
-
-  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
-    const chunk = updates.slice(i, i + CHUNK_SIZE);
-    const blockNumbers = chunk.map(u => u.blockNumber.toString());
-    const fees = chunk.map(u => u.totalPriorityFeeGwei);
-
-    try {
-      // Batch update using UNNEST for efficiency
-      // Assumes chunks are decompressed (run migration first)
-      const result = await queryOne<{ count: string }>(
-        `WITH updated AS (
-           UPDATE blocks b
-           SET total_priority_fee_gwei = u.fee, updated_at = NOW()
-           FROM UNNEST($1::bigint[], $2::double precision[]) AS u(block_num, fee)
-           WHERE b.block_number = u.block_num
-           RETURNING 1
-         )
-         SELECT COUNT(*) as count FROM updated`,
-        [blockNumbers, fees]
-      );
-
-      totalUpdated += parseInt(result?.count ?? '0', 10);
-    } catch (error) {
-      // If batch update fails completely, fall back to individual updates
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn(`[updateBlocksPriorityFeeBatch] Batch update failed: ${errorMessage}`);
-
-      for (const update of chunk) {
-        try {
-          await query(
-            `UPDATE blocks SET total_priority_fee_gwei = $1, updated_at = NOW() WHERE block_number = $2`,
-            [update.totalPriorityFeeGwei, update.blockNumber.toString()]
-          );
-          totalUpdated++;
-        } catch (individualError) {
-          console.warn(`[updateBlocksPriorityFeeBatch] Individual update failed for block ${update.blockNumber}: ${individualError instanceof Error ? individualError.message : String(individualError)}`);
-        }
-      }
-    }
-  }
-
-  return totalUpdated;
-}
-
-export async function updateBlocksFinalityInRange(
-  startBlock: bigint,
-  endBlock: bigint,
-  milestoneId: bigint,
-  finalizedAt: Date
-): Promise<number> {
-  // Only update blocks within the milestone's actual range (startBlock to endBlock)
-  // Using the milestone timestamp is only accurate for blocks in this range
-  const result = await query<{ block_number: string; timestamp: Date }>(
-    `SELECT block_number, timestamp FROM blocks
-     WHERE block_number >= $1 AND block_number <= $2 AND finalized = FALSE`,
-    [startBlock.toString(), endBlock.toString()]
-  );
-
-  const pool = getPool();
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    for (const row of result) {
-      const timeToFinalitySec = (finalizedAt.getTime() - row.timestamp.getTime()) / 1000;
-      await client.query(
-        `UPDATE blocks SET
-          finalized = TRUE,
-          finalized_at = $1,
-          milestone_id = $2,
-          time_to_finality_sec = $3,
-          updated_at = NOW()
-        WHERE block_number = $4`,
-        [finalizedAt, milestoneId.toString(), timeToFinalitySec, row.block_number]
-      );
-    }
-
-    await client.query('COMMIT');
-    return result.length;
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
-  }
 }
 
 /**
