@@ -4,6 +4,7 @@
  */
 
 import { CHART_COLOR_PALETTE } from './constants';
+import { ChartDataPoint, MilestoneChartDataPoint } from './types';
 
 export type ChartMetric =
   | 'gas'
@@ -117,10 +118,9 @@ export function getApiEndpointForMetric(metric: ChartMetric): string {
  */
 export function getBlockRangeInfo(
   metric: ChartMetric,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dataPoint: any
+  dataPoint: ChartDataPoint | MilestoneChartDataPoint
 ): { display: string; copyValue: string } | undefined {
-  if (metric === 'borBlockTime' && dataPoint.blockStart !== undefined && dataPoint.blockEnd !== undefined) {
+  if (metric === 'borBlockTime' && 'blockStart' in dataPoint && 'blockEnd' in dataPoint) {
     const start = dataPoint.blockStart;
     const end = dataPoint.blockEnd;
     if (start === end) {
@@ -133,7 +133,7 @@ export function getBlockRangeInfo(
       display: `Blocks ${start.toLocaleString()} - ${end.toLocaleString()}`,
       copyValue: `${start}-${end}`,
     };
-  } else if (metric === 'heimdallBlockTime' && dataPoint.milestoneId !== undefined) {
+  } else if (metric === 'heimdallBlockTime' && 'milestoneId' in dataPoint) {
     return {
       display: `Milestone #${dataPoint.milestoneId.toLocaleString()}`,
       copyValue: String(dataPoint.milestoneId),

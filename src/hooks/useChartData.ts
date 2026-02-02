@@ -3,6 +3,23 @@
 import { useState, useCallback, useEffect } from 'react';
 import { TIME_RANGE_SECONDS } from '@/lib/constants';
 import { getApiEndpointForMetric, ChartMetric } from '@/lib/chartSeriesConfig';
+import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
+
+export type ChartData = ChartDataPoint | MilestoneChartDataPoint;
+
+/**
+ * Type guard to check if a data point is a ChartDataPoint (block-based chart data).
+ */
+export function isChartDataPoint(data: ChartData): data is ChartDataPoint {
+  return 'baseFee' in data;
+}
+
+/**
+ * Type guard to check if a data point is a MilestoneChartDataPoint.
+ */
+export function isMilestoneChartDataPoint(data: ChartData): data is MilestoneChartDataPoint {
+  return 'milestoneId' in data && !('baseFee' in data);
+}
 
 export interface TimeRangeBounds {
   from: number;
@@ -17,8 +34,7 @@ export interface UseChartDataOptions {
 }
 
 export interface UseChartDataResult {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: any[];
+  data: ChartData[];
   isDataComplete: boolean;
   timeRangeBounds: TimeRangeBounds | null;
   fetchData: () => Promise<void>;
@@ -34,8 +50,7 @@ export function useChartData({
   bucketSize,
   appliedCustomRange,
 }: UseChartDataOptions): UseChartDataResult {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ChartData[]>([]);
   const [isDataComplete, setIsDataComplete] = useState(true);
   const [timeRangeBounds, setTimeRangeBounds] = useState<TimeRangeBounds | null>(null);
 

@@ -14,7 +14,7 @@ import {
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
 import { ChartTooltip, TooltipContent } from './ChartTooltip';
-import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
+import { ChartDataPoint } from '@/lib/types';
 import { formatPol } from '@/lib/utils';
 import {
   GWEI_PER_POL,
@@ -36,7 +36,7 @@ import {
   getSeriesOptionsForMetric,
   getBlockRangeInfo,
 } from '@/lib/chartSeriesConfig';
-import { useChartData } from '@/hooks/useChartData';
+import { useChartData, ChartData, isChartDataPoint } from '@/hooks/useChartData';
 
 interface FullChartProps {
   title: string;
@@ -124,8 +124,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   );
 
   // Current hovered data point for click handling
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hoveredDataPointRef = useRef<any>(null);
+  const hoveredDataPointRef = useRef<ChartData | null>(null);
 
   // Handle clicking on chart to copy block range
   const handleChartClick = useCallback(() => {
@@ -180,12 +179,12 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           if (opt.key === 'avg') value = dataPoint.blockTimeAvg;
           else if (opt.key === 'min') value = dataPoint.blockTimeMin;
           else if (opt.key === 'max') value = dataPoint.blockTimeMax;
-        } else if (metric === 'gas') {
-          if (opt.key === 'base') value = dataPoint.baseFee?.avg;
-          else if (opt.key === 'medianPriority') value = dataPoint.priorityFee?.median;
-          else if (opt.key === 'minPriority') value = dataPoint.priorityFee?.min;
-          else if (opt.key === 'maxPriority') value = dataPoint.priorityFee?.max;
-          else if (opt.key === 'total') value = dataPoint.total?.avg;
+        } else if (metric === 'gas' && isChartDataPoint(dataPoint)) {
+          if (opt.key === 'base') value = dataPoint.baseFee.avg;
+          else if (opt.key === 'medianPriority') value = dataPoint.priorityFee.median;
+          else if (opt.key === 'minPriority') value = dataPoint.priorityFee.min;
+          else if (opt.key === 'maxPriority') value = dataPoint.priorityFee.max;
+          else if (opt.key === 'total') value = dataPoint.total.avg;
         }
 
         if (value !== null && value !== undefined) {
@@ -338,8 +337,11 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         const color = opt.color || CHART_COLOR_PALETTE[0];
         let seriesData: LineData<UTCTimestamp>[];
 
+        // Cast data to ChartDataPoint for block-based metrics
+        const blockData = data as ChartDataPoint[];
+
         if (metric === 'gas') {
-          seriesData = data.map((d) => {
+          seriesData = blockData.map((d) => {
             const value =
               opt.key === 'base' ? d.baseFee.avg :
               opt.key === 'medianPriority' ? d.priorityFee.median :
@@ -349,7 +351,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             return { time: d.timestamp as UTCTimestamp, value };
           });
         } else if (metric === 'finality') {
-          seriesData = data
+          seriesData = blockData
             .filter((d) => {
               // Filter based on which series we're rendering
               return opt.key === 'avg' ? d.finalityAvg !== null :
@@ -365,56 +367,57 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
               return { time: d.timestamp as UTCTimestamp, value };
             });
         } else if (metric === 'mgas') {
-          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
+          seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.mgasPerSec }));
         } else if (metric === 'tps') {
-          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
+          seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         } else if (metric === 'totalBaseFee') {
           if (opt.key === 'cumulative') {
             let cumulative = 0;
-            seriesData = data.map((d) => {
+            seriesData = blockData.map((d) => {
               cumulative += d.totalBaseFeeSum;
               return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
             });
           } else {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / GWEI_PER_POL }));
+            seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalBaseFeeSum / GWEI_PER_POL }));
           }
         } else if (metric === 'totalPriorityFee') {
           if (opt.key === 'cumulative') {
             let cumulative = 0;
-            seriesData = data.map((d) => {
+            seriesData = blockData.map((d) => {
               cumulative += d.totalPriorityFeeSum;
               return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
             });
           } else {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
+            seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.totalPriorityFeeSum / GWEI_PER_POL }));
           }
         } else if (metric === 'totalFee') {
           if (opt.key === 'cumulative') {
             let cumulative = 0;
-            seriesData = data.map((d) => {
+            seriesData = blockData.map((d) => {
               cumulative += d.totalBaseFeeSum + d.totalPriorityFeeSum;
               return { time: d.timestamp as UTCTimestamp, value: cumulative / GWEI_PER_POL };
             });
           } else {
-            seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: (d.totalBaseFeeSum + d.totalPriorityFeeSum) / GWEI_PER_POL }));
+            seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: (d.totalBaseFeeSum + d.totalPriorityFeeSum) / GWEI_PER_POL }));
           }
         } else if (metric === 'blockLimit') {
           // Show average block limit per bucket (in millions of gas)
-          seriesData = data.map((d) => ({
+          seriesData = blockData.map((d) => ({
             time: d.timestamp as UTCTimestamp,
             value: d.gasLimitSum / (d.blockEnd - d.blockStart + 1) / 1_000_000,
           }));
         } else if (metric === 'blockLimitUtilization') {
           // Show gas utilization percentage
-          seriesData = data.map((d) => ({
+          seriesData = blockData.map((d) => ({
             time: d.timestamp as UTCTimestamp,
             value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
           }));
         } else if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
           // Show block time (time between consecutive blocks/milestones)
+          // Both ChartDataPoint and MilestoneChartDataPoint have blockTimeAvg/Min/Max
           seriesData = data
-            .filter((d: ChartDataPoint | MilestoneChartDataPoint) => d.blockTimeAvg !== null)
-            .map((d: ChartDataPoint | MilestoneChartDataPoint) => {
+            .filter((d) => d.blockTimeAvg !== null)
+            .map((d) => {
               const value =
                 opt.key === 'avg' ? d.blockTimeAvg! :
                 opt.key === 'min' ? (d.blockTimeMin ?? d.blockTimeAvg!) :
@@ -422,7 +425,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
               return { time: d.timestamp as UTCTimestamp, value };
             });
         } else {
-          seriesData = data.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
+          seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
 
         const series = chartRef.current!.addSeries(LineSeries, {
@@ -470,14 +473,15 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   // Calculate period total for cumulative fee charts (only show when data is complete)
   const periodTotal = (() => {
     if (!showCumulative || data.length === 0 || !isDataComplete) return null;
+    const blockData = data as ChartDataPoint[];
     if (metric === 'totalBaseFee') {
-      return data.reduce((sum, d) => sum + d.totalBaseFeeSum, 0);
+      return blockData.reduce((sum, d) => sum + d.totalBaseFeeSum, 0);
     }
     if (metric === 'totalPriorityFee') {
-      return data.reduce((sum, d) => sum + d.totalPriorityFeeSum, 0);
+      return blockData.reduce((sum, d) => sum + d.totalPriorityFeeSum, 0);
     }
     if (metric === 'totalFee') {
-      return data.reduce((sum, d) => sum + d.totalBaseFeeSum + d.totalPriorityFeeSum, 0);
+      return blockData.reduce((sum, d) => sum + d.totalBaseFeeSum + d.totalPriorityFeeSum, 0);
     }
     return null;
   })();
