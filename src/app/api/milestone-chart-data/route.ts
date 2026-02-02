@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMilestoneChartData } from '@/lib/queries';
+import { ALL_BUCKET_SIZES } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'] as const;
-type BucketSize = (typeof VALID_BUCKET_SIZES)[number];
+type BucketSize = (typeof ALL_BUCKET_SIZES)[number];
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,9 +22,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!VALID_BUCKET_SIZES.includes(bucketSize)) {
+    if (!ALL_BUCKET_SIZES.includes(bucketSize)) {
       return NextResponse.json(
-        { error: `bucketSize must be one of: ${VALID_BUCKET_SIZES.join(', ')}` },
+        { error: `bucketSize must be one of: ${ALL_BUCKET_SIZES.join(', ')}` },
         { status: 400 }
       );
     }

@@ -4,8 +4,8 @@ import { query } from '../db';
 import { pushBlockUpdate } from '../liveStreamClient';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
 import { getTableStats } from '../queries/stats';
-
-const GWEI = 1_000_000_000n;
+import { sleep } from '../utils';
+import { GWEI } from '../constants';
 
 interface PendingBlock {
   blockNumber: bigint;
@@ -476,8 +476,4 @@ export function getHistoricalPriorityFeeBackfiller(): HistoricalPriorityFeeBackf
     historicalBackfillerInstance = new HistoricalPriorityFeeBackfiller();
   }
   return historicalBackfillerInstance;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

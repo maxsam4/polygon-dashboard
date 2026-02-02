@@ -2,6 +2,18 @@
 
 import { Nav } from '@/components/Nav';
 import { useEffect, useState, useRef } from 'react';
+import { UI_CONSTANTS, STATUS_THRESHOLDS } from '@/lib/constants';
+import {
+  formatAge,
+  formatTimeAgo,
+  formatNumber,
+  formatDateRange,
+  calculateSpeeds,
+  formatSpeed,
+  formatEta,
+  HistoricalData,
+  SpeedStats,
+} from '@/lib/statusUtils';
 
 interface WorkerStatusData {
   name: string;
@@ -57,114 +69,6 @@ interface StatusData {
   };
 }
 
-function formatAge(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-}
-
-function formatTimeAgo(isoString: string | null): string {
-  if (!isoString) return 'Never';
-  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-  return formatAge(seconds) + ' ago';
-}
-
-function formatNumber(num: number | string): string {
-  const n = typeof num === 'string' ? parseInt(num, 10) : num;
-  return n.toLocaleString();
-}
-
-interface HistoricalData {
-  timestamp: number;
-  minBlock: string | null;
-  totalBlocks: string;
-  minMilestoneSeq: string | null;
-  totalMilestones: string;
-}
-
-interface SpeedStats {
-  backfillerSpeed: number | null;
-  milestoneBackfillerSpeed: number | null;
-}
-
-function calculateSpeeds(history: HistoricalData[]): SpeedStats {
-  if (history.length < 2) {
-    return {
-      backfillerSpeed: null,
-      milestoneBackfillerSpeed: null,
-    };
-  }
-
-  const oldest = history[0];
-  const newest = history[history.length - 1];
-  const timeDiffSec = (newest.timestamp - oldest.timestamp) / 1000;
-
-  if (timeDiffSec < 1) {
-    return {
-      backfillerSpeed: null,
-      milestoneBackfillerSpeed: null,
-    };
-  }
-
-  // Backfiller speed: how fast min block is decreasing
-  let backfillerSpeed: number | null = null;
-  if (oldest.minBlock && newest.minBlock) {
-    const oldMin = BigInt(oldest.minBlock);
-    const newMin = BigInt(newest.minBlock);
-    if (newMin < oldMin) {
-      backfillerSpeed = Number(oldMin - newMin) / timeDiffSec;
-    }
-  }
-
-  // Milestone backfiller speed: how fast min seq is decreasing
-  let milestoneBackfillerSpeed: number | null = null;
-  if (oldest.minMilestoneSeq && newest.minMilestoneSeq) {
-    const oldMinSeq = parseInt(oldest.minMilestoneSeq, 10);
-    const newMinSeq = parseInt(newest.minMilestoneSeq, 10);
-    if (newMinSeq < oldMinSeq) {
-      milestoneBackfillerSpeed = (oldMinSeq - newMinSeq) / timeDiffSec;
-    }
-  }
-
-  return {
-    backfillerSpeed,
-    milestoneBackfillerSpeed,
-  };
-}
-
-function formatSpeed(speed: number | null, unit: string, isFinished?: boolean, isCalculating?: boolean): string {
-  if (isFinished) return 'Finished';
-  if (speed === null || speed <= 0) {
-    return isCalculating ? 'Calculating...' : '-';
-  }
-  if (speed >= 1000) {
-    return `${(speed / 1000).toFixed(1)}k ${unit}/s`;
-  }
-  return `${speed.toFixed(1)} ${unit}/s`;
-}
-
-function formatEta(remaining: number, speed: number | null): string {
-  if (speed === null || speed <= 0 || remaining <= 0) return '-';
-  const seconds = remaining / speed;
-  if (seconds < 60) return `${Math.ceil(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
-  }
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  return `${days}d ${hours}h`;
-}
-
-function formatDateRange(minTimestamp: string | null, maxTimestamp: string | null): string {
-  if (!minTimestamp || !maxTimestamp) return 'N/A';
-  const min = new Date(minTimestamp);
-  const max = new Date(maxTimestamp);
-  return `${min.toLocaleString()} - ${max.toLocaleString()}`;
-}
-
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={`px-2 py-1 rounded text-sm font-medium ${
@@ -213,7 +117,7 @@ function StatRow({ label, value, warning }: { label: string; value: string | num
   );
 }
 
-const MAX_HISTORY = 12; // 12 samples at 5s = 60 seconds of history
+const MAX_HISTORY = UI_CONSTANTS.MAX_HISTORY_SAMPLES; // 12 samples at 5s = 60 seconds of history
 
 export default function StatusPage() {
   const [status, setStatus] = useState<StatusData | null>(null);
@@ -373,7 +277,7 @@ export default function StatusPage() {
                 <StatRow
                   label="Latest Block Age"
                   value={status.blocks.latest ? formatAge(status.blocks.latest.age) : 'N/A'}
-                  warning={status.blocks.latest && status.blocks.latest.age > 10}
+                  warning={status.blocks.latest && status.blocks.latest.age > STATUS_THRESHOLDS.BLOCK_FRESHNESS_SEC}
                 />
                 <StatRow label="Total Blocks" value={formatNumber(status.blocks.total)} />
                 <StatRow label="Block Range" value={`${status.blocks.min ?? 'N/A'} - ${status.blocks.max ?? 'N/A'}`} />
@@ -389,7 +293,7 @@ export default function StatusPage() {
                 <StatRow
                   label="Latest Milestone Age"
                   value={status.milestones.latest ? formatAge(status.milestones.latest.age) : 'N/A'}
-                  warning={status.milestones.latest && status.milestones.latest.age > 30}
+                  warning={status.milestones.latest && status.milestones.latest.age > STATUS_THRESHOLDS.MILESTONE_AGE_WARNING_SEC}
                 />
                 <StatRow label="Latest End Block" value={status.milestones.latest?.endBlock ?? 'N/A'} />
                 <StatRow label="Total Milestones" value={formatNumber(status.milestones.total)} />
@@ -409,8 +313,9 @@ export default function StatusPage() {
                       {(() => {
                         const blockDiff = BigInt(status.blocks.latest.blockNumber) - BigInt(status.milestones.latest.endBlock);
                         const isAhead = blockDiff > 0n;
+                        const absDiff = blockDiff > 0n ? blockDiff : -blockDiff;
                         return (
-                          <span className={blockDiff > 100n ? 'text-yellow-400' : 'text-green-400'}>
+                          <span className={absDiff > STATUS_THRESHOLDS.BLOCK_DIFF_WARNING ? 'text-yellow-400' : 'text-green-400'}>
                             Blocks {isAhead ? 'ahead' : 'behind'} milestones by {formatNumber(Math.abs(Number(blockDiff)))}
                           </span>
                         );
@@ -442,15 +347,15 @@ export default function StatusPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Block Freshness</span>
                   <StatusBadge
-                    ok={!status.blocks.latest || status.blocks.latest.age < 10}
-                    label={status.blocks.latest && status.blocks.latest.age > 10 ? 'Stale' : 'OK'}
+                    ok={!status.blocks.latest || status.blocks.latest.age < STATUS_THRESHOLDS.BLOCK_FRESHNESS_SEC}
+                    label={status.blocks.latest && status.blocks.latest.age > STATUS_THRESHOLDS.BLOCK_FRESHNESS_SEC ? 'Stale' : 'OK'}
                   />
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-400">Milestone Freshness</span>
                   <StatusBadge
-                    ok={!status.milestones.latest || status.milestones.latest.age < 30}
-                    label={status.milestones.latest && status.milestones.latest.age > 30 ? 'Stale' : 'OK'}
+                    ok={!status.milestones.latest || status.milestones.latest.age < STATUS_THRESHOLDS.MILESTONE_AGE_WARNING_SEC}
+                    label={status.milestones.latest && status.milestones.latest.age > STATUS_THRESHOLDS.MILESTONE_AGE_WARNING_SEC ? 'Stale' : 'OK'}
                   />
                 </div>
                 <div className="flex justify-between items-center">

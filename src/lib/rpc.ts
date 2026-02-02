@@ -1,6 +1,7 @@
 import { createPublicClient, http, webSocket, PublicClient, TransactionReceipt, numberToHex, hexToBigInt } from 'viem';
 import { polygon } from 'viem/chains';
 import { sleep } from './utils';
+import { RPC_RETRY_CONFIG } from './constants';
 
 // Re-export Block type for convenience
 export type { Block as ViemBlock } from 'viem';
@@ -73,8 +74,8 @@ interface RetryConfig {
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3, // Try each endpoint 3 times
-  delayMs: 500,  // 500ms between retry rounds
+  maxRetries: RPC_RETRY_CONFIG.MAX_RETRIES,
+  delayMs: RPC_RETRY_CONFIG.DELAY_MS,
 };
 
 export class RpcExhaustedError extends Error {
@@ -315,7 +316,7 @@ export class BlockSubscriptionManager {
   private unsubscribes: Map<string, () => void> = new Map();
   private callback: BlockCallback | null = null;
   private running = false;
-  private reconnectDelayMs = 1000;
+  private reconnectDelayMs = RPC_RETRY_CONFIG.RECONNECT_DELAY_MS;
   private lastBlockNumber: bigint = 0n;
 
   constructor(wsUrls: string[]) {
@@ -368,10 +369,10 @@ export class BlockSubscriptionManager {
         transport: webSocket(url, {
           reconnect: {
             attempts: Infinity, // Keep trying forever
-            delay: 1000,
+            delay: RPC_RETRY_CONFIG.RECONNECT_DELAY_MS,
           },
           keepAlive: {
-            interval: 10_000,
+            interval: RPC_RETRY_CONFIG.RECONNECT_INTERVAL_MS,
           },
         }),
       });

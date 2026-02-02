@@ -13,31 +13,39 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
+import { ChartTooltip, TooltipContent } from './ChartTooltip';
 import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
 import { formatPol } from '@/lib/utils';
 import {
   GWEI_PER_POL,
   CHART_COLOR_PALETTE,
   TIME_RANGE_BUCKETS,
-  TIME_RANGE_SECONDS,
+  UI_CONSTANTS,
   getAvailableBuckets,
   getTimeRangeSeconds,
 } from '@/lib/constants';
+import {
+  formatDateTimeLocal,
+  shouldShowDates,
+  formatTimeLabel as formatTimeLabelUtil,
+  formatTooltipTime as formatTooltipTimeUtil,
+  formatFullDateTime,
+} from '@/lib/dateUtils';
+import {
+  ChartMetric,
+  getSeriesOptionsForMetric,
+  getBlockRangeInfo,
+} from '@/lib/chartSeriesConfig';
+import { useChartData } from '@/hooks/useChartData';
 
 interface FullChartProps {
   title: string;
-  metric: 'gas' | 'finality' | 'mgas' | 'tps' | 'totalBaseFee' | 'totalPriorityFee' | 'totalFee' | 'blockLimit' | 'blockLimitUtilization' | 'borBlockTime' | 'heimdallBlockTime';
+  metric: ChartMetric;
   showCumulative?: boolean;
 }
 
 function getRecommendedBucket(range: string): string {
   return TIME_RANGE_BUCKETS[range] ?? '1h';
-}
-
-// Format datetime-local input value
-function formatDateTimeLocal(date: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function FullChart({ title, metric, showCumulative = false }: FullChartProps) {
@@ -49,14 +57,8 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   const [timeRange, setTimeRange] = useState('1D');
   const [bucketSize, setBucketSize] = useState('15m');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [data, setData] = useState<any[]>([]);
   const [isZoomed, setIsZoomed] = useState(false);
-  const [isDataComplete, setIsDataComplete] = useState(true);
   const timeRangeRef = useRef(timeRange);
-
-  // Store the requested time range bounds for proper chart scaling
-  const [timeRangeBounds, setTimeRangeBounds] = useState<{ from: number; to: number } | null>(null);
 
   // Custom date range state
   const now = new Date();
@@ -64,6 +66,14 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
   const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Use the chart data hook
+  const { data, isDataComplete, timeRangeBounds } = useChartData({
+    metric,
+    timeRange,
+    bucketSize,
+    appliedCustomRange,
+  });
 
   // Calculate available bucket sizes based on time range
   const availableBuckets = useMemo(() => {
@@ -83,11 +93,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
   // Tooltip state
   const [tooltipVisible, setTooltipVisible] = useState(false);
-  const [tooltipContent, setTooltipContent] = useState<{
-    time: string;
-    blockRange?: string;
-    values: { label: string; value: string; color: string }[];
-  } | null>(null);
+  const [tooltipContent, setTooltipContent] = useState<TooltipContent | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
   // Auto-update bucket when time range changes
@@ -108,128 +114,14 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     }
   };
 
-  // Helper to check if time range is longer than 1 day
-  const shouldShowDates = (range: string): boolean => {
-    if (range === 'Custom' && appliedCustomRange) {
-      return (appliedCustomRange.end - appliedCustomRange.start) > 86400;
-    }
-    const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL'];
-    return longRanges.includes(range);
-  };
+  // Helper wrapper functions that use the current timeRange/appliedCustomRange from refs
+  const getShowDates = (): boolean => shouldShowDates(timeRangeRef.current, appliedCustomRange);
+  const formatTimeLabel = (time: number): string => formatTimeLabelUtil(time, getShowDates());
+  const formatTooltipTime = (timestamp: number): string => formatTooltipTimeUtil(timestamp, getShowDates());
 
-  // Format time based on time range
-  const formatTimeLabel = (time: number): string => {
-    const date = new Date(time * 1000);
-    if (shouldShowDates(timeRangeRef.current)) {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  // Format tooltip time
-  const formatTooltipTime = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000);
-    if (shouldShowDates(timeRangeRef.current)) {
-      return date.toLocaleString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const [seriesOptions, setSeriesOptions] = useState(() => {
-    const colors = CHART_COLOR_PALETTE;
-    if (metric === 'gas') {
-      return [
-        { key: 'base', label: 'Base', enabled: true, color: colors[0] },
-        { key: 'medianPriority', label: 'Median Priority', enabled: true, color: colors[1] },
-        { key: 'minPriority', label: 'Min Priority', enabled: false, color: colors[2] },
-        { key: 'maxPriority', label: 'Max Priority', enabled: false, color: colors[3] },
-        { key: 'total', label: 'Total', enabled: false, color: colors[4] },
-      ];
-    }
-    if (metric === 'totalBaseFee' || metric === 'totalPriorityFee' || metric === 'totalFee') {
-      if (showCumulative) {
-        return [
-          { key: 'cumulative', label: 'Cumulative', enabled: true, color: colors[0] },
-          { key: 'perBucket', label: 'Per Period', enabled: false, color: colors[1] },
-        ];
-      }
-      return [
-        { key: 'perBucket', label: 'Per Period', enabled: true, color: colors[0] },
-      ];
-    }
-    if (metric === 'blockLimit' || metric === 'blockLimitUtilization') {
-      return [
-        { key: 'value', label: metric === 'blockLimit' ? 'Block Limit' : 'Utilization %', enabled: true, color: colors[0] },
-      ];
-    }
-    if (metric === 'mgas') {
-      return [
-        { key: 'value', label: 'MGAS/s', enabled: true, color: colors[0] },
-      ];
-    }
-    if (metric === 'tps') {
-      return [
-        { key: 'value', label: 'TPS', enabled: true, color: colors[0] },
-      ];
-    }
-    if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
-      return [
-        { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
-        { key: 'min', label: 'Min', enabled: false, color: colors[1] },
-        { key: 'max', label: 'Max', enabled: false, color: colors[2] },
-      ];
-    }
-    return [
-      { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
-      { key: 'min', label: 'Min', enabled: false, color: colors[1] },
-      { key: 'max', label: 'Max', enabled: false, color: colors[2] },
-    ];
-  });
-
-  // Format full datetime for tooltip
-  const formatFullDateTime = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString([], {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  };
-
-  // Get block range text for tooltip
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const getBlockRangeInfo = (dataPoint: any): { display: string; copyValue: string } | undefined => {
-    if (metric === 'borBlockTime' && dataPoint.blockStart !== undefined && dataPoint.blockEnd !== undefined) {
-      const start = dataPoint.blockStart;
-      const end = dataPoint.blockEnd;
-      // If start equals end (single block), just show and copy that block
-      if (start === end) {
-        return {
-          display: `Block ${start.toLocaleString()}`,
-          copyValue: String(start),
-        };
-      }
-      return {
-        display: `Blocks ${start.toLocaleString()} - ${end.toLocaleString()}`,
-        copyValue: `${start}-${end}`,
-      };
-    } else if (metric === 'heimdallBlockTime' && dataPoint.milestoneId !== undefined) {
-      return {
-        display: `Milestone #${dataPoint.milestoneId.toLocaleString()}`,
-        copyValue: String(dataPoint.milestoneId),
-      };
-    }
-    return undefined;
-  };
+  const [seriesOptions, setSeriesOptions] = useState(() =>
+    getSeriesOptionsForMetric(metric, showCumulative)
+  );
 
   // Current hovered data point for click handling
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -239,7 +131,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   const handleChartClick = useCallback(() => {
     if (!hoveredDataPointRef.current) return;
 
-    const blockInfo = getBlockRangeInfo(hoveredDataPointRef.current);
+    const blockInfo = getBlockRangeInfo(metric, hoveredDataPointRef.current);
     if (blockInfo) {
       navigator.clipboard.writeText(blockInfo.copyValue).then(() => {
         // Brief visual feedback - could be enhanced with a toast
@@ -306,7 +198,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       });
 
     // Build block range info
-    const blockInfo = getBlockRangeInfo(dataPoint);
+    const blockInfo = getBlockRangeInfo(metric, dataPoint);
 
     setTooltipContent({
       time: formatFullDateTime(timestamp),
@@ -316,17 +208,15 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
     // Position tooltip
     const containerRect = chartContainerRef.current.getBoundingClientRect();
-    let x = param.point.x + 15;
+    let x = param.point.x + UI_CONSTANTS.TOOLTIP_OFFSET;
     let y = param.point.y - 10;
 
     // Keep tooltip within bounds
-    const tooltipWidth = 220;
-    const tooltipHeight = 100;
-    if (x + tooltipWidth > containerRect.width) {
-      x = param.point.x - tooltipWidth - 15;
+    if (x + UI_CONSTANTS.TOOLTIP_WIDTH > containerRect.width) {
+      x = param.point.x - UI_CONSTANTS.TOOLTIP_WIDTH - UI_CONSTANTS.TOOLTIP_OFFSET;
     }
-    if (y + tooltipHeight > containerRect.height) {
-      y = containerRect.height - tooltipHeight;
+    if (y + UI_CONSTANTS.TOOLTIP_HEIGHT > containerRect.height) {
+      y = containerRect.height - UI_CONSTANTS.TOOLTIP_HEIGHT;
     }
     if (y < 0) y = 0;
 
@@ -334,58 +224,6 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     setTooltipVisible(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, metric, seriesOptions]);
-
-  const fetchData = useCallback(async () => {
-    // Guard: Don't fetch if Custom is selected but not yet applied
-    if (timeRange === 'Custom' && !appliedCustomRange) {
-      return; // Keep existing data visible while user enters dates
-    }
-
-    let fromTime: number;
-    let toTime: number;
-
-    if (timeRange === 'Custom' && appliedCustomRange) {
-      fromTime = appliedCustomRange.start;
-      toTime = appliedCustomRange.end;
-    } else if (timeRange === 'YTD') {
-      // Year-to-Date: from January 1st of current year to now
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      fromTime = Math.floor(startOfYear.getTime() / 1000);
-      toTime = Math.floor(Date.now() / 1000);
-    } else {
-      toTime = Math.floor(Date.now() / 1000);
-      const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
-      fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
-    }
-
-    // Store the requested time range for proper chart scaling
-    setTimeRangeBounds({ from: fromTime, to: toTime });
-
-    try {
-      const endpoint = metric === 'heimdallBlockTime'
-        ? '/api/milestone-chart-data'
-        : '/api/chart-data';
-      const response = await fetch(
-        `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
-      );
-      const json = await response.json();
-      setData(json.data || []);
-      // Check if we received all the data or hit the limit
-      if (json.pagination) {
-        setIsDataComplete(json.pagination.total <= json.pagination.limit);
-      } else {
-        setIsDataComplete(true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch chart data:', error);
-      setIsDataComplete(true);
-    }
-  }, [timeRange, bucketSize, appliedCustomRange, metric]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   // Create chart
   useEffect(() => {
@@ -693,37 +531,12 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           title="Scroll to zoom, drag to pan. Click to copy block range."
           onClick={handleChartClick}
         />
-        {tooltipVisible && tooltipContent && (
-          <div
-            ref={tooltipRef}
-            className="absolute pointer-events-none z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-sm transition-colors duration-200"
-            style={{
-              left: tooltipPosition.x,
-              top: tooltipPosition.y,
-              minWidth: '180px',
-            }}
-          >
-            <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-              {tooltipContent.time}
-            </div>
-            {tooltipContent.blockRange && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                {tooltipContent.blockRange}
-                <span className="ml-1 text-blue-500 dark:text-blue-400">(click to copy)</span>
-              </div>
-            )}
-            {tooltipContent.values.map((v, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: v.color }}
-                />
-                <span className="text-gray-600 dark:text-gray-300">{v.label}:</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">{v.value}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <ChartTooltip
+          ref={tooltipRef}
+          visible={tooltipVisible}
+          content={tooltipContent}
+          position={tooltipPosition}
+        />
       </div>
     </div>
   );

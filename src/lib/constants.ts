@@ -2,6 +2,30 @@
 export const GWEI_PER_POL = 1_000_000_000;
 export const GWEI = 1_000_000_000n;
 
+// UI Constants
+export const UI_CONSTANTS = {
+  TOOLTIP_WIDTH: 220,
+  TOOLTIP_HEIGHT: 100,
+  TOOLTIP_OFFSET: 15,
+  RING_BUFFER_SIZE: 30,
+  MAX_HISTORY_SAMPLES: 12,
+} as const;
+
+// RPC retry configuration
+export const RPC_RETRY_CONFIG = {
+  MAX_RETRIES: 3,
+  DELAY_MS: 500,
+  RECONNECT_DELAY_MS: 1000,
+  RECONNECT_INTERVAL_MS: 10000,
+} as const;
+
+// Status page thresholds
+export const STATUS_THRESHOLDS = {
+  BLOCK_FRESHNESS_SEC: 10,
+  MILESTONE_AGE_WARNING_SEC: 30,
+  BLOCK_DIFF_WARNING: 100n,
+} as const;
+
 // Gas utilization thresholds (target is 65%)
 export const GAS_THRESHOLDS = {
   TARGET: 65,

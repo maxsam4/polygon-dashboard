@@ -22,6 +22,12 @@ import {
   getAvailableBuckets,
   getTimeRangeSeconds,
 } from '@/lib/constants';
+import {
+  formatDateTimeLocal,
+  shouldShowDates,
+  formatTimeLabel as formatTimeLabelUtil,
+  formatTooltipTime as formatTooltipTimeUtil,
+} from '@/lib/dateUtils';
 
 // Available data series options
 const DATA_OPTIONS = [
@@ -51,11 +57,6 @@ interface CustomizableChartProps {
 
 function getRecommendedBucket(range: string): string {
   return TIME_RANGE_BUCKETS[range] ?? '1h';
-}
-
-function formatDateTimeLocal(date: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function getSeriesValue(d: ChartDataPoint, series: DataOptionValue, cumulativeBaseFee: number, cumulativePriorityFee: number): number {
@@ -158,34 +159,10 @@ export function CustomizableChart({
     }
   };
 
-  const shouldShowDates = (range: string): boolean => {
-    if (range === 'Custom' && appliedCustomRange) {
-      return (appliedCustomRange.end - appliedCustomRange.start) > 86400;
-    }
-    const longRanges = ['1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL'];
-    return longRanges.includes(range);
-  };
-
-  const formatTimeLabel = (time: number): string => {
-    const date = new Date(time * 1000);
-    if (shouldShowDates(timeRangeRef.current)) {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatTooltipTime = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000);
-    if (shouldShowDates(timeRangeRef.current)) {
-      return date.toLocaleString([], {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    }
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  // Helper wrapper functions that use the current timeRange/appliedCustomRange from refs
+  const getShowDates = (): boolean => shouldShowDates(timeRangeRef.current, appliedCustomRange);
+  const formatTimeLabel = (time: number): string => formatTimeLabelUtil(time, getShowDates());
+  const formatTooltipTime = (timestamp: number): string => formatTooltipTimeUtil(timestamp, getShowDates());
 
   const fetchData = useCallback(async () => {
     // Guard: Don't fetch if Custom is selected but not yet applied

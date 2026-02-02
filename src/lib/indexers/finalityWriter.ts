@@ -1,6 +1,7 @@
 import { query } from '../db';
 import { Milestone } from '../types';
 import { pushBlockUpdates } from '../liveStreamClient';
+import { UI_CONSTANTS } from '../constants';
 
 /**
  * Write finality data for all blocks in a milestone range to the block_finality table.
@@ -67,8 +68,7 @@ async function pushFinalityUpdatesToLiveStream(milestone: Milestone): Promise<vo
   // Get the approximate current block number from the milestone's end block
   // We only push updates for blocks within ~30 of the milestone's end block
   // since older blocks are evicted from the live-stream ring buffer
-  const RING_BUFFER_SIZE = 30;
-  const recentThreshold = milestone.endBlock - BigInt(RING_BUFFER_SIZE);
+  const recentThreshold = milestone.endBlock - BigInt(UI_CONSTANTS.RING_BUFFER_SIZE);
 
   const payloads = [];
   const finalizedAt = Math.floor(milestone.timestamp.getTime() / 1000);
