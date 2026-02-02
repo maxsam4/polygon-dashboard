@@ -31,24 +31,6 @@ export async function getLatestMilestone(): Promise<Milestone | null> {
   return row ? rowToMilestone(row) : null;
 }
 
-export async function getMilestoneById(id: bigint): Promise<Milestone | null> {
-  const row = await queryOne<MilestoneRow>(
-    `SELECT * FROM milestones WHERE milestone_id = $1`,
-    [id.toString()]
-  );
-  return row ? rowToMilestone(row) : null;
-}
-
-export async function getMilestoneForBlock(blockNumber: bigint): Promise<Milestone | null> {
-  const row = await queryOne<MilestoneRow>(
-    `SELECT * FROM milestones
-     WHERE start_block <= $1 AND end_block >= $1
-     ORDER BY milestone_id DESC LIMIT 1`,
-    [blockNumber.toString()]
-  );
-  return row ? rowToMilestone(row) : null;
-}
-
 export async function insertMilestone(milestone: Milestone): Promise<void> {
   await query(
     `INSERT INTO milestones (milestone_id, sequence_id, start_block, end_block, hash, proposer, timestamp)
@@ -104,102 +86,12 @@ export async function sequenceIdExists(sequenceId: number): Promise<boolean> {
   return row?.exists ?? false;
 }
 
-export async function getLowestMilestoneId(): Promise<bigint | null> {
-  const row = await queryOne<{ min: string }>(`SELECT MIN(milestone_id) as min FROM milestones`);
-  return row?.min ? BigInt(row.min) : null;
-}
-
-export async function getHighestMilestoneId(): Promise<bigint | null> {
-  const row = await queryOne<{ max: string }>(`SELECT MAX(milestone_id) as max FROM milestones`);
-  return row?.max ? BigInt(row.max) : null;
-}
-
-// Reconcile range - process up to 2000 blocks per run for faster catch-up
-const RECONCILE_RANGE = 2000;
-
 // Timestamp threshold - only process blocks newer than this to avoid compressed chunks
 // TimescaleDB compresses chunks older than ~2 weeks, so we process recent data first
 function getCompressionThreshold(): Date {
   const threshold = new Date();
   threshold.setDate(threshold.getDate() - 10); // 10 days ago
   return threshold;
-}
-
-// Single optimized reconciliation query
-// Uses direct UPDATE with subquery for better performance than ANY() array
-// Only processes recent (uncompressed) blocks - compressed chunks can't be efficiently updated
-// Finality data for blocks in compressed chunks is not tracked (acceptable data loss)
-export async function reconcileUnfinalizedBlocks(): Promise<number> {
-  const threshold = getCompressionThreshold();
-
-  // Only process recent blocks in uncompressed chunks
-  // TimescaleDB compressed chunks have a decompression limit that prevents bulk updates
-  // New blocks get finality via MilestonePoller; this handles any stragglers in uncompressed chunks
-  // IMPORTANT: timestamp filter must be in UPDATE clause to avoid scanning compressed chunks
-  const result = await query<{ count: string }>(
-    `WITH to_update AS (
-       SELECT block_number
-       FROM blocks
-       WHERE finalized = FALSE
-         AND timestamp >= $1
-       ORDER BY block_number DESC
-       LIMIT $2
-     ),
-     block_range AS (
-       SELECT MIN(block_number) as min_block, MAX(block_number) as max_block
-       FROM to_update
-     ),
-     updated AS (
-       UPDATE blocks b
-       SET
-         finalized = TRUE,
-         finalized_at = m.timestamp,
-         milestone_id = m.milestone_id,
-         time_to_finality_sec = EXTRACT(EPOCH FROM (m.timestamp - b.timestamp)),
-         updated_at = NOW()
-       FROM milestones m, block_range br
-       WHERE m.start_block <= br.max_block AND m.end_block >= br.min_block
-         AND b.block_number BETWEEN m.start_block AND m.end_block
-         AND b.finalized = FALSE
-         AND b.timestamp >= $1
-         AND b.block_number >= br.min_block AND b.block_number <= br.max_block
-       RETURNING 1
-     )
-     SELECT COUNT(*) as count FROM updated`,
-    [threshold, RECONCILE_RANGE]
-  );
-
-  return parseInt(result[0]?.count ?? '0', 10);
-}
-
-// Reconcile blocks for a specific milestone
-// Only processes recent blocks to enable chunk exclusion on compressed chunks
-export async function reconcileBlocksForMilestone(milestone: Milestone): Promise<number> {
-  const threshold = getCompressionThreshold();
-  const result = await query<{ count: string }>(
-    `WITH updated AS (
-      UPDATE blocks
-      SET
-        finalized = TRUE,
-        finalized_at = $1,
-        milestone_id = $2,
-        time_to_finality_sec = EXTRACT(EPOCH FROM ($1::timestamptz - timestamp)),
-        updated_at = NOW()
-      WHERE block_number BETWEEN $3 AND $4
-        AND finalized = FALSE
-        AND timestamp >= $5
-      RETURNING 1
-    )
-    SELECT COUNT(*) as count FROM updated`,
-    [
-      milestone.timestamp,
-      milestone.milestoneId.toString(),
-      milestone.startBlock.toString(),
-      milestone.endBlock.toString(),
-      threshold,
-    ]
-  );
-  return parseInt(result[0]?.count ?? '0', 10);
 }
 
 // Reconcile blocks for multiple milestones in a single query

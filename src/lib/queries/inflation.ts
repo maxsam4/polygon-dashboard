@@ -59,16 +59,6 @@ export async function insertInflationRate(rate: {
 }
 
 /**
- * Check if inflation_rates table has any data
- */
-export async function hasInflationRates(): Promise<boolean> {
-  const result = await queryOne<{ exists: boolean }>(
-    `SELECT EXISTS(SELECT 1 FROM inflation_rates) as exists`
-  );
-  return result?.exists ?? false;
-}
-
-/**
  * Get count of inflation rates
  */
 export async function getInflationRateCount(): Promise<number> {

@@ -67,34 +67,3 @@ export async function updateIndexerState(
   );
 }
 
-/**
- * Delete the cursor state for an indexer service.
- * Used for testing or resetting an indexer.
- */
-export async function deleteIndexerState(serviceName: string): Promise<void> {
-  await query(
-    `DELETE FROM indexer_state WHERE service_name = $1`,
-    [serviceName]
-  );
-}
-
-/**
- * Get all indexer states.
- */
-export async function getAllIndexerStates(): Promise<Array<{
-  serviceName: string;
-  blockNumber: bigint;
-  hash: string;
-  updatedAt: Date;
-}>> {
-  const rows = await query<IndexerStateRow>(
-    `SELECT * FROM indexer_state ORDER BY service_name`
-  );
-
-  return rows.map(row => ({
-    serviceName: row.service_name,
-    blockNumber: BigInt(row.last_block),
-    hash: row.last_hash,
-    updatedAt: row.updated_at,
-  }));
-}

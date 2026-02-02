@@ -1,14 +1,6 @@
-import { query, queryOne } from '../db';
+import { query } from '../db';
 import { Milestone } from '../types';
 import { pushBlockUpdates } from '../liveStreamClient';
-
-interface BlockFinalityRow {
-  block_number: string;
-  milestone_id: string;
-  finalized_at: Date;
-  time_to_finality_sec: number | null;
-  created_at: Date;
-}
 
 /**
  * Write finality data for all blocks in a milestone range to the block_finality table.
@@ -137,77 +129,4 @@ async function updateBlocksFinality(milestone: Milestone): Promise<number> {
   return parseInt(result[0]?.count ?? '0', 10);
 }
 
-/**
- * Get finality data for a block.
- */
-export async function getBlockFinality(blockNumber: bigint): Promise<{
-  blockNumber: bigint;
-  milestoneId: bigint;
-  finalizedAt: Date;
-  timeToFinalitySec: number | null;
-} | null> {
-  const row = await queryOne<BlockFinalityRow>(
-    `SELECT * FROM block_finality WHERE block_number = $1`,
-    [blockNumber.toString()]
-  );
-
-  if (!row) return null;
-
-  return {
-    blockNumber: BigInt(row.block_number),
-    milestoneId: BigInt(row.milestone_id),
-    finalizedAt: row.finalized_at,
-    timeToFinalitySec: row.time_to_finality_sec,
-  };
-}
-
-/**
- * Get finality stats for monitoring.
- */
-export async function getFinalityStats(): Promise<{
-  totalRecords: number;
-  withTimingData: number;
-  withoutTimingData: number;
-  avgTimeToFinality: number | null;
-  minBlock: bigint | null;
-  maxBlock: bigint | null;
-}> {
-  const result = await queryOne<{
-    total: string;
-    with_timing: string;
-    without_timing: string;
-    avg_ttf: number | null;
-    min_block: string | null;
-    max_block: string | null;
-  }>(
-    `SELECT
-       COUNT(*) as total,
-       COUNT(*) FILTER (WHERE time_to_finality_sec IS NOT NULL) as with_timing,
-       COUNT(*) FILTER (WHERE time_to_finality_sec IS NULL) as without_timing,
-       AVG(time_to_finality_sec) as avg_ttf,
-       MIN(block_number)::text as min_block,
-       MAX(block_number)::text as max_block
-     FROM block_finality`
-  );
-
-  if (!result) {
-    return {
-      totalRecords: 0,
-      withTimingData: 0,
-      withoutTimingData: 0,
-      avgTimeToFinality: null,
-      minBlock: null,
-      maxBlock: null,
-    };
-  }
-
-  return {
-    totalRecords: parseInt(result.total, 10),
-    withTimingData: parseInt(result.with_timing, 10),
-    withoutTimingData: parseInt(result.without_timing, 10),
-    avgTimeToFinality: result.avg_ttf,
-    minBlock: result.min_block ? BigInt(result.min_block) : null,
-    maxBlock: result.max_block ? BigInt(result.max_block) : null,
-  };
-}
 

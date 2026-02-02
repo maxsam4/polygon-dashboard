@@ -17,14 +17,10 @@ import { query, queryOne } from '@/lib/db';
 import { getTableStats } from '@/lib/queries/stats';
 import {
   getLatestMilestone,
-  getMilestoneById,
-  getMilestoneForBlock,
   insertMilestone,
   insertMilestonesBatch,
   getLowestSequenceId,
   getHighestSequenceId,
-  reconcileUnfinalizedBlocks,
-  reconcileBlocksForMilestone,
   reconcileBlocksForMilestones,
   getMilestonesPaginated,
 } from '@/lib/queries/milestones';
@@ -72,38 +68,6 @@ describe('milestones queries', () => {
         proposer: sampleMilestoneRow.proposer,
         timestamp: sampleMilestoneRow.timestamp,
       }));
-    });
-  });
-
-  describe('getMilestoneById', () => {
-    it('returns milestone when found', async () => {
-      mockQueryOne.mockResolvedValueOnce(sampleMilestoneRow);
-
-      const result = await getMilestoneById(50000100n);
-
-      expect(mockQueryOne.mock.calls[0][1]).toEqual(['50000100']);
-      expect(result?.milestoneId).toBe(50000100n);
-    });
-
-    it('returns null when not found', async () => {
-      mockQueryOne.mockResolvedValueOnce(null);
-
-      const result = await getMilestoneById(99999999n);
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('getMilestoneForBlock', () => {
-    it('finds milestone containing the block', async () => {
-      mockQueryOne.mockResolvedValueOnce(sampleMilestoneRow);
-
-      const result = await getMilestoneForBlock(50000050n);
-
-      expect(mockQueryOne.mock.calls[0][0]).toContain('start_block <= $1');
-      expect(mockQueryOne.mock.calls[0][0]).toContain('end_block >= $1');
-      expect(mockQueryOne.mock.calls[0][1]).toEqual(['50000050']);
-      expect(result?.startBlock).toBeLessThanOrEqual(50000050n);
     });
   });
 
@@ -186,59 +150,6 @@ describe('milestones queries', () => {
 
       expect(mockQueryOne.mock.calls[0][0]).toContain('MAX(sequence_id)');
       expect(result).toBe(100000);
-    });
-  });
-
-  describe('reconcileUnfinalizedBlocks', () => {
-    it('updates unfinalized blocks with milestone data', async () => {
-      mockQuery.mockResolvedValueOnce([{ count: '50' }]);
-
-      const result = await reconcileUnfinalizedBlocks();
-
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized = TRUE');
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized_at = m.timestamp');
-      expect(mockQuery.mock.calls[0][0]).toContain('milestone_id = m.milestone_id');
-      expect(result).toBe(50);
-    });
-
-    it('uses timestamp filter for chunk exclusion', async () => {
-      mockQuery.mockResolvedValueOnce([{ count: '0' }]);
-
-      await reconcileUnfinalizedBlocks();
-
-      expect(mockQuery.mock.calls[0][0]).toContain('timestamp >= $1');
-    });
-
-    it('limits blocks processed per run', async () => {
-      mockQuery.mockResolvedValueOnce([{ count: '100' }]);
-
-      await reconcileUnfinalizedBlocks();
-
-      expect(mockQuery.mock.calls[0][0]).toContain('LIMIT $2');
-    });
-  });
-
-  describe('reconcileBlocksForMilestone', () => {
-    it('updates blocks within milestone range', async () => {
-      mockQuery.mockResolvedValueOnce([{ count: '100' }]);
-      const milestone = createMilestone();
-
-      const result = await reconcileBlocksForMilestone(milestone);
-
-      expect(mockQuery).toHaveBeenCalledTimes(1);
-      expect(mockQuery.mock.calls[0][0]).toContain('block_number BETWEEN $3 AND $4');
-      expect(mockQuery.mock.calls[0][0]).toContain('finalized = FALSE');
-      expect(result).toBe(100);
-    });
-
-    it('uses timestamp filter for performance', async () => {
-      mockQuery.mockResolvedValueOnce([{ count: '0' }]);
-      const milestone = createMilestone();
-
-      await reconcileBlocksForMilestone(milestone);
-
-      expect(mockQuery.mock.calls[0][0]).toContain('timestamp >= $5');
     });
   });
 
