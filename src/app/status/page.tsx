@@ -51,6 +51,10 @@ interface StatusData {
     latestRate: string | null;
     lastChange: string | null;
   };
+  backfillTargets?: {
+    blockTarget: number;
+    milestoneTarget: number;
+  };
 }
 
 function formatAge(seconds: number): string {
@@ -470,44 +474,64 @@ export default function StatusPage() {
                 </div>
 
                 {/* Blocks Backfiller */}
-                <div className="py-2 border-b border-gray-700">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Block Backfiller</span>
-                    <span className={`font-mono ${status.blocks.min === '0' ? 'text-green-400' : 'text-blue-400'}`}>
-                      {formatSpeed(
-                        speeds.backfillerSpeed,
-                        'blk',
-                        status.blocks.min === '0',
-                        historyRef.current.length >= 2
+                {(() => {
+                  const blockTarget = status.backfillTargets?.blockTarget ?? 50000000;
+                  const isBlockBackfillFinished = status.blocks.min !== null &&
+                    parseInt(status.blocks.min, 10) <= blockTarget;
+                  const remainingBlocks = status.blocks.min
+                    ? Math.max(0, parseInt(status.blocks.min, 10) - blockTarget)
+                    : 0;
+                  return (
+                    <div className="py-2 border-b border-gray-700">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400">Block Backfiller</span>
+                        <span className={`font-mono ${isBlockBackfillFinished ? 'text-green-400' : 'text-blue-400'}`}>
+                          {formatSpeed(
+                            speeds.backfillerSpeed,
+                            'blk',
+                            isBlockBackfillFinished,
+                            historyRef.current.length >= 2
+                          )}
+                        </span>
+                      </div>
+                      {speeds.backfillerSpeed && status.blocks.min && !isBlockBackfillFinished && (
+                        <div className="text-gray-500 text-xs mt-1">
+                          ETA to target: {formatEta(remainingBlocks, speeds.backfillerSpeed)}
+                        </div>
                       )}
-                    </span>
-                  </div>
-                  {speeds.backfillerSpeed && status.blocks.min && status.blocks.min !== '0' && (
-                    <div className="text-gray-500 text-xs mt-1">
-                      ETA to block 0: {formatEta(parseInt(status.blocks.min, 10), speeds.backfillerSpeed)}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* Milestone Backfiller */}
-                <div className="py-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Milestone Backfiller</span>
-                    <span className={`font-mono ${status.milestones.minSeq === '1' ? 'text-green-400' : 'text-purple-400'}`}>
-                      {formatSpeed(
-                        speeds.milestoneBackfillerSpeed,
-                        'ms',
-                        status.milestones.minSeq === '1',
-                        historyRef.current.length >= 2
+                {(() => {
+                  const milestoneTarget = status.backfillTargets?.milestoneTarget ?? 1;
+                  const isMilestoneBackfillFinished = status.milestones.minSeq !== null &&
+                    parseInt(status.milestones.minSeq, 10) <= milestoneTarget;
+                  const remainingMilestones = status.milestones.minSeq
+                    ? Math.max(0, parseInt(status.milestones.minSeq, 10) - milestoneTarget)
+                    : 0;
+                  return (
+                    <div className="py-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-400">Milestone Backfiller</span>
+                        <span className={`font-mono ${isMilestoneBackfillFinished ? 'text-green-400' : 'text-purple-400'}`}>
+                          {formatSpeed(
+                            speeds.milestoneBackfillerSpeed,
+                            'ms',
+                            isMilestoneBackfillFinished,
+                            historyRef.current.length >= 2
+                          )}
+                        </span>
+                      </div>
+                      {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && !isMilestoneBackfillFinished && (
+                        <div className="text-gray-500 text-xs mt-1">
+                          ETA to target: {formatEta(remainingMilestones, speeds.milestoneBackfillerSpeed)}
+                        </div>
                       )}
-                    </span>
-                  </div>
-                  {speeds.milestoneBackfillerSpeed && status.milestones.minSeq && status.milestones.minSeq !== '1' && (
-                    <div className="text-gray-500 text-xs mt-1">
-                      ETA to seq 1: {formatEta(parseInt(status.milestones.minSeq, 10) - 1, speeds.milestoneBackfillerSpeed)}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
             </Card>
 

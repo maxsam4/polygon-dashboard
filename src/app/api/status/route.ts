@@ -116,6 +116,10 @@ export async function GET() {
         latestRate: inflation.latestInflation?.interestPerYearLog2 ?? null,
         lastChange: inflation.latestInflation?.blockTimestamp ?? null,
       },
+      backfillTargets: {
+        blockTarget: parseInt(process.env.BACKFILL_TO_BLOCK || '50000000', 10),
+        milestoneTarget: parseInt(process.env.MILESTONE_BACKFILL_TO_SEQUENCE || '1', 10),
+      },
     };
 
     return NextResponse.json(response);
