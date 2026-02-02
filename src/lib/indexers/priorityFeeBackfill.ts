@@ -332,6 +332,19 @@ export class HistoricalPriorityFeeBackfiller {
   private async runLoop(): Promise<void> {
     while (this.running) {
       try {
+        // Retry cursor initialization if not set (handles race condition at startup)
+        if (this.cursor === null) {
+          const stats = await getTableStats('blocks');
+          if (stats?.maxValue) {
+            this.cursor = stats.maxValue;
+            await initializeIndexerState(HISTORICAL_SERVICE_NAME, this.cursor, '0x0');
+            console.log(`[HistoricalPriorityFeeBackfiller] Initialized cursor at block #${this.cursor}`);
+          } else {
+            await sleep(this.delayMs * 10);  // Wait longer when no data
+            continue;
+          }
+        }
+
         // Find blocks missing priority fees in the current range
         const blocks = await this.getBlocksMissingPriorityFeesInRange();
 
