@@ -30,7 +30,7 @@ CREATE TABLE blocks (
   PRIMARY KEY (timestamp, block_number)
 );
 
-SELECT create_hypertable('blocks', 'timestamp', chunk_time_interval => INTERVAL '7 days');
+SELECT create_hypertable('blocks', 'timestamp', chunk_time_interval => INTERVAL '24 hours');
 
 CREATE INDEX idx_blocks_number ON blocks (block_number DESC);
 CREATE INDEX idx_blocks_pending ON blocks (block_number) WHERE finalized = FALSE;
