@@ -8,7 +8,8 @@ import { UI_CONSTANTS } from '../constants';
  * Also updates the blocks table for blocks that exist.
  *
  * Uses INSERT ... ON CONFLICT to handle idempotent writes.
- * Calculates time_to_finality_sec via JOIN with blocks table if block exists.
+ * Calculates time_to_finality_sec by first fetching block timestamps via indexed lookup,
+ * then batch inserting without JOIN (avoids full table scan).
  */
 export async function writeFinalityBatch(milestone: Milestone): Promise<number> {
   // Generate block numbers in range
@@ -17,22 +18,46 @@ export async function writeFinalityBatch(milestone: Milestone): Promise<number> 
     blockNumbers.push(b.toString());
   }
 
-  // Bulk insert into block_finality
-  // time_to_finality_sec computed via JOIN with blocks table if block exists
+  // Step 1: Get block timestamps using index-friendly ANY() query
+  // This uses the primary key index on block_number efficiently
+  const blocks = await query<{ block_number: string; timestamp: Date }>(
+    `SELECT block_number, timestamp FROM blocks WHERE block_number = ANY($1::bigint[])`,
+    [blockNumbers]
+  );
+
+  // Step 2: Build timestamp map for fast lookup
+  const timestampMap = new Map<string, Date>();
+  for (const block of blocks) {
+    timestampMap.set(block.block_number, block.timestamp);
+  }
+
+  // Step 3: Build arrays for batch insert
+  const milestoneTimestamp = milestone.timestamp;
+  const milestoneIdStr = milestone.milestoneId.toString();
+  const now = new Date();
+
+  const milestoneIds: string[] = [];
+  const finalizedAtArray: Date[] = [];
+  const timeToFinalityArray: (number | null)[] = [];
+  const createdAtArray: Date[] = [];
+
+  for (const bn of blockNumbers) {
+    const blockTs = timestampMap.get(bn);
+    const timeToFinality = blockTs
+      ? (milestoneTimestamp.getTime() - blockTs.getTime()) / 1000
+      : null;
+
+    milestoneIds.push(milestoneIdStr);
+    finalizedAtArray.push(milestoneTimestamp);
+    timeToFinalityArray.push(timeToFinality);
+    createdAtArray.push(now);
+  }
+
+  // Step 4: Batch insert without JOIN (uses unnest but no table scan)
   const result = await query<{ count: string }>(
     `WITH inserted AS (
       INSERT INTO block_finality (block_number, milestone_id, finalized_at, time_to_finality_sec, created_at)
-      SELECT
-        bn.block_number,
-        $1,
-        $2,
-        CASE WHEN b.timestamp IS NOT NULL
-             THEN EXTRACT(EPOCH FROM ($2::timestamptz - b.timestamp))
-             ELSE NULL
-        END,
-        NOW()
-      FROM unnest($3::bigint[]) AS bn(block_number)
-      LEFT JOIN blocks b ON b.block_number = bn.block_number
+      SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::timestamptz[], $4::real[], $5::timestamptz[])
       ON CONFLICT (block_number) DO UPDATE SET
         -- Only update time_to_finality_sec if it was NULL and we now have block data
         time_to_finality_sec = CASE
@@ -43,7 +68,7 @@ export async function writeFinalityBatch(milestone: Milestone): Promise<number> 
       RETURNING 1
     )
     SELECT COUNT(*) as count FROM inserted`,
-    [milestone.milestoneId.toString(), milestone.timestamp, blockNumbers]
+    [blockNumbers, milestoneIds, finalizedAtArray, timeToFinalityArray, createdAtArray]
   );
 
   const inserted = parseInt(result[0]?.count ?? '0', 10);
