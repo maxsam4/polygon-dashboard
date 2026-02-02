@@ -94,6 +94,26 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 | `reorged_blocks` | Reorg tracking |
 | `table_stats` | Cached min/max/count for performance |
 
+### Code Organization
+
+```
+src/
+├── app/                    # Next.js App Router pages and API routes
+│   ├── api/               # REST API endpoints
+│   └── status/            # Status dashboard page
+├── components/
+│   └── charts/            # Chart components (FullChart, ChartTooltip, ChartControls)
+├── hooks/
+│   └── useChartData.ts    # Chart data fetching hook
+└── lib/
+    ├── constants.ts       # Centralized constants (UI, RPC, thresholds)
+    ├── dateUtils.ts       # Date/time formatting utilities
+    ├── statusUtils.ts     # Status page utilities
+    ├── chartSeriesConfig.ts # Chart series configurations
+    ├── indexers/          # Background indexer classes
+    └── queries/           # Database query functions
+```
+
 ## Getting Started
 
 ### Prerequisites

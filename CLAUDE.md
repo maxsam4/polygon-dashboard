@@ -58,6 +58,26 @@ npm run test:coverage       # Generate coverage report
 
 Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
+## Code Organization
+
+### Shared Utilities
+
+- `src/lib/constants.ts` - Centralized constants (UI_CONSTANTS, RPC_RETRY_CONFIG, STATUS_THRESHOLDS, GWEI, bucket sizes)
+- `src/lib/dateUtils.ts` - Date/time formatting utilities for charts
+- `src/lib/statusUtils.ts` - Status page utilities (formatAge, formatSpeed, calculateSpeeds)
+- `src/lib/chartSeriesConfig.ts` - Chart series configurations and metric definitions
+- `src/lib/utils.ts` - General utilities (sleep, formatPol)
+
+### Hooks
+
+- `src/hooks/useChartData.ts` - Chart data fetching with time range handling
+
+### Components
+
+- `src/components/charts/ChartTooltip.tsx` - Reusable chart tooltip component
+- `src/components/charts/FullChart.tsx` - Main chart component
+- `src/components/charts/ChartControls.tsx` - Time range and bucket size controls
+
 ## Key Patterns
 
 - Timestamps: TIMESTAMPTZ
@@ -65,6 +85,8 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - Gwei values: DOUBLE PRECISION
 - Chunk interval: 24 hours (~43K rows/chunk) - keeps under TimescaleDB's 100K decompression limit
 - Compression: After 35 days - compressed chunks cannot be efficiently updated
+- Magic numbers go in `src/lib/constants.ts`
+- Shared formatting functions go in dedicated utility modules
 - Clean up dead code after you make changes
 - Keep CLAUDE.md and README.md up to date with all changes
 - Commit all your changes
