@@ -118,24 +118,37 @@ export class BlockBackfiller {
         const startBlockRaw = endBlock - BigInt(this.batchSize) + 1n;
         const startBlock = startBlockRaw < this.targetBlock ? this.targetBlock : startBlockRaw;
 
-        // Fetch blocks
-        const blockNumbers = this.range(startBlock, endBlock);
+        // Fetch blocks (include one extra block before startBlock for timestamp calculation)
+        const fetchStart = startBlock > 0n ? startBlock - 1n : startBlock;
+        const blockNumbers = this.range(fetchStart, endBlock);
         const rpc = getRpcClient();
         const blocksMap = await rpc.getBlocksWithTransactions(blockNumbers);
 
         // Sort blocks by number (ascending for processing)
-        const blocks = Array.from(blocksMap.values()).sort(
+        const allBlocks = Array.from(blocksMap.values()).sort(
           (a, b) => Number(a.number - b.number)
         );
 
-        if (blocks.length === 0) {
+        if (allBlocks.length === 0) {
           console.warn(`[${WORKER_NAME}] No blocks returned for range ${startBlock}-${endBlock}`);
           await sleep(this.delayMs);
           continue;
         }
 
+        // Separate the extra block (for timestamp) from blocks to insert
+        const prevBlockTimestamp = fetchStart < startBlock && allBlocks[0].number === fetchStart
+          ? allBlocks[0].timestamp
+          : undefined;
+        const blocks = allBlocks.filter(b => b.number >= startBlock);
+
+        if (blocks.length === 0) {
+          console.warn(`[${WORKER_NAME}] No blocks to insert for range ${startBlock}-${endBlock}`);
+          await sleep(this.delayMs);
+          continue;
+        }
+
         // Convert and insert blocks
-        const blockData = await this.convertBlocks(blocks);
+        const blockData = await this.convertBlocks(blocks, prevBlockTimestamp);
         await insertBlocksBatch(blockData);
 
         // Update cursor to the lowest block we just processed
@@ -174,6 +187,8 @@ export class BlockBackfiller {
 
   /**
    * Convert viem blocks to our Block type.
+   * @param blocks - Array of blocks to convert
+   * @param prevBlockTimestamp - Timestamp of the block before the first block (for block_time calculation)
    */
   private async convertBlocks(
     blocks: Array<{
@@ -190,15 +205,15 @@ export class BlockBackfiller {
         gasPrice?: bigint | null;
         gas: bigint;
       }>;
-    }>
+    }>,
+    prevBlockTimestamp?: bigint
   ): Promise<Block[]> {
     const result: Block[] = [];
 
-    // For backfilling, we need to fetch previous block timestamps
-    // We'll calculate block time based on the next block in our batch
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
-      const previousTimestamp = i > 0 ? blocks[i - 1].timestamp : undefined;
+      // Use previous block in batch, or the provided prevBlockTimestamp for first block
+      const previousTimestamp = i > 0 ? blocks[i - 1].timestamp : prevBlockTimestamp;
 
       const metrics = calculateBlockMetrics(
         {
