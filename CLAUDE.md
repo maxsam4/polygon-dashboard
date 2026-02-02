@@ -64,7 +64,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - Block numbers/milestone IDs: BigInt
 - Gwei values: DOUBLE PRECISION
 - Chunk interval: 24 hours (~43K rows/chunk) - keeps under TimescaleDB's 100K decompression limit
-- Compression: After 7 days - compressed chunks cannot be efficiently updated
+- Compression: After 35 days - compressed chunks cannot be efficiently updated
 - Clean up dead code after you make changes
 - Keep CLAUDE.md and README.md up to date with all changes
 - Commit all your changes
