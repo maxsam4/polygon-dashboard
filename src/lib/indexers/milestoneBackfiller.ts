@@ -137,9 +137,11 @@ export class MilestoneBackfiller {
         // Insert milestones into DB
         await insertMilestonesBatch(milestones);
 
-        // Write finality data for each milestone
-        for (const milestone of milestones) {
-          await writeFinalityBatch(milestone);
+        // Write finality data for each milestone (parallel with bounded concurrency)
+        const FINALITY_CONCURRENCY = 10;
+        for (let i = 0; i < milestones.length; i += FINALITY_CONCURRENCY) {
+          const chunk = milestones.slice(i, i + FINALITY_CONCURRENCY);
+          await Promise.all(chunk.map(m => writeFinalityBatch(m)));
         }
 
         // Update cursor to the lowest sequence_id we just processed
