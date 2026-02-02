@@ -33,6 +33,7 @@ docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 - `BlockIndexer` - Cursor-based forward indexer (gap-free, reorg-aware)
 - `BlockBackfiller` - Backwards indexer to target block
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes directly to `block_finality`
+- `MilestoneBackfiller` - Backwards indexer to target sequence_id, populates finality
 - `PriorityFeeBackfiller` - Async priority fee calculator via receipts
 
 ### Live-Stream Service

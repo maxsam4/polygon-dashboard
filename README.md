@@ -46,8 +46,8 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 │  - Home         │  - /blocks      │   - BlockIndexer (cursor-based, reorg)   │
 │  - Analytics    │  - /chart-data  │   - BlockBackfiller (reverse fill)       │
 │  - Blocks       │  - /milestones  │   - MilestoneIndexer (direct finality)   │
-│  - Milestones   │  - /export      │   - PriorityFeeBackfiller (async fees)   │
-│  - Export       │  - /workers     │                                          │
+│  - Milestones   │  - /export      │   - MilestoneBackfiller (reverse fill)   │
+│  - Export       │  - /workers     │   - PriorityFeeBackfiller (async fees)   │
 │                 │  - /stream (SSE)│                                          │
 └────────┬────────┴────────┬────────┴───────────┬──────────────────────────────┘
          │                 │                    │
@@ -80,6 +80,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - `BlockIndexer` - Cursor-based forward indexer with reorg detection and recovery
 - `BlockBackfiller` - Backwards indexer from lowest block to target
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes finality directly
+- `MilestoneBackfiller` - Backwards indexer from lowest sequence_id to target
 - `PriorityFeeBackfiller` - Async priority fee calculation via transaction receipts
 
 ### Database Tables
@@ -161,6 +162,8 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `HEIMDALL_API_URLS` | https://heimdall-api.polygon.technology,... | Heimdall API endpoints |
 | `BACKFILL_TO_BLOCK` | 50000000 | Target block for historical backfill |
 | `BACKFILL_BATCH_SIZE` | 100 | Blocks per backfill batch |
+| `MILESTONE_BACKFILL_TO_SEQUENCE` | 1 | Target sequence_id for milestone backfill |
+| `MILESTONE_BACKFILL_BATCH_SIZE` | 50 | Milestones per backfill batch |
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
 | `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
 | `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |
@@ -193,6 +196,8 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `HEIMDALL_API_URLS` | - | Comma-separated Heimdall endpoints |
 | `BACKFILL_TO_BLOCK` | 50000000 | Target block for backfill |
 | `BACKFILL_BATCH_SIZE` | 100 | Blocks per backfill batch |
+| `MILESTONE_BACKFILL_TO_SEQUENCE` | 1 | Target sequence_id for milestone backfill |
+| `MILESTONE_BACKFILL_BATCH_SIZE` | 50 | Milestones per backfill batch |
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
 | `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
 | `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |

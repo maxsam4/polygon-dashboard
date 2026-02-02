@@ -28,4 +28,6 @@ export const env = {
   backfillToBlock: getEnvVarInt('BACKFILL_TO_BLOCK', 50000000),
   backfillBatchSize: getEnvVarInt('BACKFILL_BATCH_SIZE', 100),
   rpcDelayMs: getEnvVarInt('RPC_DELAY_MS', 100),
+  milestoneBackfillToSequence: getEnvVarInt('MILESTONE_BACKFILL_TO_SEQUENCE', 1),
+  milestoneBackfillBatchSize: getEnvVarInt('MILESTONE_BACKFILL_BATCH_SIZE', 50),
 } as const;
