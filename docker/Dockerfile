@@ -12,6 +12,11 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Dummy env vars for build time (API routes need these to compile but don't use them at build)
+ENV POLYGON_RPC_URLS=https://placeholder.invalid
+ENV DATABASE_URL=postgresql://user:pass@localhost:5432/db
+
 RUN npm run build
 
 # Production
