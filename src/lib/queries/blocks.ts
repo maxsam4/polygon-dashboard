@@ -265,6 +265,15 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
   // Reconcile finality from block_finality table for newly inserted blocks
   // This handles the case where milestones arrived before blocks were indexed
   const blockNumbers = blocks.map(b => b.blockNumber.toString());
+
+  // Get min timestamp from blocks for TimescaleDB chunk pruning
+  // Without this, TimescaleDB scans ALL chunks (including compressed 7-day chunks)
+  // to find matching block_numbers, triggering decompression limit errors
+  const minTimestamp = blocks.reduce(
+    (min, b) => (b.timestamp < min ? b.timestamp : min),
+    blocks[0].timestamp
+  );
+
   await query(
     `UPDATE blocks b
      SET
@@ -276,8 +285,9 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
      FROM block_finality bf
      WHERE b.block_number = bf.block_number
        AND b.block_number = ANY($1::bigint[])
+       AND b.timestamp >= $2
        AND b.finalized = FALSE`,
-    [blockNumbers]
+    [blockNumbers, minTimestamp]
   );
 }
 
