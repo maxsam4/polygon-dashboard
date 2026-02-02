@@ -136,7 +136,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         // Brief visual feedback - could be enhanced with a toast
         const tooltip = tooltipRef.current;
         if (tooltip) {
-          tooltip.style.backgroundColor = theme === 'dark' ? '#065f46' : '#d1fae5';
+          tooltip.style.backgroundColor = theme === 'dark' ? 'rgba(0, 255, 65, 0.15)' : 'rgba(0, 143, 53, 0.15)';
           setTimeout(() => {
             if (tooltip) {
               tooltip.style.backgroundColor = '';
@@ -228,16 +228,18 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const isDark = theme === 'dark';
+
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: 300,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
+        textColor: isDark ? '#666666' : '#646464',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
-        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
+        vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+        horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
       },
       rightPriceScale: { visible: true, borderVisible: false },
       leftPriceScale: { visible: true, borderVisible: false },
@@ -301,13 +303,14 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   // Update theme colors
   useEffect(() => {
     if (chartRef.current) {
+      const isDark = theme === 'dark';
       chartRef.current.applyOptions({
         layout: {
-          textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
+          textColor: isDark ? '#666666' : '#646464',
         },
         grid: {
-          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
-          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
+          vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+          horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
         },
       });
     }
@@ -491,16 +494,16 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   };
 
   return (
-    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
-      {/* Gradient accent at top */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
+    <div className="terminal-card rounded-lg p-4 relative overflow-hidden">
+      {/* Accent bar at top */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-accent rounded-t-lg" />
       <div className="flex justify-between items-center mb-4 pt-1">
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <div className="flex items-center gap-3">
           {periodTotal !== null && (
             <div className="text-right">
-              <span className="text-sm text-text-secondary">Period Total: </span>
-              <span className="text-lg font-semibold text-polygon-purple">
+              <span className="text-sm text-muted">Period Total: </span>
+              <span className="text-lg font-semibold text-accent">
                 {formatFeeAsPol(periodTotal)} POL
               </span>
             </div>
@@ -508,7 +511,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           {isZoomed && (
             <button
               onClick={handleResetZoom}
-              className="px-3 py-1.5 text-xs btn-surface rounded-lg transition-all hover:shadow-glow-sm"
+              className="px-3 py-1.5 text-xs terminal-btn rounded transition-all"
               title="Reset zoom to show all data"
             >
               Reset Zoom

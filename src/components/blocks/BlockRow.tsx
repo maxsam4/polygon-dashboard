@@ -16,7 +16,7 @@ export function BlockRow({ block }: BlockRowProps) {
   const polygonscanUrl = `${EXTERNAL_URLS.POLYGONSCAN_BLOCK}${block.blockNumber}`;
 
   return (
-    <div className="border-b border-polygon-purple/10 dark:border-polygon-purple/20">
+    <div className="border-b border-accent/10">
       <div
         className="flex items-center justify-between p-3 hover:bg-surface-hover cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
@@ -26,15 +26,15 @@ export function BlockRow({ block }: BlockRowProps) {
             href={polygonscanUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-polygon-purple hover:text-polygon-magenta font-mono text-sm"
+            className="text-accent hover:text-accent-secondary font-mono text-sm"
             onClick={(e) => e.stopPropagation()}
           >
             #{block.blockNumber}
           </a>
-          <span className="text-text-secondary text-sm">{timeAgo}</span>
+          <span className="text-muted text-sm">{timeAgo}</span>
           <span className="text-sm text-foreground">{block.gasUsedPercent.toFixed(1)}%</span>
           <span className="text-sm font-medium text-foreground">{block.baseFeeGwei.toFixed(2)} gwei</span>
-          <span className="text-sm text-text-secondary">
+          <span className="text-sm text-muted">
             +{block.avgPriorityFeeGwei !== null ? block.avgPriorityFeeGwei.toFixed(2) : '...'}
           </span>
           <span className="text-sm text-foreground">{block.txCount} txs</span>
@@ -47,7 +47,7 @@ export function BlockRow({ block }: BlockRowProps) {
           )}
         </div>
         <svg
-          className={`w-4 h-4 transition-transform text-text-secondary ${expanded ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 transition-transform text-muted ${expanded ? 'rotate-180' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -57,31 +57,31 @@ export function BlockRow({ block }: BlockRowProps) {
       </div>
 
       {expanded && (
-        <div className="p-3 bg-surface dark:bg-surface-elevated text-sm grid grid-cols-2 md:grid-cols-4 gap-3 text-foreground">
+        <div className="p-3 bg-surface-elevated text-sm grid grid-cols-2 md:grid-cols-4 gap-3 text-foreground">
           <div>
-            <span className="text-text-secondary">Min Priority:</span>{' '}
+            <span className="text-muted">Min Priority:</span>{' '}
             {block.minPriorityFeeGwei.toFixed(4)} gwei
           </div>
           <div>
-            <span className="text-text-secondary">Max Priority:</span>{' '}
+            <span className="text-muted">Max Priority:</span>{' '}
             {block.maxPriorityFeeGwei.toFixed(4)} gwei
           </div>
           <div>
-            <span className="text-text-secondary">Gas Used:</span>{' '}
+            <span className="text-muted">Gas Used:</span>{' '}
             {formatLargeNumber(parseInt(block.gasUsed, 10))}
           </div>
           <div>
-            <span className="text-text-secondary">Gas Limit:</span>{' '}
+            <span className="text-muted">Gas Limit:</span>{' '}
             {formatLargeNumber(parseInt(block.gasLimit, 10))}
           </div>
           {block.totalBaseFeeGwei !== undefined && (
             <div>
-              <span className="text-text-secondary">Total Base Fee:</span>{' '}
+              <span className="text-muted">Total Base Fee:</span>{' '}
               {block.totalBaseFeeGwei.toFixed(4)} gwei
             </div>
           )}
           <div>
-            <span className="text-text-secondary">Total Priority Fee:</span>{' '}
+            <span className="text-muted">Total Priority Fee:</span>{' '}
             {block.totalPriorityFeeGwei !== undefined && block.totalPriorityFeeGwei !== null
               ? `${block.totalPriorityFeeGwei.toFixed(4)} gwei`
               : '...'}
@@ -91,7 +91,7 @@ export function BlockRow({ block }: BlockRowProps) {
               href={polygonscanUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-polygon-purple hover:text-polygon-magenta"
+              className="text-accent hover:text-accent-secondary"
             >
               View on Polygonscan
             </a>

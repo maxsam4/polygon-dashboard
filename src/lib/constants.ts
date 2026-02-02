@@ -60,13 +60,14 @@ export const WORKER_INTERVALS = {
   RECONCILER_INTERVAL_MS: 10 * 1000,
 } as const;
 
-// Chart colors - Polygon brand palette
+// Chart colors - Terminal theme
 export const CHART_COLORS = {
-  PRIMARY: '#7B3FE4',    // Polygon purple
-  SECONDARY: '#FF0066',  // Polygon magenta
-  SUCCESS: '#10B981',    // Emerald green
-  TERTIARY: '#2D64FF',   // Polygon blue
-  DANGER: '#EF4444',     // Red
+  PRIMARY: '#00FF41',    // Matrix green
+  SECONDARY: '#00D4FF',  // Cyan
+  SUCCESS: '#00FF41',    // Matrix green
+  TERTIARY: '#00D4FF',   // Cyan
+  DANGER: '#FF3B3B',     // Red
+  WARNING: '#FFB800',    // Amber
 } as const;
 
 export const CHART_COLOR_PALETTE = [

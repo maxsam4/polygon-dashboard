@@ -33,7 +33,7 @@ export const ChartTooltip = forwardRef<HTMLDivElement, ChartTooltipProps>(
     return (
       <div
         ref={ref}
-        className="absolute pointer-events-none z-10 glass-tooltip rounded-lg px-3 py-2 text-sm transition-colors duration-200"
+        className="absolute pointer-events-none z-10 glass-tooltip rounded px-3 py-2 text-sm transition-colors duration-200"
         style={{
           left: position.x,
           top: position.y,
@@ -44,9 +44,9 @@ export const ChartTooltip = forwardRef<HTMLDivElement, ChartTooltipProps>(
           {content.time}
         </div>
         {content.blockRange && (
-          <div className="text-xs text-text-secondary mb-1">
+          <div className="text-xs text-muted mb-1">
             {content.blockRange}
-            <span className="ml-1 text-polygon-purple">(click to copy)</span>
+            <span className="ml-1 text-accent">(click to copy)</span>
           </div>
         )}
         {content.values.map((v, i) => (
@@ -55,7 +55,7 @@ export const ChartTooltip = forwardRef<HTMLDivElement, ChartTooltipProps>(
               className="w-2 h-2 rounded-full ring-1 ring-white/20"
               style={{ backgroundColor: v.color }}
             />
-            <span className="text-text-secondary">{v.label}:</span>
+            <span className="text-muted">{v.label}:</span>
             <span className="font-medium text-foreground">{v.value}</span>
           </div>
         ))}

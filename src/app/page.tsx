@@ -137,28 +137,28 @@ export default function Home() {
             data={chartData.gas}
             currentValue={latestBlock?.baseFeeGwei?.toFixed(2) ?? '-'}
             unit="gwei"
-            color="#2962FF"
+            color="#00FF41"
           />
           <MiniChart
             title="Finality Time"
             data={chartData.finality}
             currentValue={lastFinalizedBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
             unit="sec"
-            color="#FF6D00"
+            color="#00D4FF"
           />
           <MiniChart
             title="MGAS/s"
             data={chartData.mgas}
             currentValue={latestBlock?.mgasPerSec?.toFixed(1) ?? '-'}
             unit=""
-            color="#00C853"
+            color="#00FF41"
           />
           <MiniChart
             title="TPS"
             data={chartData.tps}
             currentValue={lastCalculatedBlock?.tps?.toFixed(0) ?? '-'}
             unit=""
-            color="#AA00FF"
+            color="#00D4FF"
           />
         </div>
 

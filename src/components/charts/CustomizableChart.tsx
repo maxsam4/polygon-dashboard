@@ -217,16 +217,18 @@ export function CustomizableChart({
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const isDark = theme === 'dark';
+
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: 300,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+        textColor: isDark ? '#666666' : '#646464',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
-        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+        vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+        horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
       },
       rightPriceScale: { visible: dualAxis, borderVisible: false },
       leftPriceScale: { visible: true, borderVisible: false },
@@ -279,13 +281,14 @@ export function CustomizableChart({
   // Update theme colors
   useEffect(() => {
     if (chartRef.current) {
+      const isDark = theme === 'dark';
       chartRef.current.applyOptions({
         layout: {
-          textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+          textColor: isDark ? '#666666' : '#646464',
         },
         grid: {
-          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
-          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+          vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+          horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
         },
       });
     }
@@ -401,23 +404,23 @@ export function CustomizableChart({
             <div className="text-right text-sm">
               {cumulativeTotals.baseFee !== null && (
                 <div>
-                  <span className="text-text-secondary">Base Fee: </span>
-                  <span className="font-semibold text-polygon-purple">
+                  <span className="text-muted">Base Fee: </span>
+                  <span className="font-semibold text-accent">
                     {formatFeeAsPol(cumulativeTotals.baseFee)} POL
                   </span>
                 </div>
               )}
               {cumulativeTotals.priorityFee !== null && (
                 <div>
-                  <span className="text-text-secondary">Priority Fee: </span>
-                  <span className="font-semibold text-polygon-magenta">
+                  <span className="text-muted">Priority Fee: </span>
+                  <span className="font-semibold text-accent-secondary">
                     {formatFeeAsPol(cumulativeTotals.priorityFee)} POL
                   </span>
                 </div>
               )}
               {cumulativeTotals.totalFee !== null && (
                 <div>
-                  <span className="text-text-secondary">Total Fee: </span>
+                  <span className="text-muted">Total Fee: </span>
                   <span className="font-semibold text-success">
                     {formatFeeAsPol(cumulativeTotals.totalFee)} POL
                   </span>
@@ -444,7 +447,7 @@ export function CustomizableChart({
           <select
             value={leftSeries}
             onChange={(e) => setLeftSeries(e.target.value as DataOptionValue)}
-            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
           >
             {DATA_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -452,14 +455,14 @@ export function CustomizableChart({
               </option>
             ))}
           </select>
-          <span className="text-xs text-text-secondary">(Left axis)</span>
+          <span className="text-xs text-muted">(Left axis)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS.SECONDARY }} />
           <select
             value={rightSeries}
             onChange={(e) => setRightSeries(e.target.value as DataOptionValue)}
-            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+            className="text-sm rounded-lg px-2 py-1 bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
           >
             {DATA_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -467,7 +470,7 @@ export function CustomizableChart({
               </option>
             ))}
           </select>
-          <span className="text-xs text-text-secondary">({dualAxis ? 'Right' : 'Left'} axis)</span>
+          <span className="text-xs text-muted">({dualAxis ? 'Right' : 'Left'} axis)</span>
         </div>
       </div>
 

@@ -44,10 +44,10 @@ const ChartControlsComponent = ({
             <button
               key={range}
               onClick={() => onTimeRangeChange(range)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+              className={`px-2.5 py-1.5 rounded text-xs font-medium transition-all duration-150 ${
                 timeRange === range
                   ? 'btn-gradient-active'
-                  : 'btn-surface'
+                  : 'terminal-btn'
               }`}
             >
               {range}
@@ -58,7 +58,7 @@ const ChartControlsComponent = ({
         <select
           value={bucketSize}
           onChange={(e) => onBucketSizeChange(e.target.value)}
-          className="px-2.5 py-1.5 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 transition-all"
+          className="px-2.5 py-1.5 rounded bg-surface border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
         >
           {bucketsToShow.map((size) => (
             <option key={size} value={size}>
@@ -75,7 +75,7 @@ const ChartControlsComponent = ({
                   type="checkbox"
                   checked={option.enabled}
                   onChange={() => onSeriesToggle(option.key)}
-                  className="rounded border-polygon-purple/30 text-polygon-purple focus:ring-polygon-purple/50 bg-surface"
+                  className="rounded border-accent/30 text-accent focus:ring-accent/50 bg-surface"
                 />
                 {option.color && (
                   <span
@@ -83,7 +83,7 @@ const ChartControlsComponent = ({
                     style={{ backgroundColor: option.color }}
                   />
                 )}
-                <span className={`transition-colors ${option.enabled ? 'text-foreground' : 'text-text-secondary'} group-hover:text-foreground`}>
+                <span className={`transition-colors ${option.enabled ? 'text-foreground' : 'text-muted'} group-hover:text-foreground`}>
                   {option.label}
                 </span>
               </label>
@@ -93,28 +93,28 @@ const ChartControlsComponent = ({
       </div>
 
       {timeRange === 'Custom' && (
-        <div className="flex flex-wrap gap-3 items-center p-3 glass-card rounded-lg">
+        <div className="flex flex-wrap gap-3 items-center p-3 terminal-card rounded">
           <div className="flex items-center gap-2">
-            <label className="text-text-secondary">From:</label>
+            <label className="text-muted">From:</label>
             <input
               type="datetime-local"
               value={customStartTime}
               onChange={(e) => onCustomStartTimeChange(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+              className="px-2 py-1 rounded bg-surface border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-text-secondary">To:</label>
+            <label className="text-muted">To:</label>
             <input
               type="datetime-local"
               value={customEndTime}
               onChange={(e) => onCustomEndTimeChange(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+              className="px-2 py-1 rounded bg-surface border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
             />
           </div>
           <button
             onClick={onApplyCustomRange}
-            className="px-4 py-1.5 btn-gradient-active rounded-lg text-sm"
+            className="px-4 py-1.5 btn-gradient-active rounded text-sm"
           >
             Apply
           </button>

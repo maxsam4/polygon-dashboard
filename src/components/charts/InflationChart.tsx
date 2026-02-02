@@ -308,16 +308,18 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const isDark = theme === 'dark';
+
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: 300,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#d1d5db' : '#374151',
+        textColor: isDark ? '#666666' : '#646464',
       },
       grid: {
-        vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
-        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+        vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+        horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
       },
       leftPriceScale: {
         visible: metric === 'netInflation', // Show left axis for net inflation chart (annualized %)
@@ -357,11 +359,12 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   // Update theme
   useEffect(() => {
     if (chartRef.current) {
+      const isDark = theme === 'dark';
       chartRef.current.applyOptions({
-        layout: { textColor: theme === 'dark' ? '#d1d5db' : '#374151' },
+        layout: { textColor: isDark ? '#666666' : '#646464' },
         grid: {
-          vertLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
-          horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.15)' : 'rgba(123, 63, 228, 0.1)' },
+          vertLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
+          horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
         },
       });
     }
@@ -493,26 +496,26 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         <div className="mb-4 text-sm">
           <div className="grid grid-cols-2 gap-4 mb-2">
             <div>
-              <div className="text-text-secondary mb-1">Period Total:</div>
+              <div className="text-muted mb-1">Period Total:</div>
               <div className="font-semibold text-lg text-foreground">
                 {(periodTotals[metric === 'issuance' ? 'totalIssuance' : 'netInflation']).toLocaleString('en-US', {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 })} POL
               </div>
-              <div className="text-sm text-text-secondary/70">
+              <div className="text-sm text-muted/70">
                 ({(periodTotals[metric === 'issuance' ? 'issuancePercent' : 'netInflationPercent']).toFixed(4)}% of supply)
               </div>
             </div>
             <div>
-              <div className="text-text-secondary mb-1">Annualized:</div>
+              <div className="text-muted mb-1">Annualized:</div>
               <div className="font-semibold text-lg text-foreground">
                 {(periodTotals[metric === 'issuance' ? 'annualizedIssuance' : 'annualizedNetInflation']).toLocaleString('en-US', {
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 2,
                 })} POL/yr
               </div>
-              <div className="text-sm text-text-secondary/70">
+              <div className="text-sm text-muted/70">
                 ({(periodTotals[metric === 'issuance' ? 'annualizedIssuancePercent' : 'annualizedNetInflationPercent']).toFixed(2)}%/yr)
               </div>
             </div>

@@ -36,9 +36,9 @@ function StatCard({ label, value, subLabel }: { label: string; value: number | s
   return (
     <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
       <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
-      <div className="text-text-secondary text-sm pt-1">{label}</div>
+      <div className="text-muted text-sm pt-1">{label}</div>
       <div className="text-2xl font-bold text-foreground">{value}</div>
-      {subLabel && <div className="text-text-secondary/70 text-xs">{subLabel}</div>}
+      {subLabel && <div className="text-muted/70 text-xs">{subLabel}</div>}
     </div>
   );
 }
@@ -78,7 +78,7 @@ export default function ReorgsPage() {
         <h1 className="text-2xl font-bold text-foreground mb-6">Chain Reorganizations</h1>
 
         {loading && !stats && (
-          <div className="text-text-secondary">Loading...</div>
+          <div className="text-muted">Loading...</div>
         )}
 
         {error && (
@@ -99,19 +99,19 @@ export default function ReorgsPage() {
             {/* Reorgs Table */}
             <div className="glass-card-solid rounded-xl overflow-hidden relative">
               <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
-              <div className="px-4 py-3 border-b border-polygon-purple/10 dark:border-polygon-purple/20">
+              <div className="px-4 py-3 border-b border-accent/10 dark:border-accent/20">
                 <h2 className="text-lg font-semibold text-foreground">Recent Reorgs</h2>
               </div>
 
               {reorgs.length === 0 ? (
-                <div className="px-4 py-8 text-center text-text-secondary">
+                <div className="px-4 py-8 text-center text-muted">
                   No chain reorganizations detected
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="text-text-secondary text-sm border-b border-polygon-purple/10 dark:border-polygon-purple/15">
+                      <tr className="text-muted text-sm border-b border-accent/10 dark:border-accent/15">
                         <th className="px-4 py-3 text-left font-medium">Block</th>
                         <th className="px-4 py-3 text-left font-medium">Block Time</th>
                         <th className="px-4 py-3 text-left font-medium">Original Hash</th>
@@ -122,21 +122,21 @@ export default function ReorgsPage() {
                     </thead>
                     <tbody>
                       {reorgs.map((reorg) => (
-                        <tr key={reorg.id} className="border-b border-polygon-purple/10 last:border-0 hover:bg-surface-hover transition-colors">
+                        <tr key={reorg.id} className="border-b border-accent/10 last:border-0 hover:bg-surface-hover transition-colors">
                           <td className="px-4 py-3">
-                            <span className="text-polygon-purple font-mono">
+                            <span className="text-accent font-mono">
                               #{reorg.blockNumber}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-foreground">
                             {new Date(reorg.timestamp).toLocaleString()}
                           </td>
-                          <td className="px-4 py-3 text-text-secondary font-mono text-sm">
+                          <td className="px-4 py-3 text-muted font-mono text-sm">
                             <span title={reorg.blockHash}>
                               {truncateHash(reorg.blockHash)}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-text-secondary font-mono text-sm">
+                          <td className="px-4 py-3 text-muted font-mono text-sm">
                             {reorg.replacedByHash ? (
                               <span title={reorg.replacedByHash} className="text-success">
                                 {truncateHash(reorg.replacedByHash)}
@@ -145,10 +145,10 @@ export default function ReorgsPage() {
                               '-'
                             )}
                           </td>
-                          <td className="px-4 py-3 text-text-secondary">
+                          <td className="px-4 py-3 text-muted">
                             {formatTimeAgo(reorg.reorgedAt)}
                           </td>
-                          <td className="px-4 py-3 text-text-secondary">
+                          <td className="px-4 py-3 text-muted">
                             {reorg.reason || 'chain reorg'}
                           </td>
                         </tr>
@@ -163,7 +163,7 @@ export default function ReorgsPage() {
             <div className="mt-6 glass-card-solid rounded-xl p-4 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
               <h3 className="text-foreground font-semibold mb-2 pt-1">About Chain Reorganizations</h3>
-              <p className="text-text-secondary text-sm">
+              <p className="text-muted text-sm">
                 A chain reorganization (reorg) occurs when the canonical chain changes due to a competing
                 block being accepted. This typically happens when multiple validators propose blocks at
                 similar times, and the network eventually converges on a single chain. The blocks shown

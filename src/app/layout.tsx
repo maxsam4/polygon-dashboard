@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
+import { JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/components/ThemeProvider';
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -37,8 +44,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="font-sans bg-background text-foreground min-h-screen">
+    <html lang="en" suppressHydrationWarning className={jetbrainsMono.variable}>
+      <body className="font-mono bg-background text-foreground min-h-screen">
         <ThemeProvider>
           {children}
         </ThemeProvider>

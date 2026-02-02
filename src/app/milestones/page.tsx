@@ -77,23 +77,23 @@ export default function MilestonesPage() {
         {/* Summary stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-purple" />
-            <div className="text-sm text-text-secondary pt-1">Total Milestones</div>
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-accent" />
+            <div className="text-sm text-muted pt-1">Total Milestones</div>
             <div className="text-2xl font-bold text-foreground">{pagination?.total.toLocaleString() ?? '-'}</div>
           </div>
           <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-magenta" />
-            <div className="text-sm text-text-secondary pt-1">Blocks Expected (page)</div>
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-accent-secondary" />
+            <div className="text-sm text-muted pt-1">Blocks Expected (page)</div>
             <div className="text-2xl font-bold text-foreground">{totalBlocksExpected.toLocaleString()}</div>
           </div>
           <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-polygon-blue" />
-            <div className="text-sm text-text-secondary pt-1">Blocks In DB (page)</div>
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-accent" />
+            <div className="text-sm text-muted pt-1">Blocks In DB (page)</div>
             <div className="text-2xl font-bold text-foreground">{totalBlocksInDb.toLocaleString()}</div>
           </div>
           <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-0.5 gradient-polygon" />
-            <div className="text-sm text-text-secondary pt-1">Coverage (page)</div>
+            <div className="text-sm text-muted pt-1">Coverage (page)</div>
             <div className={`text-2xl font-bold ${overallCoverage === 100 ? 'text-success' : 'text-warning'}`}>
               {overallCoverage.toFixed(1)}%
             </div>
@@ -103,11 +103,11 @@ export default function MilestonesPage() {
         {/* Controls */}
         <div className="flex flex-wrap gap-4 mb-6 items-center">
           <div className="flex gap-2 items-center">
-            <span className="text-sm text-text-secondary">Per page:</span>
+            <span className="text-sm text-muted">Per page:</span>
             <select
               value={milestonesPerPage}
               onChange={(e) => handleMilestonesPerPageChange(parseInt(e.target.value, 10))}
-              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
             >
               {MILESTONES_PER_PAGE_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>
@@ -117,7 +117,7 @@ export default function MilestonesPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-text-secondary">Loading...</div>
+          <div className="text-center py-8 text-muted">Loading...</div>
         ) : (
           <>
             <MilestoneTable milestones={milestones} />
@@ -162,7 +162,7 @@ export default function MilestonesPage() {
                     onChange={(e) => setGoToPage(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleGoToPage()}
                     placeholder="Page #"
-                    className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 w-20"
+                    className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 w-20"
                   />
                   <button
                     onClick={handleGoToPage}

@@ -85,14 +85,14 @@ function InfoRow({ label, value, copyable = false }: { label: string; value: Rea
   };
 
   return (
-    <div className="flex flex-wrap justify-between py-2 border-b border-polygon-purple/10 dark:border-polygon-purple/20 last:border-0">
-      <span className="text-text-secondary">{label}</span>
+    <div className="flex flex-wrap justify-between py-2 border-b border-accent/10 dark:border-accent/20 last:border-0">
+      <span className="text-muted">{label}</span>
       <span className="text-foreground font-mono text-sm flex items-center gap-2">
         {value}
         {copyable && typeof value === 'string' && (
           <button
             onClick={handleCopy}
-            className="text-text-secondary/70 hover:text-polygon-purple"
+            className="text-muted/70 hover:text-accent"
             title="Copy to clipboard"
           >
             {copied ? '✓' : '⧉'}
@@ -140,7 +140,7 @@ export default function BlockDetailsPage() {
       <div className="min-h-screen bg-background">
         <Nav />
         <main className="w-full px-4 py-6">
-          <div className="text-center py-8 text-text-secondary">Loading block details...</div>
+          <div className="text-center py-8 text-muted">Loading block details...</div>
         </main>
       </div>
     );
@@ -153,7 +153,7 @@ export default function BlockDetailsPage() {
         <main className="w-full px-4 py-6">
           <div className="text-center py-8 text-danger">{error || 'Failed to load block'}</div>
           <div className="text-center">
-            <Link href="/blocks" className="text-polygon-purple hover:underline">
+            <Link href="/blocks" className="text-accent hover:underline">
               Back to Blocks
             </Link>
           </div>
@@ -177,7 +177,7 @@ export default function BlockDetailsPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/blocks"
-              className="text-polygon-purple hover:text-polygon-magenta flex items-center gap-1"
+              className="text-accent hover:text-accent-secondary flex items-center gap-1"
             >
               ← Blocks
             </Link>
@@ -210,7 +210,7 @@ export default function BlockDetailsPage() {
         </div>
 
         {/* Timestamp info */}
-        <div className="text-text-secondary mb-6">
+        <div className="text-muted mb-6">
           {formatTimestamp(block.timestamp)} ({getTimeAgo(block.timestamp)})
         </div>
 
@@ -275,22 +275,22 @@ export default function BlockDetailsPage() {
         {/* Fee Details */}
         <Card title="Priority Fee Details">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-polygon-purple/10">
-              <div className="text-sm text-text-secondary">Min</div>
+            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-accent/10">
+              <div className="text-sm text-muted">Min</div>
               <div className="font-mono text-foreground">{block.minPriorityFeeGwei.toFixed(2)} Gwei</div>
             </div>
-            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-polygon-purple/10">
-              <div className="text-sm text-text-secondary">Avg</div>
+            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-accent/10">
+              <div className="text-sm text-muted">Avg</div>
               <div className="font-mono text-foreground">
                 {block.avgPriorityFeeGwei !== null ? `${block.avgPriorityFeeGwei.toFixed(2)} Gwei` : '...'}
               </div>
             </div>
-            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-polygon-purple/10">
-              <div className="text-sm text-text-secondary">Median</div>
+            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-accent/10">
+              <div className="text-sm text-muted">Median</div>
               <div className="font-mono text-foreground">{block.medianPriorityFeeGwei.toFixed(2)} Gwei</div>
             </div>
-            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-polygon-purple/10">
-              <div className="text-sm text-text-secondary">Max</div>
+            <div className="text-center p-3 bg-surface dark:bg-surface-elevated rounded-lg border border-accent/10">
+              <div className="text-sm text-muted">Max</div>
               <div className="font-mono text-foreground">{block.maxPriorityFeeGwei.toFixed(2)} Gwei</div>
             </div>
           </div>
@@ -302,7 +302,7 @@ export default function BlockDetailsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-polygon-purple/10 dark:border-polygon-purple/20 text-left text-text-secondary">
+                  <tr className="border-b border-accent/10 dark:border-accent/20 text-left text-muted">
                     <th className="px-3 py-2 font-medium">#</th>
                     <th className="px-3 py-2 font-medium">Hash</th>
                     <th className="px-3 py-2 font-medium">From</th>
@@ -315,7 +315,7 @@ export default function BlockDetailsPage() {
                 <tbody>
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center text-text-secondary">
+                      <td colSpan={7} className="px-3 py-8 text-center text-muted">
                         No transactions in this block
                       </td>
                     </tr>
@@ -323,15 +323,15 @@ export default function BlockDetailsPage() {
                     transactions.map((tx, idx) => (
                       <tr
                         key={tx.hash}
-                        className="border-b border-polygon-purple/10 last:border-0 hover:bg-surface-hover transition-colors"
+                        className="border-b border-accent/10 last:border-0 hover:bg-surface-hover transition-colors"
                       >
-                        <td className="px-3 py-2 text-text-secondary">{tx.transactionIndex ?? idx}</td>
+                        <td className="px-3 py-2 text-muted">{tx.transactionIndex ?? idx}</td>
                         <td className="px-3 py-2 font-mono">
                           <a
                             href={`${EXTERNAL_URLS.POLYGONSCAN_TX}${tx.hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-polygon-purple hover:text-polygon-magenta"
+                            className="text-accent hover:text-accent-secondary"
                           >
                             {truncateHash(tx.hash)}
                           </a>
@@ -341,7 +341,7 @@ export default function BlockDetailsPage() {
                             href={`${EXTERNAL_URLS.POLYGONSCAN_ADDRESS}${tx.from}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-polygon-purple hover:text-polygon-magenta"
+                            className="text-accent hover:text-accent-secondary"
                           >
                             {truncateAddress(tx.from)}
                           </a>
@@ -352,12 +352,12 @@ export default function BlockDetailsPage() {
                               href={`${EXTERNAL_URLS.POLYGONSCAN_ADDRESS}${tx.to}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-polygon-purple hover:text-polygon-magenta"
+                              className="text-accent hover:text-accent-secondary"
                             >
                               {truncateAddress(tx.to)}
                             </a>
                           ) : (
-                            <span className="text-polygon-magenta">Contract Creation</span>
+                            <span className="text-accent-secondary">Contract Creation</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-foreground">
@@ -372,7 +372,7 @@ export default function BlockDetailsPage() {
                           ) : tx.status === 'reverted' ? (
                             <span className="text-danger" title="Reverted">✗</span>
                           ) : (
-                            <span className="text-text-secondary">-</span>
+                            <span className="text-muted">-</span>
                           )}
                         </td>
                       </tr>

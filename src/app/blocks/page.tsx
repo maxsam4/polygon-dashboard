@@ -111,7 +111,7 @@ export default function BlocksPage() {
               value={jumpToBlock}
               onChange={(e) => setJumpToBlock(e.target.value)}
               placeholder="Block number"
-              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 w-32"
+              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 w-32"
             />
             <button
               onClick={handleJumpToBlock}
@@ -121,11 +121,11 @@ export default function BlocksPage() {
             </button>
           </div>
           <div className="flex gap-2 items-center">
-            <span className="text-sm text-text-secondary">Blocks per page:</span>
+            <span className="text-sm text-muted">Blocks per page:</span>
             <select
               value={blocksPerPage}
               onChange={(e) => handleBlocksPerPageChange(parseInt(e.target.value, 10))}
-              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50"
+              className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
             >
               {BLOCKS_PER_PAGE_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>
@@ -135,7 +135,7 @@ export default function BlocksPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-text-secondary">Loading...</div>
+          <div className="text-center py-8 text-muted">Loading...</div>
         ) : (
           <>
             <BlockTable blocks={blocks} title="Historic Blocks" />
@@ -180,7 +180,7 @@ export default function BlocksPage() {
                     onChange={(e) => setGoToPage(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleGoToPage()}
                     placeholder="Page #"
-                    className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-polygon-purple/20 text-foreground focus:outline-none focus:ring-2 focus:ring-polygon-purple/50 w-20"
+                    className="px-3 py-2 rounded-lg bg-surface dark:bg-surface-elevated border border-accent/20 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 w-20"
                   />
                   <button
                     onClick={handleGoToPage}

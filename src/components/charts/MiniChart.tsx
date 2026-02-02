@@ -26,7 +26,15 @@ interface MiniChartProps {
   color?: string;
 }
 
-export function MiniChart({ title, data, series, currentValue, unit, color = '#7B3FE4' }: MiniChartProps) {
+// Terminal theme chart colors
+const CHART_COLORS = {
+  gas: '#00FF41',      // Matrix green
+  finality: '#00D4FF', // Cyan
+  mgas: '#00FF41',     // Matrix green
+  tps: '#00D4FF',      // Cyan
+};
+
+export function MiniChart({ title, data, series, currentValue, unit, color }: MiniChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRefs = useRef<ISeriesApi<'Line'>[]>([]);
@@ -34,6 +42,14 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
   const { theme } = useTheme();
   const [hoveredBlock, setHoveredBlock] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Determine chart color based on title or prop
+  const chartColor = color || (
+    title.toLowerCase().includes('gas') ? CHART_COLORS.gas :
+    title.toLowerCase().includes('finality') ? CHART_COLORS.finality :
+    title.toLowerCase().includes('mgas') ? CHART_COLORS.mgas :
+    CHART_COLORS.tps
+  );
 
   const handleChartClick = () => {
     if (hoveredBlock !== null) {
@@ -46,16 +62,18 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const isDark = theme === 'dark';
+
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: 180,
       layout: {
         background: { color: 'transparent' },
-        textColor: theme === 'dark' ? '#A8A2B6' : '#6B6280',
+        textColor: isDark ? '#666666' : '#646464',
       },
       grid: {
         vertLines: { visible: false },
-        horzLines: { color: theme === 'dark' ? 'rgba(123, 63, 228, 0.1)' : 'rgba(123, 63, 228, 0.08)' },
+        horzLines: { color: isDark ? 'rgba(0, 255, 65, 0.06)' : 'rgba(0, 143, 53, 0.08)' },
       },
       rightPriceScale: {
         borderVisible: false,
@@ -73,8 +91,8 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
         },
       },
       crosshair: {
-        vertLine: { visible: true, labelVisible: false },
-        horzLine: { visible: true, labelVisible: true },
+        vertLine: { visible: true, labelVisible: false, color: isDark ? 'rgba(0, 255, 65, 0.3)' : 'rgba(0, 143, 53, 0.3)' },
+        horzLine: { visible: true, labelVisible: true, color: isDark ? 'rgba(0, 255, 65, 0.3)' : 'rgba(0, 143, 53, 0.3)' },
       },
       handleScale: false,
       handleScroll: false,
@@ -105,7 +123,7 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [theme, color]);
+  }, [theme, chartColor]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -115,7 +133,7 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
     seriesRefs.current = [];
 
     // Determine which data to use
-    const allSeries: SeriesData[] = series || (data ? [{ data, color }] : []);
+    const allSeries: SeriesData[] = series || (data ? [{ data, color: chartColor }] : []);
     if (allSeries.length === 0) return;
 
     // Build block number map for tick formatting from first series
@@ -131,7 +149,7 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
     // Create series for each data set
     allSeries.forEach((s) => {
       const lineSeries = chartRef.current!.addSeries(LineSeries, {
-        color: s.color,
+        color: s.color || chartColor,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
@@ -146,20 +164,20 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
     });
 
     chartRef.current.timeScale().fitContent();
-  }, [data, series, color]);
+  }, [data, series, chartColor]);
 
   return (
-    <div className="glass-card-solid rounded-xl p-4 relative overflow-hidden">
+    <div className="terminal-card rounded-lg p-4 relative overflow-hidden">
       {/* Colored accent bar at top */}
       <div
-        className="accent-bar"
-        style={{ background: `linear-gradient(to right, ${color}, ${color}aa)` }}
+        className="absolute top-0 left-0 right-0 h-0.5 rounded-t-lg"
+        style={{ background: chartColor }}
       />
       <div className="flex justify-between items-start mb-2 pt-1">
-        <h3 className="text-sm font-medium text-text-secondary">{title}</h3>
+        <h3 className="text-sm font-medium text-muted">{title}</h3>
         <div className="text-right">
-          <span className="text-xl font-bold" style={{ color }}>{currentValue}</span>
-          <span className="text-sm text-text-secondary ml-1">{unit}</span>
+          <span className="text-xl font-bold" style={{ color: chartColor }}>{currentValue}</span>
+          <span className="text-sm text-muted ml-1">{unit}</span>
         </div>
       </div>
       <div
@@ -170,11 +188,11 @@ export function MiniChart({ title, data, series, currentValue, unit, color = '#7
       <div className="text-xs mt-1 flex justify-between items-center h-4">
         {hoveredBlock !== null ? (
           <>
-            <span className="text-text-secondary">Block: {hoveredBlock.toLocaleString()}</span>
+            <span className="text-muted">Block: {hoveredBlock.toLocaleString()}</span>
             {copied ? (
               <span className="text-success">Copied!</span>
             ) : (
-              <span className="text-polygon-purple/60">Click to copy</span>
+              <span className="text-accent/60">Click to copy</span>
             )}
           </>
         ) : (
