@@ -76,18 +76,18 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   </td>
                   <td className="px-3 py-2 text-right font-medium text-foreground">{block.baseFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.minPriorityFeeGwei.toFixed(2) : <span className="text-muted/60">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.minPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.medianPriorityFeeGwei.toFixed(2) : <span className="text-muted/60">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.medianPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.maxPriorityFeeGwei.toFixed(2) : <span className="text-muted/60">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.maxPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
                   </td>
                   <td className="px-3 py-2 text-right">{formatGweiToPol(block.totalBaseFeeGwei)}</td>
                   <td className="px-3 py-2 text-right">{formatGweiToPol(block.totalPriorityFeeGwei)}</td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.txCount : <span className="text-muted/60">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.txCount : <span className="text-muted italic">calculating</span>}
                   </td>
                   <td className="px-3 py-2 text-right">{block.mgasPerSec?.toFixed(1) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>

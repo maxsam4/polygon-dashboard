@@ -233,3 +233,14 @@ body {
     color: rgb(var(--muted));
   }
 }
+
+/* Hide TradingView watermark in lightweight-charts */
+.tv-lightweight-charts a[href*="tradingview"],
+a[href*="tradingview.com"][target="_blank"] {
+  display: none !important;
+}
+
+/* Alternative selector for the watermark logo */
+[class*="chart"] a[target="_blank"][href*="tradingview"] {
+  display: none !important;
+}

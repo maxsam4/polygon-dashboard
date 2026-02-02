@@ -79,12 +79,12 @@ export function getGasUtilizationColor(percent: number): string {
   const { GREEN_MIN, GREEN_MAX, YELLOW_MIN, YELLOW_MAX } = GAS_THRESHOLDS;
 
   if (percent > YELLOW_MAX || percent < YELLOW_MIN) {
-    return 'bg-red-500';
+    return 'bg-danger';
   }
   if (percent > GREEN_MAX || percent < GREEN_MIN) {
-    return 'bg-yellow-500';
+    return 'bg-warning';
   }
-  return 'bg-green-500';
+  return 'bg-success';
 }
 
 /**
