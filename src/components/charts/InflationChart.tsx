@@ -71,6 +71,32 @@ function bucketSizeToSeconds(bucket: string): number {
   }
 }
 
+/**
+ * Returns seconds to exclude from the end of queries based on aggregate refresh policy.
+ * This prevents showing incomplete data from the most recent time bucket.
+ *
+ * TimescaleDB continuous aggregate end_offset values:
+ * - blocks_1min_agg: 1 minute
+ * - blocks_1hour_agg: 1 hour
+ */
+function getAggregateEndOffset(bucketSize: string): number {
+  switch (bucketSize) {
+    case '2s':
+      return 0; // Raw blocks, no aggregate delay
+    case '1m':
+    case '5m':
+    case '15m':
+      return 60; // 1-minute aggregate has 1-min end_offset
+    case '1h':
+    case '4h':
+    case '1d':
+    case '1w':
+      return 3600; // 1-hour aggregate has 1-hour end_offset
+    default:
+      return 60;
+  }
+}
+
 export function InflationChart({ title, metric }: InflationChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -166,6 +192,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
     }
 
+    // Exclude incomplete aggregate window when querying up to "now"
+    // This prevents showing artificially high net inflation from incomplete burn data
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const isQueryingToNow = toTime >= nowSeconds - 60; // Within 1 minute of now
+    if (isQueryingToNow) {
+      const endOffset = getAggregateEndOffset(bucketSize);
+      toTime = toTime - endOffset;
+    }
+
     try {
       const response = await fetch(
         `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
@@ -221,6 +256,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       toTime = Math.floor(Date.now() / 1000);
       const rangeSeconds = TIME_RANGE_SECONDS[timeRange] ?? 0;
       fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
+    }
+
+    // Exclude incomplete aggregate window when querying up to "now"
+    // This prevents showing artificially high net inflation from incomplete burn data
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const isQueryingToNow = toTime >= nowSeconds - 60; // Within 1 minute of now
+    if (isQueryingToNow) {
+      const endOffset = getAggregateEndOffset(bucketSize);
+      toTime = toTime - endOffset;
     }
 
     const bucketSeconds = bucketSizeToSeconds(bucketSize);
