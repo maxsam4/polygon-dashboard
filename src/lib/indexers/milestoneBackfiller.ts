@@ -1,7 +1,7 @@
 import { getHeimdallClient } from '../heimdall';
 import { insertMilestonesBatch, getLowestSequenceId } from '../queries/milestones';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
-import { writeFinalityBatch } from './finalityWriter';
+import { writeFinalityBatchMultiple } from './finalityWriter';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -137,12 +137,9 @@ export class MilestoneBackfiller {
         // Insert milestones into DB
         await insertMilestonesBatch(milestones);
 
-        // Write finality data for each milestone (parallel with bounded concurrency)
-        const FINALITY_CONCURRENCY = 10;
-        for (let i = 0; i < milestones.length; i += FINALITY_CONCURRENCY) {
-          const chunk = milestones.slice(i, i + FINALITY_CONCURRENCY);
-          await Promise.all(chunk.map(m => writeFinalityBatch(m)));
-        }
+        // Write finality data for all milestones in a single batched operation
+        // This reduces queries from 3*N to 3 total (1 SELECT, 1 INSERT, 1 UPDATE)
+        await writeFinalityBatchMultiple(milestones);
 
         // Update cursor to the lowest sequence_id we just processed
         const lowestMilestone = milestones[0];

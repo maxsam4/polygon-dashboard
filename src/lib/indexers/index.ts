@@ -7,4 +7,4 @@ export { PriorityFeeBackfiller, getPriorityFeeBackfiller, calculatePriorityFeeMe
 export { BlockIndexer, getBlockIndexer } from './blockIndexer';
 export { MilestoneIndexer, getMilestoneIndexer } from './milestoneIndexer';
 export { BlockBackfiller, getBlockBackfiller } from './blockBackfiller';
-export { writeFinalityBatch } from './finalityWriter';
+export { writeFinalityBatch, writeFinalityBatchMultiple } from './finalityWriter';

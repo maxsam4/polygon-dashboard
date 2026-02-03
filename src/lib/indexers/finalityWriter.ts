@@ -154,4 +154,113 @@ async function updateBlocksFinality(milestone: Milestone): Promise<number> {
   return parseInt(result[0]?.count ?? '0', 10);
 }
 
+/**
+ * Write finality data for multiple milestones in a single batched operation.
+ * This reduces DB queries from 3*N to 3 total (1 SELECT, 1 INSERT, 1 UPDATE).
+ */
+export async function writeFinalityBatchMultiple(milestones: Milestone[]): Promise<number> {
+  if (milestones.length === 0) return 0;
+
+  // Step 1: Collect all unique block numbers from all milestones
+  const allBlockNumbers: string[] = [];
+  const blockToMilestone = new Map<string, Milestone>();
+
+  for (const milestone of milestones) {
+    for (let b = milestone.startBlock; b <= milestone.endBlock; b++) {
+      const bn = b.toString();
+      allBlockNumbers.push(bn);
+      blockToMilestone.set(bn, milestone);
+    }
+  }
+
+  // Step 2: Get all block timestamps in ONE query
+  const blocks = await query<{ block_number: string; timestamp: Date }>(
+    `SELECT block_number, timestamp FROM blocks WHERE block_number = ANY($1::bigint[])`,
+    [allBlockNumbers]
+  );
+
+  const timestampMap = new Map<string, Date>();
+  for (const block of blocks) {
+    timestampMap.set(block.block_number, block.timestamp);
+  }
+
+  // Step 3: Build arrays for batch insert
+  const now = new Date();
+  const insertBlockNumbers: string[] = [];
+  const milestoneIds: string[] = [];
+  const finalizedAtArray: Date[] = [];
+  const timeToFinalityArray: (number | null)[] = [];
+  const createdAtArray: Date[] = [];
+
+  for (const bn of allBlockNumbers) {
+    const milestone = blockToMilestone.get(bn)!;
+    const blockTs = timestampMap.get(bn);
+    const timeToFinality = blockTs
+      ? (milestone.timestamp.getTime() - blockTs.getTime()) / 1000
+      : null;
+
+    insertBlockNumbers.push(bn);
+    milestoneIds.push(milestone.milestoneId.toString());
+    finalizedAtArray.push(milestone.timestamp);
+    timeToFinalityArray.push(timeToFinality);
+    createdAtArray.push(now);
+  }
+
+  // Step 4: Batch insert all finality records in ONE query
+  const result = await query<{ count: string }>(
+    `WITH inserted AS (
+      INSERT INTO block_finality (block_number, milestone_id, finalized_at, time_to_finality_sec, created_at)
+      SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::timestamptz[], $4::real[], $5::timestamptz[])
+      ON CONFLICT (block_number) DO UPDATE SET
+        time_to_finality_sec = CASE
+          WHEN block_finality.time_to_finality_sec IS NULL AND EXCLUDED.time_to_finality_sec IS NOT NULL
+          THEN EXCLUDED.time_to_finality_sec
+          ELSE block_finality.time_to_finality_sec
+        END
+      RETURNING 1
+    )
+    SELECT COUNT(*) as count FROM inserted`,
+    [insertBlockNumbers, milestoneIds, finalizedAtArray, timeToFinalityArray, createdAtArray]
+  );
+
+  const inserted = parseInt(result[0]?.count ?? '0', 10);
+
+  // Step 5: Update blocks table - batch all milestone ranges
+  // Find min/max block across all milestones for efficient range query
+  const minBlock = milestones.reduce((min, m) => m.startBlock < min ? m.startBlock : min, milestones[0].startBlock);
+  const maxBlock = milestones.reduce((max, m) => m.endBlock > max ? m.endBlock : max, milestones[0].endBlock);
+
+  // Use timestamp threshold to avoid scanning compressed chunks
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - 10);
+
+  // Update blocks using UNNEST to match each block with its milestone
+  await query(
+    `UPDATE blocks b
+     SET
+       finalized = TRUE,
+       finalized_at = u.finalized_at,
+       milestone_id = u.milestone_id,
+       time_to_finality_sec = EXTRACT(EPOCH FROM (u.finalized_at - b.timestamp)),
+       updated_at = NOW()
+     FROM (
+       SELECT unnest($1::bigint[]) as block_number,
+              unnest($2::bigint[]) as milestone_id,
+              unnest($3::timestamptz[]) as finalized_at
+     ) AS u
+     WHERE b.block_number = u.block_number
+       AND b.finalized = FALSE
+       AND b.timestamp >= $4
+       AND b.block_number >= $5 AND b.block_number <= $6`,
+    [insertBlockNumbers, milestoneIds, finalizedAtArray, threshold, minBlock.toString(), maxBlock.toString()]
+  );
+
+  // Step 6: Push finality updates to live-stream for all milestones
+  for (const milestone of milestones) {
+    await pushFinalityUpdatesToLiveStream(milestone);
+  }
+
+  return inserted;
+}
+
 

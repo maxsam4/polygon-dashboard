@@ -18,6 +18,25 @@ Migrations must be additive and idempotent:
 - `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
 - Place in `docker/migrations/YYYYMMDD_HHMMSS_desc.sql`
 
+## TimescaleDB Performance
+
+**UPDATE queries must include timestamp** - The hypertable is partitioned by timestamp. Queries filtering only by `block_number` scan all 80M+ rows. Always include timestamp in WHERE clause:
+```sql
+-- SLOW (scans all chunks):
+UPDATE blocks SET x = y WHERE block_number = 12345;
+
+-- FAST (uses primary key):
+UPDATE blocks SET x = y WHERE (timestamp, block_number) = ('2026-02-03 09:25:58+00', 12345);
+```
+
+**Check for stuck queries before retrying** - Failed SSH sessions can leave queries running:
+```sql
+-- Find stuck queries
+SELECT pid, state, query_start, substring(query, 1, 80) FROM pg_stat_activity WHERE state = 'active';
+-- Terminate if needed
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%pattern%' AND state = 'active';
+```
+
 ## Development
 
 ```bash
