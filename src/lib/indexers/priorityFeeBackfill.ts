@@ -1,5 +1,5 @@
 import { getRpcClient, TransactionReceipt } from '../rpc';
-import { updateBlockPriorityFees } from '../queries/blocks';
+import { updateBlockPriorityFeesBatch } from '../queries/blocks';
 import { query } from '../db';
 import { pushBlockUpdate } from '../liveStreamClient';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
@@ -124,19 +124,21 @@ export class PriorityFeeBackfiller {
       }
     }
 
-    // Execute all DB updates in parallel
-    await Promise.all(updates.map(async ({ block, metrics, receiptsCount }) => {
-      await updateBlockPriorityFees(
-        block.blockNumber,
-        block.timestamp,
-        metrics.minPriorityFeeGwei,
-        metrics.maxPriorityFeeGwei,
-        metrics.avgPriorityFeeGwei!,
-        metrics.medianPriorityFeeGwei,
-        metrics.totalPriorityFeeGwei!
-      );
+    // Execute batch DB update (single query instead of N parallel queries)
+    await updateBlockPriorityFeesBatch(
+      updates.map(({ block, metrics }) => ({
+        blockNumber: block.blockNumber,
+        timestamp: block.timestamp,
+        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei!,
+        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei!,
+      }))
+    );
 
-      // Push update to live-stream service (fire-and-forget)
+    // Push updates to live-stream service (fire-and-forget)
+    for (const { block, metrics, receiptsCount } of updates) {
       pushBlockUpdate({
         blockNumber: Number(block.blockNumber),
         txCount: receiptsCount,
@@ -146,7 +148,7 @@ export class PriorityFeeBackfiller {
         medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
         totalPriorityFeeGwei: metrics.totalPriorityFeeGwei!,
       }).catch(() => {});
-    }));
+    }
 
     if (updates.length > 0) {
       console.log(`[PriorityFeeBackfiller] Updated ${updates.length}/${blocks.length} blocks`);
@@ -443,18 +445,18 @@ export class HistoricalPriorityFeeBackfiller {
       }
     }
 
-    // Execute all DB updates in parallel
-    await Promise.all(updates.map(async ({ block, metrics }) => {
-      await updateBlockPriorityFees(
-        block.blockNumber,
-        block.timestamp,
-        metrics.minPriorityFeeGwei,
-        metrics.maxPriorityFeeGwei,
-        metrics.avgPriorityFeeGwei!,
-        metrics.medianPriorityFeeGwei,
-        metrics.totalPriorityFeeGwei!
-      );
-    }));
+    // Execute batch DB update (single query instead of N parallel queries)
+    await updateBlockPriorityFeesBatch(
+      updates.map(({ block, metrics }) => ({
+        blockNumber: block.blockNumber,
+        timestamp: block.timestamp,
+        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
+        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
+        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei!,
+        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
+        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei!,
+      }))
+    );
 
     if (updates.length > 0) {
       const minBlock = blocks.reduce((min, b) => b.blockNumber < min ? b.blockNumber : min, blocks[0].blockNumber);

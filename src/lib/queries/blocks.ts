@@ -332,3 +332,60 @@ export async function updateBlockPriorityFees(
   );
 }
 
+/**
+ * Batch update priority fee metrics for multiple blocks.
+ * Uses PostgreSQL UNNEST for efficient single-query batch updates.
+ * This reduces DB load from N queries to 1 query per batch.
+ *
+ * Includes timestamp bounds for TimescaleDB chunk pruning to avoid
+ * decompressing all chunks when updating historical blocks.
+ */
+export async function updateBlockPriorityFeesBatch(
+  updates: Array<{
+    blockNumber: bigint;
+    timestamp: Date;
+    minPriorityFeeGwei: number;
+    maxPriorityFeeGwei: number;
+    avgPriorityFeeGwei: number;
+    medianPriorityFeeGwei: number;
+    totalPriorityFeeGwei: number;
+  }>
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  const blockNumbers = updates.map(u => u.blockNumber.toString());
+  const timestamps = updates.map(u => u.timestamp);
+  const minFees = updates.map(u => u.minPriorityFeeGwei);
+  const maxFees = updates.map(u => u.maxPriorityFeeGwei);
+  const avgFees = updates.map(u => u.avgPriorityFeeGwei);
+  const medianFees = updates.map(u => u.medianPriorityFeeGwei);
+  const totalFees = updates.map(u => u.totalPriorityFeeGwei);
+
+  // Calculate timestamp bounds for TimescaleDB chunk pruning
+  const minTimestamp = timestamps.reduce((min, t) => (t < min ? t : min), timestamps[0]);
+  const maxTimestamp = timestamps.reduce((max, t) => (t > max ? t : max), timestamps[0]);
+
+  await query(
+    `UPDATE blocks AS b
+     SET min_priority_fee_gwei = u.min_fee,
+         max_priority_fee_gwei = u.max_fee,
+         avg_priority_fee_gwei = u.avg_fee,
+         median_priority_fee_gwei = u.median_fee,
+         total_priority_fee_gwei = u.total_fee,
+         updated_at = NOW()
+     FROM (
+       SELECT unnest($1::bigint[]) as block_number,
+              unnest($2::timestamptz[]) as timestamp,
+              unnest($3::double precision[]) as min_fee,
+              unnest($4::double precision[]) as max_fee,
+              unnest($5::double precision[]) as avg_fee,
+              unnest($6::double precision[]) as median_fee,
+              unnest($7::double precision[]) as total_fee
+     ) AS u
+     WHERE b.block_number = u.block_number
+       AND b.timestamp = u.timestamp
+       AND b.timestamp >= $8 AND b.timestamp <= $9`,
+    [blockNumbers, timestamps, minFees, maxFees, avgFees, medianFees, totalFees, minTimestamp, maxTimestamp]
+  );
+}
+
