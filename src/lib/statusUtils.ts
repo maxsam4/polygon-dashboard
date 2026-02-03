@@ -57,6 +57,7 @@ export interface HistoricalData {
   totalBlocks: string;
   minMilestoneSeq: string | null;
   totalMilestones: string;
+  priorityFeeCursor: string | null;
 }
 
 /**
@@ -65,6 +66,7 @@ export interface HistoricalData {
 export interface SpeedStats {
   backfillerSpeed: number | null;
   milestoneBackfillerSpeed: number | null;
+  priorityFeeBackfillerSpeed: number | null;
 }
 
 /**
@@ -77,6 +79,7 @@ export function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     return {
       backfillerSpeed: null,
       milestoneBackfillerSpeed: null,
+      priorityFeeBackfillerSpeed: null,
     };
   }
 
@@ -88,6 +91,7 @@ export function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     return {
       backfillerSpeed: null,
       milestoneBackfillerSpeed: null,
+      priorityFeeBackfillerSpeed: null,
     };
   }
 
@@ -111,9 +115,20 @@ export function calculateSpeeds(history: HistoricalData[]): SpeedStats {
     }
   }
 
+  // Priority fee backfiller speed: how fast cursor is decreasing (works backward)
+  let priorityFeeBackfillerSpeed: number | null = null;
+  if (oldest.priorityFeeCursor && newest.priorityFeeCursor) {
+    const oldCursor = BigInt(oldest.priorityFeeCursor);
+    const newCursor = BigInt(newest.priorityFeeCursor);
+    if (newCursor < oldCursor) {
+      priorityFeeBackfillerSpeed = Number(oldCursor - newCursor) / timeDiffSec;
+    }
+  }
+
   return {
     backfillerSpeed,
     milestoneBackfillerSpeed,
+    priorityFeeBackfillerSpeed,
   };
 }
 

@@ -135,6 +135,7 @@ export default function StatusPage() {
   const [speeds, setSpeeds] = useState<SpeedStats>({
     backfillerSpeed: null,
     milestoneBackfillerSpeed: null,
+    priorityFeeBackfillerSpeed: null,
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
@@ -163,6 +164,7 @@ export default function StatusPage() {
         totalBlocks: data.blocks.total,
         minMilestoneSeq: data.milestones.minSeq,
         totalMilestones: data.milestones.total,
+        priorityFeeCursor: data.priorityFeeBackfill?.cursor ?? null,
       };
 
       const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
@@ -455,15 +457,30 @@ export default function StatusPage() {
                       <span className={`font-mono ${status.priorityFeeBackfill.isComplete ? 'text-success' : 'text-warning'}`}>
                         {status.priorityFeeBackfill.isComplete
                           ? 'Complete'
-                          : `${((parseInt(status.priorityFeeBackfill.processedBlocks) / parseInt(status.priorityFeeBackfill.totalBlocks)) * 100).toFixed(2)}%`
+                          : formatSpeed(
+                              speeds.priorityFeeBackfillerSpeed,
+                              'blk',
+                              false,
+                              historyRef.current.length >= 2
+                            )
                         }
                       </span>
                     </div>
                     {!status.priorityFeeBackfill.isComplete && (
-                      <div className="text-muted text-xs mt-1">
-                        {formatNumber(status.priorityFeeBackfill.processedBlocks)} / {formatNumber(status.priorityFeeBackfill.totalBlocks)} blocks
-                        <span className="ml-2">(cursor: {formatNumber(status.priorityFeeBackfill.cursor)})</span>
-                      </div>
+                      <>
+                        <div className="text-muted text-xs mt-1">
+                          {formatNumber(status.priorityFeeBackfill.processedBlocks)} / {formatNumber(status.priorityFeeBackfill.totalBlocks)} blocks
+                          ({((parseInt(status.priorityFeeBackfill.processedBlocks) / parseInt(status.priorityFeeBackfill.totalBlocks)) * 100).toFixed(2)}%)
+                        </div>
+                        {speeds.priorityFeeBackfillerSpeed && (
+                          <div className="text-muted text-xs mt-1">
+                            ETA: {formatEta(
+                              parseInt(status.priorityFeeBackfill.cursor) - parseInt(status.priorityFeeBackfill.minBlock),
+                              speeds.priorityFeeBackfillerSpeed
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
