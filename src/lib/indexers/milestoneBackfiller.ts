@@ -68,7 +68,7 @@ export class MilestoneBackfiller {
     }
 
     // Check if already complete
-    if (this.cursor && this.cursor <= this.targetSequence) {
+    if (this.cursor !== null && this.cursor <= this.targetSequence) {
       console.log(`[${WORKER_NAME}] Backfill already complete! (lowest=${this.cursor}, target=${this.targetSequence})`);
       updateWorkerState(WORKER_NAME, 'idle');
       return;
@@ -168,7 +168,7 @@ export class MilestoneBackfiller {
       }
     }
 
-    if (this.cursor && this.cursor <= this.targetSequence) {
+    if (this.cursor !== null && this.cursor <= this.targetSequence) {
       console.log(`[${WORKER_NAME}] Backfill complete! Reached target sequence ${this.targetSequence}`);
       updateWorkerState(WORKER_NAME, 'idle');
     }

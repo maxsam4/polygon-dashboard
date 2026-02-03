@@ -69,7 +69,7 @@ export class BlockBackfiller {
     }
 
     // Check if already complete
-    if (this.cursor && this.cursor <= this.targetBlock) {
+    if (this.cursor !== null && this.cursor <= this.targetBlock) {
       console.log(`[${WORKER_NAME}] Backfill already complete! (lowest=${this.cursor}, target=${this.targetBlock})`);
       updateWorkerState(WORKER_NAME, 'idle');
       return;
@@ -179,7 +179,7 @@ export class BlockBackfiller {
       }
     }
 
-    if (this.cursor && this.cursor <= this.targetBlock) {
+    if (this.cursor !== null && this.cursor <= this.targetBlock) {
       console.log(`[${WORKER_NAME}] Backfill complete! Reached target block ${this.targetBlock}`);
       updateWorkerState(WORKER_NAME, 'idle');
     }
