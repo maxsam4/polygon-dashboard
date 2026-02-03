@@ -258,13 +258,15 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       fromTime = rangeSeconds > 0 ? toTime - rangeSeconds : 0;
     }
 
-    // Exclude incomplete aggregate window when querying up to "now"
-    // This prevents showing artificially high net inflation from incomplete burn data
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const isQueryingToNow = toTime >= nowSeconds - 60; // Within 1 minute of now
-    if (isQueryingToNow) {
-      const endOffset = getAggregateEndOffset(bucketSize);
-      toTime = toTime - endOffset;
+    // Only exclude incomplete aggregate window for netInflation metric
+    // Issuance and totalSupply are purely mathematical and don't need this
+    if (metric === 'netInflation') {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const isQueryingToNow = toTime >= nowSeconds - 60; // Within 1 minute of now
+      if (isQueryingToNow) {
+        const endOffset = getAggregateEndOffset(bucketSize);
+        toTime = toTime - endOffset;
+      }
     }
 
     const bucketSeconds = bucketSizeToSeconds(bucketSize);
