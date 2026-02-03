@@ -1,5 +1,5 @@
 import { getRpcClient } from '../rpc';
-import { insertBlocksBatch } from '../queries/blocks';
+import { insertBlocksBatch, getHighestBlockNumberFromDb } from '../queries/blocks';
 import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState, IndexerCursor } from './indexerState';
@@ -50,14 +50,26 @@ export class BlockIndexer {
     this.cursor = await getIndexerState(SERVICE_NAME);
 
     if (!this.cursor) {
-      // Initialize from chain tip
-      const rpc = getRpcClient();
-      const latestBlock = await rpc.getLatestBlockNumber();
-      const block = await rpc.getBlock(latestBlock);
+      // Check if blocks exist in DB first
+      const highestBlock = await getHighestBlockNumberFromDb();
 
-      await initializeIndexerState(SERVICE_NAME, latestBlock, block.hash);
-      this.cursor = { blockNumber: latestBlock, hash: block.hash };
-      console.log(`[${WORKER_NAME}] Initialized cursor at block #${latestBlock}`);
+      if (highestBlock !== null) {
+        // Resume from highest existing block to avoid gaps
+        const rpc = getRpcClient();
+        const block = await rpc.getBlock(highestBlock);
+        await initializeIndexerState(SERVICE_NAME, highestBlock, block.hash);
+        this.cursor = { blockNumber: highestBlock, hash: block.hash };
+        console.log(`[${WORKER_NAME}] Initialized from highest DB block #${highestBlock}`);
+      } else {
+        // DB is empty, start from chain tip
+        const rpc = getRpcClient();
+        const latestBlock = await rpc.getLatestBlockNumber();
+        const block = await rpc.getBlock(latestBlock);
+
+        await initializeIndexerState(SERVICE_NAME, latestBlock, block.hash);
+        this.cursor = { blockNumber: latestBlock, hash: block.hash };
+        console.log(`[${WORKER_NAME}] Initialized cursor at chain tip block #${latestBlock}`);
+      }
     } else {
       console.log(`[${WORKER_NAME}] Resumed from block #${this.cursor.blockNumber}`);
     }

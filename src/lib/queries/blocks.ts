@@ -140,6 +140,18 @@ export async function getHighestBlockNumber(): Promise<bigint | null> {
   return stats?.maxValue ?? null;
 }
 
+/**
+ * Get highest block number directly from DB (not cached stats).
+ * Used for indexer initialization where correctness is critical.
+ */
+export async function getHighestBlockNumberFromDb(): Promise<bigint | null> {
+  const result = await query<{ max: string | null }>(
+    'SELECT MAX(block_number) as max FROM blocks'
+  );
+  const rows = result as unknown as Array<{ max: string | null }>;
+  return rows[0]?.max ? BigInt(rows[0].max) : null;
+}
+
 export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>): Promise<void> {
   await query(
     `INSERT INTO blocks (
