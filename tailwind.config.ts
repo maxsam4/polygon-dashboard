@@ -6,6 +6,12 @@ const config: Config = {
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    // Gas utilization progress bar colors
+    'bg-success/40',
+    'bg-warning/40',
+    'bg-danger/40',
+  ],
   darkMode: 'class',
   theme: {
     extend: {

@@ -1,3 +1,6 @@
+// Initialize HTTP agent with connection pooling before any fetch calls
+import '../httpAgent';
+
 import { getAllWorkerStatuses } from './workerStatus';
 import type { WorkerStatus } from './workerStatus';
 import { waitForMigrations } from '../waitForMigrations';
