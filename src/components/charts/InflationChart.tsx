@@ -352,6 +352,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      chartRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metric]);
@@ -374,12 +375,18 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   useEffect(() => {
     if (!chartRef.current || chartData.length === 0) return;
 
+    // Track if this effect has been cleaned up to prevent operations on destroyed chart
+    let isCleanedUp = false;
+
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
 
     enabledSeries
       .filter((opt) => opt.enabled)
       .forEach((opt) => {
+        // Check if effect was cleaned up during iteration
+        if (isCleanedUp || !chartRef.current) return;
+
         let seriesData: LineData<UTCTimestamp>[];
 
         if (opt.key === 'totalSupply') {
@@ -427,17 +434,30 @@ export function InflationChart({ title, metric }: InflationChartProps) {
           });
         }
 
-        const series = chartRef.current!.addSeries(LineSeries, {
+        // Check again after data preparation
+        if (isCleanedUp || !chartRef.current) return;
+
+        const series = chartRef.current.addSeries(LineSeries, {
           color: opt.color,
           lineWidth: 2,
           priceScaleId: opt.priceScaleId,
         });
 
+        // Check before setData - series becomes invalid if chart is destroyed
+        if (isCleanedUp || !chartRef.current) return;
+
         series.setData(seriesData);
         seriesRefs.current.set(opt.key, series);
       });
 
-    chartRef.current.timeScale().fitContent();
+    // Check if effect was cleaned up during series creation
+    if (!isCleanedUp && chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
+
+    return () => {
+      isCleanedUp = true;
+    };
   }, [chartData, enabledSeries]);
 
   const handleResetZoom = () => {

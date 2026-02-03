@@ -122,11 +122,15 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
     return () => {
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      chartRef.current = null;
     };
   }, [theme, chartColor]);
 
   useEffect(() => {
     if (!chartRef.current) return;
+
+    // Track if this effect has been cleaned up to prevent operations on destroyed chart
+    let isCleanedUp = false;
 
     // Clear existing series
     seriesRefs.current.forEach((s) => chartRef.current?.removeSeries(s));
@@ -148,22 +152,37 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
 
     // Create series for each data set
     allSeries.forEach((s) => {
-      const lineSeries = chartRef.current!.addSeries(LineSeries, {
+      // Check if effect was cleaned up during iteration
+      if (isCleanedUp || !chartRef.current) return;
+
+      const lineSeries = chartRef.current.addSeries(LineSeries, {
         color: s.color || chartColor,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
       });
+
       // Use actual timestamps if available, otherwise fall back to index
       const chartData: LineData<UTCTimestamp>[] = s.data.map((d) => ({
         time: (d.timestamp ?? d.time) as UTCTimestamp,
         value: d.value,
       }));
+
+      // Check before setData - series becomes invalid if chart is destroyed
+      if (isCleanedUp || !chartRef.current) return;
+
       lineSeries.setData(chartData);
       seriesRefs.current.push(lineSeries);
     });
 
-    chartRef.current.timeScale().fitContent();
+    // Check if effect was cleaned up during series creation
+    if (!isCleanedUp && chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
+
+    return () => {
+      isCleanedUp = true;
+    };
   }, [data, series, chartColor]);
 
   return (

@@ -274,6 +274,7 @@ export function CustomizableChart({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      chartRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dualAxis]);
@@ -298,6 +299,9 @@ export function CustomizableChart({
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
+    // Track if this effect has been cleaned up to prevent operations on destroyed chart
+    let isCleanedUp = false;
+
     // Clear existing series
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
@@ -317,11 +321,17 @@ export function CustomizableChart({
       value: getSeriesValue(d, leftSeries, cumulativeValues[i].cumulativeBaseFee, cumulativeValues[i].cumulativePriorityFee),
     }));
 
+    // Check if effect was cleaned up during data preparation
+    if (isCleanedUp || !chartRef.current) return;
+
     const leftSeriesObj = chartRef.current.addSeries(LineSeries, {
       color: CHART_COLORS.PRIMARY,
       lineWidth: 2,
       priceScaleId: 'left',
     });
+
+    // Check before setData
+    if (isCleanedUp || !chartRef.current) return;
     leftSeriesObj.setData(leftSeriesData);
     seriesRefs.current.set('left', leftSeriesObj);
 
@@ -331,13 +341,22 @@ export function CustomizableChart({
       value: getSeriesValue(d, rightSeries, cumulativeValues[i].cumulativeBaseFee, cumulativeValues[i].cumulativePriorityFee),
     }));
 
+    // Check if effect was cleaned up during left series creation
+    if (isCleanedUp || !chartRef.current) return;
+
     const rightSeriesObj = chartRef.current.addSeries(LineSeries, {
       color: CHART_COLORS.SECONDARY,
       lineWidth: 2,
       priceScaleId: dualAxis ? 'right' : 'left',
     });
+
+    // Check before setData
+    if (isCleanedUp || !chartRef.current) return;
     rightSeriesObj.setData(rightSeriesData);
     seriesRefs.current.set('right', rightSeriesObj);
+
+    // Check if effect was cleaned up during series creation
+    if (isCleanedUp || !chartRef.current) return;
 
     // Use setVisibleRange with the requested time bounds to ensure chart extends to the full range
     if (timeRangeBounds) {
@@ -348,6 +367,10 @@ export function CustomizableChart({
     } else {
       chartRef.current.timeScale().fitContent();
     }
+
+    return () => {
+      isCleanedUp = true;
+    };
   }, [data, leftSeries, rightSeries, dualAxis, timeRangeBounds]);
 
   const handleResetZoom = () => {

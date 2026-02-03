@@ -296,6 +296,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       window.removeEventListener('resize', handleResize);
       chart.remove();
+      chartRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metric]);
@@ -330,6 +331,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
+    // Track if this effect has been cleaned up to prevent operations on destroyed chart
+    let isCleanedUp = false;
+
     // Clear existing series
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
@@ -337,6 +341,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     seriesOptions
       .filter((opt) => opt.enabled)
       .forEach((opt) => {
+        // Check if effect was cleaned up during iteration
+        if (isCleanedUp || !chartRef.current) return;
+
         const color = opt.color || CHART_COLOR_PALETTE[0];
         let seriesData: LineData<UTCTimestamp>[];
 
@@ -431,15 +438,24 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.tps }));
         }
 
-        const series = chartRef.current!.addSeries(LineSeries, {
+        // Check again after data preparation
+        if (isCleanedUp || !chartRef.current) return;
+
+        const series = chartRef.current.addSeries(LineSeries, {
           color,
           lineWidth: 2,
           priceScaleId: 'left',
         });
 
+        // Check before setData - series becomes invalid if chart is destroyed
+        if (isCleanedUp || !chartRef.current) return;
+
         series.setData(seriesData);
         seriesRefs.current.set(opt.key, series);
       });
+
+    // Check if effect was cleaned up during series creation
+    if (isCleanedUp || !chartRef.current) return;
 
     // Use setVisibleRange with the requested time bounds to ensure chart extends to the full range
     if (timeRangeBounds) {
@@ -450,6 +466,10 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     } else {
       chartRef.current.timeScale().fitContent();
     }
+
+    return () => {
+      isCleanedUp = true;
+    };
   }, [data, seriesOptions, metric, timeRangeBounds]);
 
   const handleSeriesToggle = (key: string) => {
