@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { ReactNode } from 'react';
 import { BlockDataUI } from '@/lib/types';
 import { getTimeAgo, formatGas, formatGweiToPol, getGasUtilizationColor } from '@/lib/utils';
 
@@ -10,8 +9,8 @@ interface BlockTableProps {
   title?: string;
 }
 
-// Placeholder for pending receipt data
-const pendingPlaceholder = <span className="text-muted italic">calculating</span>;
+// Placeholder for pending receipt data - use short text to prevent column width jumps
+const pendingPlaceholder = <span className="text-muted">···</span>;
 
 export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps) {
   return (
