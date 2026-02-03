@@ -290,8 +290,8 @@ export class HistoricalPriorityFeeBackfiller {
   private delayMs: number;
 
   constructor() {
-    this.batchSize = parseInt(process.env.HISTORICAL_PRIORITY_FEE_BATCH_SIZE || '50', 10);
-    this.delayMs = parseInt(process.env.HISTORICAL_PRIORITY_FEE_DELAY_MS || '500', 10);
+    this.batchSize = parseInt(process.env.HISTORICAL_PRIORITY_FEE_BATCH_SIZE || '100', 10);
+    this.delayMs = parseInt(process.env.HISTORICAL_PRIORITY_FEE_DELAY_MS || '100', 10);
   }
 
   async start(): Promise<void> {

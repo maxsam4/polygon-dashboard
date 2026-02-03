@@ -4,7 +4,7 @@ import { Milestone } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
 import { writeFinalityBatch } from './finalityWriter';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
-import { sleep } from '../utils';
+import { sleep, numberRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
 import { SequenceCache } from './sequenceCache';
 
@@ -101,7 +101,7 @@ export class MilestoneIndexer {
         if (count > this.cursor!) {
           // Calculate how many milestones to fetch
           const fetchCount = Math.min(count - this.cursor!, this.batchSize);
-          const requestedIds = this.range(this.cursor! + 1, this.cursor! + fetchCount);
+          const requestedIds = numberRange(this.cursor! + 1, this.cursor! + fetchCount);
 
           // Fetch milestones in parallel
           const milestones = await heimdall.getMilestones(requestedIds);
@@ -213,17 +213,6 @@ export class MilestoneIndexer {
     const blocksUpdated = await writeFinalityBatch(milestone);
 
     console.log(`[${WORKER_NAME}] Milestone seq=${milestone.sequenceId} blocks=${milestone.startBlock}-${milestone.endBlock} finality_records=${blocksUpdated}`);
-  }
-
-  /**
-   * Generate an array of sequence IDs in a range.
-   */
-  private range(start: number, end: number): number[] {
-    const result: number[] = [];
-    for (let i = start; i <= end; i++) {
-      result.push(i);
-    }
-    return result;
   }
 }
 

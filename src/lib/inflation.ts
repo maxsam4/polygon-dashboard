@@ -56,3 +56,21 @@ export function getAllKnownInflationRates(): InflationRateEntry[] {
     startTimestamp: rate.startTimestamp,
   }));
 }
+
+/**
+ * Get the latest inflation params from the known rates.
+ * Returns the most recent rate entry (used for integration tests).
+ */
+export async function readInflationParams(): Promise<{
+  interestPerYearLog2: bigint;
+  startSupply: bigint;
+  startTimestamp: bigint;
+}> {
+  const rates = getAllKnownInflationRates();
+  const latest = rates[rates.length - 1];
+  return {
+    interestPerYearLog2: latest.interestPerYearLog2,
+    startSupply: latest.startSupply,
+    startTimestamp: latest.startTimestamp,
+  };
+}

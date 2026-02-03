@@ -6,7 +6,7 @@ import { getIndexerState, updateIndexerState, initializeIndexerState, IndexerCur
 import { handleReorg, getBlockByNumber } from './reorgHandler';
 import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
-import { sleep } from '../utils';
+import { sleep, bigintRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
 
 const SERVICE_NAME = 'block_indexer';
@@ -108,7 +108,7 @@ export class BlockIndexer {
           const endBlock = startBlock + BigInt(fetchCount) - 1n;
 
           // Fetch blocks
-          const blockNumbers = this.range(startBlock, endBlock);
+          const blockNumbers = bigintRange(startBlock, endBlock);
           const blocksMap = await rpc.getBlocksWithTransactions(blockNumbers);
 
           // Sort blocks by number to process in order
@@ -258,17 +258,6 @@ export class BlockIndexer {
       previousTimestamp = block.timestamp;
     }
 
-    return result;
-  }
-
-  /**
-   * Generate an array of block numbers in a range.
-   */
-  private range(start: bigint, end: bigint): bigint[] {
-    const result: bigint[] = [];
-    for (let i = start; i <= end; i++) {
-      result.push(i);
-    }
     return result;
   }
 }

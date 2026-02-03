@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, LineData, UTCTimestamp, LineSeries } from 'lightweight-charts';
 import { useTheme } from '../ThemeProvider';
+import { CHART_COLORS } from '@/lib/constants';
 
 interface DataPoint {
   time: number;
@@ -26,14 +27,6 @@ interface MiniChartProps {
   color?: string;
 }
 
-// Terminal theme chart colors
-const CHART_COLORS = {
-  gas: '#00FF41',      // Matrix green
-  finality: '#00D4FF', // Cyan
-  mgas: '#00FF41',     // Matrix green
-  tps: '#00D4FF',      // Cyan
-};
-
 export function MiniChart({ title, data, series, currentValue, unit, color }: MiniChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -44,11 +37,11 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
   const [copied, setCopied] = useState(false);
 
   // Determine chart color based on title or prop
+  // Uses centralized CHART_COLORS: PRIMARY (green) for gas/mgas, SECONDARY (cyan) for finality/tps
   const chartColor = color || (
-    title.toLowerCase().includes('gas') ? CHART_COLORS.gas :
-    title.toLowerCase().includes('finality') ? CHART_COLORS.finality :
-    title.toLowerCase().includes('mgas') ? CHART_COLORS.mgas :
-    CHART_COLORS.tps
+    title.toLowerCase().includes('gas') || title.toLowerCase().includes('mgas')
+      ? CHART_COLORS.PRIMARY
+      : CHART_COLORS.SECONDARY
   );
 
   const handleChartClick = () => {

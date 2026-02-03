@@ -79,60 +79,27 @@ function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
   };
 }
 
+// Allowed fields for block updates - explicit whitelist to prevent schema drift
+const ALLOWED_UPDATE_FIELDS = [
+  'txCount', 'tps', 'minPriorityFeeGwei', 'maxPriorityFeeGwei',
+  'avgPriorityFeeGwei', 'medianPriorityFeeGwei', 'totalPriorityFeeGwei',
+  'finalized', 'finalizedAt', 'milestoneId', 'timeToFinalitySec'
+] as const;
+
 // Transform block_update partial update to UI format
-function liveStreamUpdateToUI(blockNumber: number, updates: LiveStreamBlockUpdate): {
-  blockNumber: string;
-  txCount?: number;
-  tps?: number;
-  minPriorityFeeGwei?: number;
-  maxPriorityFeeGwei?: number;
-  avgPriorityFeeGwei?: number;
-  medianPriorityFeeGwei?: number;
-  totalPriorityFeeGwei?: number;
-  finalized?: boolean;
-  timeToFinalitySec?: number;
-} {
-  const result: {
-    blockNumber: string;
-    txCount?: number;
-    tps?: number;
-    minPriorityFeeGwei?: number;
-    maxPriorityFeeGwei?: number;
-    avgPriorityFeeGwei?: number;
-    medianPriorityFeeGwei?: number;
-    totalPriorityFeeGwei?: number;
-    finalized?: boolean;
-    timeToFinalitySec?: number;
-  } = { blockNumber: blockNumber.toString() };
-
-  if (updates.txCount !== undefined) {
-    result.txCount = updates.txCount;
+// Only picks allowed fields to prevent unexpected data from leaking through
+function liveStreamUpdateToUI(
+  blockNumber: number,
+  updates: LiveStreamBlockUpdate
+): { blockNumber: string } & Partial<LiveStreamBlockUpdate> {
+  const result: { blockNumber: string } & Partial<LiveStreamBlockUpdate> = {
+    blockNumber: blockNumber.toString()
+  };
+  for (const key of ALLOWED_UPDATE_FIELDS) {
+    if (updates[key] !== undefined) {
+      (result as Record<string, unknown>)[key] = updates[key];
+    }
   }
-  if (updates.tps !== undefined) {
-    result.tps = updates.tps;
-  }
-  if (updates.minPriorityFeeGwei !== undefined) {
-    result.minPriorityFeeGwei = updates.minPriorityFeeGwei;
-  }
-  if (updates.maxPriorityFeeGwei !== undefined) {
-    result.maxPriorityFeeGwei = updates.maxPriorityFeeGwei;
-  }
-  if (updates.avgPriorityFeeGwei !== undefined) {
-    result.avgPriorityFeeGwei = updates.avgPriorityFeeGwei;
-  }
-  if (updates.medianPriorityFeeGwei !== undefined) {
-    result.medianPriorityFeeGwei = updates.medianPriorityFeeGwei;
-  }
-  if (updates.totalPriorityFeeGwei !== undefined) {
-    result.totalPriorityFeeGwei = updates.totalPriorityFeeGwei;
-  }
-  if (updates.finalized !== undefined) {
-    result.finalized = updates.finalized;
-  }
-  if (updates.timeToFinalitySec !== undefined) {
-    result.timeToFinalitySec = updates.timeToFinalitySec;
-  }
-
   return result;
 }
 

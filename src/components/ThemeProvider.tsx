@@ -15,15 +15,34 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
 
   // Suppress lightweight-charts errors during React 18 Strict Mode double-invoke
+  // This error occurs when chart is unmounted during the double-invoke cycle
   useEffect(() => {
-    const handler = (event: ErrorEvent) => {
-      if (event.message === 'Value is null') {
+    const isLightweightChartsError = (message: string | undefined, stack: string | undefined): boolean => {
+      // Check for exact error message from lightweight-charts
+      if (message !== 'Value is null') return false;
+      // Verify it's from lightweight-charts by checking the stack trace
+      return stack?.includes('lightweight-charts') ?? false;
+    };
+
+    const errorHandler = (event: ErrorEvent) => {
+      if (isLightweightChartsError(event.message, event.error?.stack)) {
         event.preventDefault();
-        return true;
+        // Don't stopPropagation - let monitoring tools still see it
+        return false;
       }
     };
-    window.addEventListener('error', handler);
-    return () => window.removeEventListener('error', handler);
+    const rejectionHandler = (event: PromiseRejectionEvent) => {
+      if (isLightweightChartsError(event.reason?.message, event.reason?.stack)) {
+        event.preventDefault();
+        return false;
+      }
+    };
+    window.addEventListener('error', errorHandler, true);
+    window.addEventListener('unhandledrejection', rejectionHandler, true);
+    return () => {
+      window.removeEventListener('error', errorHandler, true);
+      window.removeEventListener('unhandledrejection', rejectionHandler, true);
+    };
   }, []);
 
   useEffect(() => {

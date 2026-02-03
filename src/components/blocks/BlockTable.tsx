@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { ReactNode } from 'react';
 import { BlockDataUI } from '@/lib/types';
 import { getTimeAgo, formatGas, formatGweiToPol, getGasUtilizationColor } from '@/lib/utils';
 
@@ -8,6 +9,9 @@ interface BlockTableProps {
   blocks: BlockDataUI[];
   title?: string;
 }
+
+// Placeholder for pending receipt data
+const pendingPlaceholder = <span className="text-muted italic">calculating</span>;
 
 export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps) {
   return (
@@ -76,20 +80,20 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   </td>
                   <td className="px-3 py-2 text-right font-medium text-foreground">{block.baseFeeGwei.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.minPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.minPriorityFeeGwei.toFixed(2) : pendingPlaceholder}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.medianPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.medianPriorityFeeGwei.toFixed(2) : pendingPlaceholder}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.maxPriorityFeeGwei.toFixed(2) : <span className="text-muted italic">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.maxPriorityFeeGwei.toFixed(2) : pendingPlaceholder}
                   </td>
                   <td className="px-3 py-2 text-right">{formatGweiToPol(block.totalBaseFeeGwei)}</td>
                   <td className="px-3 py-2 text-right">
-                    {block.totalPriorityFeeGwei !== null ? formatGweiToPol(block.totalPriorityFeeGwei) : <span className="text-muted italic">calculating</span>}
+                    {block.totalPriorityFeeGwei !== null ? formatGweiToPol(block.totalPriorityFeeGwei) : pendingPlaceholder}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {block.avgPriorityFeeGwei !== null ? block.txCount : <span className="text-muted italic">calculating</span>}
+                    {block.avgPriorityFeeGwei !== null ? block.txCount : pendingPlaceholder}
                   </td>
                   <td className="px-3 py-2 text-right">{block.mgasPerSec?.toFixed(1) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>

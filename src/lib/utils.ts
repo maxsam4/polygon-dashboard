@@ -97,3 +97,27 @@ export function calculateGasPercent(gasUsed: bigint | string, gasLimit: bigint |
   if (limit === 0n) return 0;
   return (Number(used) / Number(limit)) * 100;
 }
+
+/**
+ * Generate an array of bigint values in a range (inclusive).
+ * Used by indexers for batch processing.
+ */
+export function bigintRange(start: bigint, end: bigint): bigint[] {
+  const result: bigint[] = [];
+  for (let i = start; i <= end; i++) {
+    result.push(i);
+  }
+  return result;
+}
+
+/**
+ * Generate an array of numbers in a range (inclusive).
+ * Used by indexers for batch processing.
+ */
+export function numberRange(start: number, end: number): number[] {
+  const result: number[] = [];
+  for (let i = start; i <= end; i++) {
+    result.push(i);
+  }
+  return result;
+}
