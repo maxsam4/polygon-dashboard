@@ -14,6 +14,18 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
 
+  // Suppress lightweight-charts errors during React 18 Strict Mode double-invoke
+  useEffect(() => {
+    const handler = (event: ErrorEvent) => {
+      if (event.message === 'Value is null') {
+        event.preventDefault();
+        return true;
+      }
+    };
+    window.addEventListener('error', handler);
+    return () => window.removeEventListener('error', handler);
+  }, []);
+
   useEffect(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
     if (stored) {
