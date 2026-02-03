@@ -47,5 +47,4 @@ prompts.txt
 
 # services subdirectories
 services/**/node_modules
-services/**/package-lock.json
 services/**/dist
