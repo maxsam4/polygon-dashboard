@@ -67,6 +67,14 @@ interface StatusData {
     blockTarget: number;
     milestoneTarget: number;
   };
+  priorityFeeBackfill?: {
+    cursor: string;
+    minBlock: string;
+    maxBlock: string;
+    processedBlocks: string;
+    totalBlocks: string;
+    isComplete: boolean;
+  } | null;
 }
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -418,7 +426,7 @@ export default function StatusPage() {
                     ? Math.max(0, parseInt(status.milestones.minSeq, 10) - milestoneTarget)
                     : 0;
                   return (
-                    <div className="py-2">
+                    <div className="py-2 border-b border-accent/10">
                       <div className="flex justify-between items-center">
                         <span className="text-muted">Milestone Backfiller</span>
                         <span className={`font-mono ${isMilestoneBackfillFinished ? 'text-success' : 'text-accent'}`}>
@@ -438,6 +446,27 @@ export default function StatusPage() {
                     </div>
                   );
                 })()}
+
+                {/* Priority Fee Backfiller */}
+                {status.priorityFeeBackfill && (
+                  <div className="py-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted">Priority Fee Recalc</span>
+                      <span className={`font-mono ${status.priorityFeeBackfill.isComplete ? 'text-success' : 'text-warning'}`}>
+                        {status.priorityFeeBackfill.isComplete
+                          ? 'Complete'
+                          : `${((parseInt(status.priorityFeeBackfill.processedBlocks) / parseInt(status.priorityFeeBackfill.totalBlocks)) * 100).toFixed(2)}%`
+                        }
+                      </span>
+                    </div>
+                    {!status.priorityFeeBackfill.isComplete && (
+                      <div className="text-muted text-xs mt-1">
+                        {formatNumber(status.priorityFeeBackfill.processedBlocks)} / {formatNumber(status.priorityFeeBackfill.totalBlocks)} blocks
+                        <span className="ml-2">(cursor: {formatNumber(status.priorityFeeBackfill.cursor)})</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </Card>
 

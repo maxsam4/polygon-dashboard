@@ -1,5 +1,6 @@
 import { queryOne } from '../db';
 import { getTableStats } from './stats';
+import { getIndexerState } from '../indexers/indexerState';
 
 /**
  * Get block aggregate statistics using cached table_stats.
@@ -121,4 +122,36 @@ export async function getLatestMilestone() {
       LIMIT 1
     ) m
   `);
+}
+
+/**
+ * Get historical priority fee backfiller progress.
+ * The backfiller works backward from max block to min block.
+ */
+export async function getPriorityFeeBackfillerProgress() {
+  const state = await getIndexerState('historical_priority_fee_backfiller');
+  const blockStats = await getTableStats('blocks');
+
+  if (!state || !blockStats || blockStats.minValue === null || blockStats.maxValue === null) {
+    return null;
+  }
+
+  const cursor = state.blockNumber;
+  const minBlock = blockStats.minValue;
+  const maxBlock = blockStats.maxValue;
+
+  // Backfiller works backward: starts at maxBlock, ends at minBlock
+  // cursor represents the current position (next block to process)
+  // When cursor <= minBlock, backfill is complete
+  const totalBlocks = maxBlock - minBlock;
+  const processedBlocks = maxBlock - cursor;
+
+  return {
+    cursor: cursor.toString(),
+    minBlock: minBlock.toString(),
+    maxBlock: maxBlock.toString(),
+    processedBlocks: processedBlocks.toString(),
+    totalBlocks: totalBlocks.toString(),
+    isComplete: cursor <= minBlock,
+  };
 }
