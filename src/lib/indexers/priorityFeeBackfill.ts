@@ -403,7 +403,6 @@ export class HistoricalPriorityFeeBackfiller {
       `SELECT block_number, timestamp, base_fee_gwei
        FROM blocks
        WHERE block_number >= $1 AND block_number <= $2
-         AND (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
          AND tx_count > 0
        ORDER BY block_number DESC
        LIMIT $3`,
