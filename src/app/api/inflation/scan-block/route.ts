@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { insertInflationRate, getAllInflationRates } from '@/lib/queries/inflation';
+import { getSessionFromCookies } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,17 +8,17 @@ const INITIAL_SUPPLY = 10000000000n * 1000000000000000000n; // 10 billion POL in
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { blockNumber, interestPerYearLog2, blockTimestamp, password } = body;
-
-    // Check password if ADD_RATE_PASSWORD is set
-    const requiredPassword = process.env.ADD_RATE_PASSWORD;
-    if (requiredPassword && password !== requiredPassword) {
+    // Verify session authentication
+    const session = await getSessionFromCookies();
+    if (!session) {
       return NextResponse.json(
-        { error: 'Invalid password' },
+        { error: 'Unauthorized - please log in to admin' },
         { status: 401 }
       );
     }
+
+    const body = await request.json();
+    const { blockNumber, interestPerYearLog2, blockTimestamp } = body;
 
     if (!blockNumber || !interestPerYearLog2) {
       return NextResponse.json(

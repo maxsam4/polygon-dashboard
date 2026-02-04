@@ -260,3 +260,53 @@ export async function getRecentAnomaliesForChart(options: {
 
   return rows.map(rowToAnomaly);
 }
+
+/**
+ * Get all metric thresholds as an array (for API responses).
+ */
+export async function getAllMetricThresholds(): Promise<MetricThreshold[]> {
+  const rows = await query<MetricThresholdRow>(
+    'SELECT * FROM metric_thresholds ORDER BY metric_type'
+  );
+  return rows.map(rowToThreshold);
+}
+
+/**
+ * Update a metric threshold.
+ * Uses upsert to handle both insert and update cases.
+ */
+export async function updateMetricThreshold(
+  metricType: string,
+  threshold: {
+    warningLow: number | null;
+    warningHigh: number | null;
+    criticalLow: number | null;
+    criticalHigh: number | null;
+  }
+): Promise<MetricThreshold> {
+  const row = await queryOne<MetricThresholdRow>(
+    `INSERT INTO metric_thresholds (metric_type, warning_low, warning_high, critical_low, critical_high)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (metric_type)
+     DO UPDATE SET
+       warning_low = EXCLUDED.warning_low,
+       warning_high = EXCLUDED.warning_high,
+       critical_low = EXCLUDED.critical_low,
+       critical_high = EXCLUDED.critical_high,
+       updated_at = NOW()
+     RETURNING *`,
+    [
+      metricType,
+      threshold.warningLow,
+      threshold.warningHigh,
+      threshold.criticalLow,
+      threshold.criticalHigh,
+    ]
+  );
+
+  if (!row) {
+    throw new Error(`Failed to update threshold for ${metricType}`);
+  }
+
+  return rowToThreshold(row);
+}

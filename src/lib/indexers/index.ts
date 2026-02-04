@@ -2,7 +2,7 @@
 // These replace the old worker system with simpler, more reliable services
 
 export { getIndexerState, updateIndexerState, initializeIndexerState, type IndexerCursor } from './indexerState';
-export { handleReorg, moveToReorgedBlocks, getBlockByNumber, getRecentReorgedBlocks, getReorgStats } from './reorgHandler';
+export { handleReorg, moveToReorgedBlocks, getBlockByNumber } from './reorgHandler';
 export { PriorityFeeBackfiller, getPriorityFeeBackfiller, calculatePriorityFeeMetrics, getBlocksMissingPriorityFees, HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller } from './priorityFeeBackfill';
 export { BlockIndexer, getBlockIndexer } from './blockIndexer';
 export { MilestoneIndexer, getMilestoneIndexer } from './milestoneIndexer';

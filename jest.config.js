@@ -20,6 +20,10 @@ const config = {
       tsconfig: 'tsconfig.json',
     }],
   },
+  // Handle ESM packages like jose
+  transformIgnorePatterns: [
+    'node_modules/(?!(jose)/)',
+  ],
 };
 
 module.exports = config;

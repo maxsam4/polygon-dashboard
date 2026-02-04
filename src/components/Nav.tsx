@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
 import { AlertsBadge } from './AlertsBadge';
+import { useAdminAuth } from '@/hooks/useAdminAuth';
 
 export function Nav() {
   const pathname = usePathname();
+  const { isAuthenticated } = useAdminAuth();
 
   const links = [
     { href: '/', label: 'Dashboard' },
@@ -14,7 +16,7 @@ export function Nav() {
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
     { href: '/alerts', label: 'Alerts', hasBadge: true },
-    { href: '/status', label: 'Status' },
+    ...(isAuthenticated ? [{ href: '/admin', label: 'Admin' }] : []),
   ];
 
   return (

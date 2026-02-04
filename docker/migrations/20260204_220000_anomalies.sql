@@ -32,14 +32,14 @@ CREATE TABLE IF NOT EXISTS metric_thresholds (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Insert calibrated defaults based on February 2026 statistics
--- These thresholds are data-calibrated with per-metric sensitivity
+-- Insert calibrated defaults
+-- These thresholds are configurable via admin panel at /admin
 INSERT INTO metric_thresholds (metric_type, warning_low, warning_high, critical_low, critical_high, use_absolute) VALUES
-  ('gas_price', NULL, 1200, NULL, 1600, FALSE),     -- Gas price: only high thresholds (spikes)
-  ('block_time', NULL, 2.5, NULL, 3.0, TRUE),        -- Block time: absolute thresholds (too stable for sigma)
-  ('finality', NULL, 4.0, NULL, 6.0, FALSE),         -- Finality: only high thresholds
-  ('tps', 30, 130, 15, 160, FALSE),                   -- TPS: both low and high (statistical)
-  ('mgas', 5, 32, 2, 36, FALSE)                       -- MGAS/s: both low and high (statistical)
+  ('gas_price', 10, 2000, 2, 5000, FALSE),           -- Gas price in Gwei
+  ('block_time', NULL, 3, 1, 5, TRUE),               -- Block time in seconds
+  ('finality', NULL, 10, NULL, 30, FALSE),           -- Finality in seconds
+  ('tps', 5, 2000, NULL, 3000, FALSE),               -- Transactions per second
+  ('mgas', 2, NULL, NULL, NULL, FALSE)               -- MGAS/s (only low warning)
 ON CONFLICT (metric_type) DO NOTHING;
 
 -- Add comments for documentation

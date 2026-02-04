@@ -1,7 +1,9 @@
 'use client';
 
 import { Nav } from '@/components/Nav';
+import { ThresholdEditor } from '@/components/ThresholdEditor';
 import { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { UI_CONSTANTS, STATUS_THRESHOLDS } from '@/lib/constants';
 import {
   formatAge,
@@ -126,9 +128,10 @@ function StatRow({ label, value, warning }: { label: string; value: string | num
   );
 }
 
-const MAX_HISTORY = UI_CONSTANTS.MAX_HISTORY_SAMPLES; // 12 samples at 5s = 60 seconds of history
+const MAX_HISTORY = UI_CONSTANTS.MAX_HISTORY_SAMPLES;
 
-export default function StatusPage() {
+export default function AdminPage() {
+  const router = useRouter();
   const [status, setStatus] = useState<StatusData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,15 +142,17 @@ export default function StatusPage() {
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
-  // Scan block state
+  // Scan block state (no password needed - authenticated via session)
   const [blockNumberInput, setBlockNumberInput] = useState('');
   const [interestRateInput, setInterestRateInput] = useState('');
-  const [addRatePassword, setAddRatePassword] = useState('');
   const [isScanningBlock, setIsScanningBlock] = useState(false);
   const [scanBlockResult, setScanBlockResult] = useState<{
     success: boolean;
     message: string;
   } | null>(null);
+
+  // Logout state
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -157,7 +162,6 @@ export default function StatusPage() {
       setStatus(data);
       setError(null);
 
-      // Add to history for speed calculations
       const historyEntry: HistoricalData = {
         timestamp: Date.now(),
         minBlock: data.blocks.min,
@@ -169,8 +173,6 @@ export default function StatusPage() {
 
       const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
       historyRef.current = newHistory;
-
-      // Calculate speeds from history
       setSpeeds(calculateSpeeds(newHistory));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -181,7 +183,7 @@ export default function StatusPage() {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000); // Refresh every 5 seconds
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -211,7 +213,6 @@ export default function StatusPage() {
         body: JSON.stringify({
           blockNumber: blockNumberInput,
           interestPerYearLog2: interestRateInput,
-          password: addRatePassword,
         }),
       });
       const result = await response.json();
@@ -223,14 +224,11 @@ export default function StatusPage() {
             ? 'Rate already exists in database'
             : 'New inflation rate added successfully!',
         });
-        // Refresh status after adding new rate
         if (!result.duplicate) {
           fetchStatus();
         }
-        // Clear inputs on success
         setBlockNumberInput('');
         setInterestRateInput('');
-        setBlockNumberInput('');
       } else {
         setScanBlockResult({
           success: false,
@@ -247,13 +245,24 @@ export default function StatusPage() {
     }
   };
 
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+      router.push('/');
+      router.refresh();
+    } catch {
+      setIsLoggingOut(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Nav />
 
       <main className="w-full px-4 py-6 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">System Status</h1>
+          <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
           <div className="flex items-center gap-3">
             {status && (
               <>
@@ -266,6 +275,13 @@ export default function StatusPage() {
                 </span>
               </>
             )}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-surface-hover rounded transition-all"
+            >
+              {isLoggingOut ? 'Signing out...' : 'Sign Out'}
+            </button>
           </div>
         </div>
 
@@ -278,6 +294,12 @@ export default function StatusPage() {
             Error: {error}
           </div>
         )}
+
+        {/* Anomaly Thresholds Section */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-foreground mb-4">Anomaly Thresholds</h2>
+          <ThresholdEditor />
+        </div>
 
         {status && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -505,7 +527,7 @@ export default function StatusPage() {
                 />
               </div>
 
-              {/* Add New Inflation Rate */}
+              {/* Add New Inflation Rate (no password needed - already authenticated) */}
               <div className="pt-4 border-t border-accent/10">
                 <label className="block text-muted text-sm mb-2">
                   Add New Inflation Rate Change
@@ -526,13 +548,6 @@ export default function StatusPage() {
                     value={interestRateInput}
                     onChange={(e) => setInterestRateInput(e.target.value)}
                     placeholder="Interest rate (e.g., 28569152196770890)"
-                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-accent/20 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                  />
-                  <input
-                    type="password"
-                    value={addRatePassword}
-                    onChange={(e) => setAddRatePassword(e.target.value)}
-                    placeholder="Password"
                     className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-accent/20 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
                   />
                   <button

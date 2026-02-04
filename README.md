@@ -207,7 +207,6 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `GET /api/export?type=blocks&format=csv` | Export data in CSV/JSON format |
 | `GET /api/workers/start` | Start background workers |
 | `GET /api/status` | Worker status (running/idle/stopped) |
-| `GET /api/reorgs` | Recent chain reorganizations |
 | `GET /api/anomalies` | Detected anomalies with filtering and pagination |
 
 ## Environment Variables

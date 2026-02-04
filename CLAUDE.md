@@ -57,6 +57,16 @@ After code changes, rebuild the container to test new API routes:
 docker compose up -d --build app
 ```
 
+## Docker Environment Variables
+
+Environment variables must be explicitly listed in `docker-compose.yml` under `environment:` to be passed to containers - they don't auto-pass from `.env`. After adding new env vars to code, add them to docker-compose.yml.
+
+Avoid special characters (`%`, `$`, `!`) in passwords - they can break Docker Compose variable substitution.
+
+## Edge Runtime (Middleware)
+
+`src/middleware.ts` runs in Edge Runtime. Avoid Node.js-specific modules (`crypto`, `fs`, etc.). Use Web Crypto API: `crypto.getRandomValues()` instead of `randomBytes()`.
+
 ## Architecture
 
 ### Indexers
@@ -79,17 +89,28 @@ Standalone service in `/services/live-stream`:
 - `time_to_finality_sec = milestone_timestamp - block_timestamp`
 - MilestoneIndexer writes finality directly on milestone arrival
 
+### Admin Authentication
+
+Password-protected admin panel at `/admin` with JWT session authentication:
+
+- **Login**: `/admin/login` - password form, creates session cookie
+- **Session**: JWT token stored in HttpOnly cookie, 24-hour expiry
+- **Secret**: Auto-generated on server start (sessions invalidate on restart), or set `ADMIN_SESSION_SECRET` for persistence
+- **Password**: Set `ADMIN_PASSWORD` env var (falls back to `ADD_RATE_PASSWORD`)
+- **Middleware**: `src/middleware.ts` protects all `/admin/*` routes except login
+- **Nav**: Admin link only visible when authenticated
+
 ### Anomaly Detection
 
 Detects anomalies in key metrics and stores them for alerting:
 
 - **Tables**: `anomalies` (detected anomalies), `metric_thresholds` (configurable thresholds)
-- **Thresholds** (calibrated from Feb 2026 data):
-  - Gas Price: warning > 1200 Gwei, critical > 1600 Gwei
-  - Block Time: warning > 2.5s, critical > 3s
-  - Finality: warning > 4s, critical > 6s
-  - TPS: warning < 30 or > 130, critical < 15 or > 160
-  - MGAS/s: warning < 5 or > 32, critical < 2 or > 36
+- **Thresholds**: Configurable via admin panel at `/admin`
+  - Gas Price: warning 10-2000 Gwei, critical 2-5000 Gwei
+  - Block Time: warning > 3s, critical 1-5s
+  - Finality: warning > 10s, critical > 30s
+  - TPS: warning 5-2000, critical > 3000
+  - MGAS/s: warning < 2
   - Reorgs: Always critical
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
 - **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode
@@ -105,6 +126,8 @@ npm run test:coverage       # Generate coverage report
 
 Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
+- `jose` is an ESM module - mock it in tests rather than configuring Jest ESM transform
+
 ## Code Organization
 
 ### Shared Utilities
@@ -119,6 +142,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 ### Hooks
 
 - `src/hooks/useChartData.ts` - Chart data fetching with time range handling
+- `src/hooks/useAdminAuth.ts` - Admin authentication state for Nav component
 
 ### Components
 
@@ -126,6 +150,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/components/charts/FullChart.tsx` - Main chart component
 - `src/components/charts/ChartControls.tsx` - Time range and bucket size controls
 - `src/components/AlertsBadge.tsx` - Nav badge showing recent alert count
+- `src/components/ThresholdEditor.tsx` - Admin component for editing anomaly thresholds
 
 ## Key Patterns
 

@@ -139,34 +139,34 @@ export const WEI_PER_POL = 10n ** 18n;
 // These are fallback values; actual thresholds are stored in metric_thresholds table
 export const ANOMALY_THRESHOLDS = {
   gas_price: {
-    warning_low: null,
-    warning_high: 1200,
-    critical_low: null,
-    critical_high: 1600,
+    warning_low: 10,
+    warning_high: 2000,
+    critical_low: 2,
+    critical_high: 5000,
   },
   block_time: {
     warning_low: null,
-    warning_high: 2.5,
-    critical_low: null,
-    critical_high: 3.0,
+    warning_high: 3,
+    critical_low: 1,
+    critical_high: 5,
   },
   finality: {
     warning_low: null,
-    warning_high: 4.0,
+    warning_high: 10,
     critical_low: null,
-    critical_high: 6.0,
+    critical_high: 30,
   },
   tps: {
-    warning_low: 30,
-    warning_high: 130,
-    critical_low: 15,
-    critical_high: 160,
+    warning_low: 5,
+    warning_high: 2000,
+    critical_low: null,
+    critical_high: 3000,
   },
   mgas: {
-    warning_low: 5,
-    warning_high: 32,
-    critical_low: 2,
-    critical_high: 36,
+    warning_low: 2,
+    warning_high: null,
+    critical_low: null,
+    critical_high: null,
   },
 } as const;
 
