@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, R
 import { TIME_RANGE_SECONDS, TIME_RANGE_BUCKETS, getAvailableBuckets, getTimeRangeSeconds } from '@/lib/constants';
 import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
 import { formatDateTimeLocal } from '@/lib/dateUtils';
+import { InflationRateParams, prepareRatesForCalculation } from '@/lib/inflationCalc';
 
 export interface TimeRangeBounds {
   from: number;
@@ -29,6 +30,7 @@ interface ChartDataContextValue {
   // Shared data
   chartData: ChartDataPoint[];
   milestoneData: MilestoneChartDataPoint[];
+  inflationRates: InflationRateParams[];
   isLoading: boolean;
   isDataComplete: boolean;
   timeRangeBounds: TimeRangeBounds | null;
@@ -65,6 +67,7 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
   const [bucketSize, setBucketSize] = useState('15m');
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [milestoneData, setMilestoneData] = useState<MilestoneChartDataPoint[]>([]);
+  const [inflationRates, setInflationRates] = useState<InflationRateParams[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDataComplete, setIsDataComplete] = useState(true);
   const [timeRangeBounds, setTimeRangeBounds] = useState<TimeRangeBounds | null>(null);
@@ -182,6 +185,23 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
     fetchData();
   }, [fetchData]);
 
+  // Fetch inflation rates once on mount (these rarely change)
+  useEffect(() => {
+    async function fetchInflationRates() {
+      try {
+        const response = await fetch('/api/inflation-rates');
+        const json = await response.json();
+        if (json.rates) {
+          const prepared = prepareRatesForCalculation(json.rates);
+          setInflationRates(prepared);
+        }
+      } catch (error) {
+        console.error('Failed to fetch inflation rates:', error);
+      }
+    }
+    fetchInflationRates();
+  }, []);
+
   const value: ChartDataContextValue = {
     timeRange,
     setTimeRange,
@@ -196,6 +216,7 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
     applyCustomRange,
     chartData,
     milestoneData,
+    inflationRates,
     isLoading,
     isDataComplete,
     timeRangeBounds,

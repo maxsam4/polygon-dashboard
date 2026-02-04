@@ -176,22 +176,30 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
   };
 
-  // Fetch inflation rates (once)
+  // Use shared inflation rates when available, otherwise fetch independently
   useEffect(() => {
-    async function fetchRates() {
-      try {
-        const response = await fetch('/api/inflation-rates');
-        const json = await response.json();
-        if (json.rates) {
-          const prepared = prepareRatesForCalculation(json.rates);
-          setRates(prepared);
-        }
-      } catch (error) {
-        console.error('Failed to fetch inflation rates:', error);
-      }
+    if (useSharedData && sharedContext && sharedContext.inflationRates.length > 0) {
+      setRates(sharedContext.inflationRates);
+      return;
     }
-    fetchRates();
-  }, []);
+
+    // Fall back to independent fetch when not using shared context
+    if (!useSharedData) {
+      async function fetchRates() {
+        try {
+          const response = await fetch('/api/inflation-rates');
+          const json = await response.json();
+          if (json.rates) {
+            const prepared = prepareRatesForCalculation(json.rates);
+            setRates(prepared);
+          }
+        } catch (error) {
+          console.error('Failed to fetch inflation rates:', error);
+        }
+      }
+      fetchRates();
+    }
+  }, [useSharedData, sharedContext]);
 
   // Use shared chart data for burn data when available
   useEffect(() => {
