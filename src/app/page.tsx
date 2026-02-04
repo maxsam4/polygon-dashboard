@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Nav } from '@/components/Nav';
-import { MiniChart } from '@/components/charts/MiniChart';
+import { LazyMiniChart } from '@/components/charts/LazyMiniChart';
 import { BlockTable } from '@/components/blocks/BlockTable';
 import { BlockDataUI } from '@/lib/types';
 
@@ -132,28 +132,28 @@ export default function Home() {
 
       <main className="w-full px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <MiniChart
+          <LazyMiniChart
             title="Gas Price"
             data={chartData.gas}
             currentValue={latestBlock?.baseFeeGwei?.toFixed(2) ?? '-'}
             unit="gwei"
             color="#00FF41"
           />
-          <MiniChart
+          <LazyMiniChart
             title="Finality Time"
             data={chartData.finality}
             currentValue={lastFinalizedBlock?.timeToFinalitySec?.toFixed(1) ?? '-'}
             unit="sec"
             color="#00D4FF"
           />
-          <MiniChart
+          <LazyMiniChart
             title="MGAS/s"
             data={chartData.mgas}
             currentValue={latestBlock?.mgasPerSec?.toFixed(1) ?? '-'}
             unit=""
             color="#00FF41"
           />
-          <MiniChart
+          <LazyMiniChart
             title="TPS"
             data={chartData.tps}
             currentValue={lastCalculatedBlock?.tps?.toFixed(0) ?? '-'}
