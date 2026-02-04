@@ -135,6 +135,9 @@ export const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 export const POL_DECIMALS = 18;
 export const WEI_PER_POL = 10n ** 18n;
 
+// All available time ranges for chart controls
+export const ALL_TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL', 'Custom'] as const;
+
 // Bucket size configuration for charts
 export const ALL_BUCKET_SIZES = ['2s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'] as const;
 
