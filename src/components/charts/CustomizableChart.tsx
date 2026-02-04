@@ -44,6 +44,12 @@ const DATA_OPTIONS = [
   { value: 'cumulativeBaseFee', label: 'Cumulative Base Fee (POL)' },
   { value: 'cumulativePriorityFee', label: 'Cumulative Priority Fee (POL)' },
   { value: 'cumulativeTotalFee', label: 'Cumulative Total Fee (POL)' },
+  { value: 'finalityAvg', label: 'Finality Time Avg (s)' },
+  { value: 'finalityMin', label: 'Finality Time Min (s)' },
+  { value: 'finalityMax', label: 'Finality Time Max (s)' },
+  { value: 'blockTimeAvg', label: 'Bor Block Time Avg (s)' },
+  { value: 'blockTimeMin', label: 'Bor Block Time Min (s)' },
+  { value: 'blockTimeMax', label: 'Bor Block Time Max (s)' },
 ] as const;
 
 type DataOptionValue = (typeof DATA_OPTIONS)[number]['value'];
@@ -87,6 +93,18 @@ function getSeriesValue(d: ChartDataPoint, series: DataOptionValue, cumulativeBa
       return cumulativePriorityFee / GWEI_PER_POL;
     case 'cumulativeTotalFee':
       return (cumulativeBaseFee + cumulativePriorityFee) / GWEI_PER_POL;
+    case 'finalityAvg':
+      return d.finalityAvg ?? 0;
+    case 'finalityMin':
+      return d.finalityMin ?? 0;
+    case 'finalityMax':
+      return d.finalityMax ?? 0;
+    case 'blockTimeAvg':
+      return d.blockTimeAvg ?? 0;
+    case 'blockTimeMin':
+      return d.blockTimeMin ?? 0;
+    case 'blockTimeMax':
+      return d.blockTimeMax ?? 0;
     default:
       return 0;
   }
