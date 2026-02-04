@@ -15,6 +15,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - **Gas Utilization Visualization** - Color-coded progress bars showing gas usage relative to 65% target (green: 55-75%, yellow: off-target, red: extreme)
 - **Data Export** - Export block and milestone data in various formats
 - **Automatic Data Backfilling** - Background indexers continuously backfill historical block and milestone data
+- **Anomaly Detection** - Automatic detection of anomalies in gas prices, block times, finality, TPS, and MGAS/s with dedicated alerts page
 - **Dark/Light Mode** - Theme switching support
 
 ## Tech Stack
@@ -93,6 +94,8 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 | `indexer_state` | Cursor positions for indexers |
 | `reorged_blocks` | Reorg tracking |
 | `table_stats` | Cached min/max/count for performance |
+| `anomalies` | Detected metric anomalies |
+| `metric_thresholds` | Configurable anomaly thresholds |
 
 ### Code Organization
 
@@ -205,6 +208,7 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `GET /api/workers/start` | Start background workers |
 | `GET /api/status` | Worker status (running/idle/stopped) |
 | `GET /api/reorgs` | Recent chain reorganizations |
+| `GET /api/anomalies` | Detected anomalies with filtering and pagination |
 
 ## Environment Variables
 

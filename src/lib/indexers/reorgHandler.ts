@@ -2,6 +2,7 @@ import { query, withTransaction } from '../db';
 import { Block, BlockRow } from '../types';
 import { getRpcClient } from '../rpc';
 import { updateIndexerState, IndexerCursor } from './indexerState';
+import { recordReorgAnomaly } from '../anomalyDetector';
 
 interface ReorgedBlockRow {
   id: number;
@@ -138,6 +139,11 @@ export async function handleReorg(
 
     // Hash mismatch - this block was reorged
     console.log(`[ReorgHandler] Block #${checkBlock} was reorged: DB=${dbBlock.blockHash.slice(0, 10)}... Chain=${chainBlock.hash.slice(0, 10)}...`);
+
+    // Record reorg as anomaly (non-blocking)
+    recordReorgAnomaly(checkBlock, dbBlock.timestamp).catch(err => {
+      console.error(`[ReorgHandler] Failed to record reorg anomaly:`, err);
+    });
 
     // Move to reorged_blocks table
     await moveToReorgedBlocks(dbBlock, chainBlock.hash);

@@ -8,6 +8,7 @@ import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep, bigintRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
+import { checkBlocksForAnomalies } from '../anomalyDetector';
 
 const SERVICE_NAME = 'block_indexer';
 const WORKER_NAME = 'BlockIndexer';
@@ -150,6 +151,19 @@ export class BlockIndexer {
               baseFeeGwei: b.baseFeeGwei,
             }))
           );
+
+          // Check blocks for anomalies (non-blocking)
+          checkBlocksForAnomalies(blockData.map(b => ({
+            blockNumber: b.blockNumber,
+            timestamp: b.timestamp,
+            baseFeeGwei: b.baseFeeGwei,
+            blockTimeSec: b.blockTimeSec,
+            timeToFinalitySec: b.timeToFinalitySec,
+            tps: b.tps,
+            mgasPerSec: b.mgasPerSec,
+          }))).catch(err => {
+            console.error(`[${WORKER_NAME}] Anomaly detection error:`, err);
+          });
 
           updateWorkerRun(WORKER_NAME, blocks.length);
           console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number})`);

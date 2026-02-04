@@ -67,6 +67,22 @@ Standalone service in `/services/live-stream`:
 - `time_to_finality_sec = milestone_timestamp - block_timestamp`
 - MilestoneIndexer writes finality directly on milestone arrival
 
+### Anomaly Detection
+
+Detects anomalies in key metrics and stores them for alerting:
+
+- **Tables**: `anomalies` (detected anomalies), `metric_thresholds` (configurable thresholds)
+- **Thresholds** (calibrated from Feb 2026 data):
+  - Gas Price: warning > 1200 Gwei, critical > 1600 Gwei
+  - Block Time: warning > 2.5s, critical > 3s
+  - Finality: warning > 4s, critical > 6s
+  - TPS: warning < 30 or > 130, critical < 15 or > 160
+  - MGAS/s: warning < 5 or > 32, critical < 2 or > 36
+  - Reorgs: Always critical
+- **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
+- **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode
+- **UI**: `/alerts` page with stats, filters, and sortable table
+
 ## Testing
 
 ```bash
@@ -81,11 +97,12 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
 ### Shared Utilities
 
-- `src/lib/constants.ts` - Centralized constants (UI_CONSTANTS, RPC_RETRY_CONFIG, STATUS_THRESHOLDS, GWEI, bucket sizes)
+- `src/lib/constants.ts` - Centralized constants (UI_CONSTANTS, RPC_RETRY_CONFIG, STATUS_THRESHOLDS, ANOMALY_THRESHOLDS, GWEI, bucket sizes)
 - `src/lib/dateUtils.ts` - Date/time formatting utilities for charts
 - `src/lib/statusUtils.ts` - Status page utilities (formatAge, formatSpeed, calculateSpeeds)
 - `src/lib/chartSeriesConfig.ts` - Chart series configurations and metric definitions
 - `src/lib/utils.ts` - General utilities (sleep, formatPol)
+- `src/lib/anomalyDetector.ts` - Anomaly detection logic for block metrics
 
 ### Hooks
 
@@ -96,6 +113,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/components/charts/ChartTooltip.tsx` - Reusable chart tooltip component
 - `src/components/charts/FullChart.tsx` - Main chart component
 - `src/components/charts/ChartControls.tsx` - Time range and bucket size controls
+- `src/components/AlertsBadge.tsx` - Nav badge showing recent alert count
 
 ## Key Patterns
 

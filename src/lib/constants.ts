@@ -135,6 +135,44 @@ export const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 export const POL_DECIMALS = 18;
 export const WEI_PER_POL = 10n ** 18n;
 
+// Anomaly detection thresholds (calibrated from February 2026 statistics)
+// These are fallback values; actual thresholds are stored in metric_thresholds table
+export const ANOMALY_THRESHOLDS = {
+  gas_price: {
+    warning_low: null,
+    warning_high: 1200,
+    critical_low: null,
+    critical_high: 1600,
+  },
+  block_time: {
+    warning_low: null,
+    warning_high: 2.5,
+    critical_low: null,
+    critical_high: 3.0,
+  },
+  finality: {
+    warning_low: null,
+    warning_high: 4.0,
+    critical_low: null,
+    critical_high: 6.0,
+  },
+  tps: {
+    warning_low: 30,
+    warning_high: 130,
+    critical_low: 15,
+    critical_high: 160,
+  },
+  mgas: {
+    warning_low: 5,
+    warning_high: 32,
+    critical_low: 2,
+    critical_high: 36,
+  },
+} as const;
+
+export type AnomalyMetricType = keyof typeof ANOMALY_THRESHOLDS | 'reorg';
+export type AnomalySeverity = 'warning' | 'critical';
+
 // All available time ranges for chart controls
 export const ALL_TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL', 'Custom'] as const;
 

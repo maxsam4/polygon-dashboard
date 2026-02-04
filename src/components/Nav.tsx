@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './ThemeToggle';
+import { AlertsBadge } from './AlertsBadge';
 
 export function Nav() {
   const pathname = usePathname();
@@ -12,6 +13,7 @@ export function Nav() {
     { href: '/analytics', label: 'Analytics' },
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
+    { href: '/alerts', label: 'Alerts', hasBadge: true },
     { href: '/status', label: 'Status' },
   ];
 
@@ -27,13 +29,14 @@ export function Nav() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 ${
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 flex items-center gap-1.5 ${
                   pathname === link.href
                     ? 'btn-gradient-active'
                     : 'text-muted hover:text-accent hover:bg-surface-hover'
                 }`}
               >
                 {link.label}
+                {link.hasBadge && <AlertsBadge />}
               </Link>
             ))}
           </nav>
