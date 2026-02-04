@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode, useRef } from 'react';
 import { TIME_RANGE_SECONDS, TIME_RANGE_BUCKETS, getAvailableBuckets, getTimeRangeSeconds } from '@/lib/constants';
 import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
 import { formatDateTimeLocal } from '@/lib/dateUtils';
@@ -69,6 +69,10 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
   const [isDataComplete, setIsDataComplete] = useState(true);
   const [timeRangeBounds, setTimeRangeBounds] = useState<TimeRangeBounds | null>(null);
 
+  // Track last fetch to prevent duplicates
+  const lastFetchKeyRef = useRef<string>('');
+  const fetchInProgressRef = useRef<boolean>(false);
+
   // Custom date range state
   const now = new Date();
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -113,6 +117,17 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
       return;
     }
 
+    // Create a unique key for this fetch configuration
+    const customRangeKey = appliedCustomRange ? `${appliedCustomRange.start}-${appliedCustomRange.end}` : 'none';
+    const fetchKey = `${timeRange}-${bucketSize}-${customRangeKey}`;
+
+    // Skip if already fetching or if we already fetched this exact configuration
+    if (fetchInProgressRef.current || lastFetchKeyRef.current === fetchKey) {
+      return;
+    }
+
+    fetchInProgressRef.current = true;
+    lastFetchKeyRef.current = fetchKey;
     setIsLoading(true);
 
     let fromTime: number;
@@ -159,6 +174,7 @@ export function ChartDataProvider({ children }: ChartDataProviderProps) {
       setIsDataComplete(true);
     } finally {
       setIsLoading(false);
+      fetchInProgressRef.current = false;
     }
   }, [timeRange, bucketSize, appliedCustomRange]);
 

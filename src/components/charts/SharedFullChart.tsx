@@ -28,6 +28,7 @@ import {
   getBlockRangeInfo,
 } from '@/lib/chartSeriesConfig';
 import { useSharedChartData } from '@/contexts/ChartDataContext';
+import { ChartControls } from './ChartControls';
 
 interface SharedFullChartProps {
   title: string;
@@ -55,7 +56,16 @@ export function SharedFullChart({ title, metric, showCumulative = false }: Share
     isDataComplete,
     timeRangeBounds,
     timeRange,
+    setTimeRange,
+    bucketSize,
+    setBucketSize,
+    availableBuckets,
     appliedCustomRange,
+    customStartTime,
+    setCustomStartTime,
+    customEndTime,
+    setCustomEndTime,
+    applyCustomRange,
   } = useSharedChartData();
 
   // Select appropriate data based on metric
@@ -477,30 +487,22 @@ export function SharedFullChart({ title, metric, showCumulative = false }: Share
         </div>
       </div>
 
-      {/* Series toggles */}
-      {seriesOptions.length > 1 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {seriesOptions.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => handleSeriesToggle(opt.key)}
-              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-all ${
-                opt.enabled
-                  ? 'bg-surface-elevated text-foreground'
-                  : 'bg-surface text-muted'
-              }`}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: opt.enabled ? opt.color : '#666' }}
-              />
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <ChartControls
+        timeRange={timeRange}
+        onTimeRangeChange={setTimeRange}
+        bucketSize={bucketSize}
+        onBucketSizeChange={setBucketSize}
+        seriesOptions={seriesOptions}
+        onSeriesToggle={handleSeriesToggle}
+        customStartTime={customStartTime}
+        customEndTime={customEndTime}
+        onCustomStartTimeChange={setCustomStartTime}
+        onCustomEndTimeChange={setCustomEndTime}
+        onApplyCustomRange={applyCustomRange}
+        availableBuckets={availableBuckets}
+      />
 
-      <div className="relative">
+      <div className="relative mt-4">
         <div
           ref={chartContainerRef}
           className="w-full cursor-crosshair"

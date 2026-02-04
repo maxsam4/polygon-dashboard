@@ -4,7 +4,6 @@ import { Nav } from '@/components/Nav';
 import { SharedFullChart } from '@/components/charts/SharedFullChart';
 import { SharedCustomizableChart } from '@/components/charts/SharedCustomizableChart';
 import { InflationChart } from '@/components/charts/InflationChart';
-import { GlobalChartControls } from '@/components/charts/GlobalChartControls';
 import { ChartDataProvider } from '@/contexts/ChartDataContext';
 
 export default function AnalyticsPage() {
@@ -14,9 +13,6 @@ export default function AnalyticsPage() {
 
       <main className="w-full px-4 py-6">
         <ChartDataProvider>
-          {/* Global chart controls */}
-          <GlobalChartControls />
-
           {/* Customizable charts at the top */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <SharedCustomizableChart

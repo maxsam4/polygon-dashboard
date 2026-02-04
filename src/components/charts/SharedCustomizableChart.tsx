@@ -20,6 +20,7 @@ import {
   formatTooltipTime as formatTooltipTimeUtil,
 } from '@/lib/dateUtils';
 import { useSharedChartData } from '@/contexts/ChartDataContext';
+import { ChartControls } from './ChartControls';
 
 // Available data series options
 const DATA_OPTIONS = [
@@ -119,7 +120,16 @@ export function SharedCustomizableChart({
     isDataComplete,
     timeRangeBounds,
     timeRange,
+    setTimeRange,
+    bucketSize,
+    setBucketSize,
+    availableBuckets,
     appliedCustomRange,
+    customStartTime,
+    setCustomStartTime,
+    customEndTime,
+    setCustomEndTime,
+    applyCustomRange,
   } = useSharedChartData();
 
   const [isZoomed, setIsZoomed] = useState(false);
@@ -404,7 +414,22 @@ export function SharedCustomizableChart({
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="w-full cursor-crosshair" title="Scroll to zoom, drag to pan" />
+      <ChartControls
+        timeRange={timeRange}
+        onTimeRangeChange={setTimeRange}
+        bucketSize={bucketSize}
+        onBucketSizeChange={setBucketSize}
+        seriesOptions={[]}
+        onSeriesToggle={() => {}}
+        customStartTime={customStartTime}
+        customEndTime={customEndTime}
+        onCustomStartTimeChange={setCustomStartTime}
+        onCustomEndTimeChange={setCustomEndTime}
+        onApplyCustomRange={applyCustomRange}
+        availableBuckets={availableBuckets}
+      />
+
+      <div ref={chartContainerRef} className="w-full mt-4 cursor-crosshair" title="Scroll to zoom, drag to pan" />
     </div>
   );
 }
