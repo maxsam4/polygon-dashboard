@@ -45,6 +45,18 @@ docker compose logs -f app      # Check logs
 docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 ```
 
+## Running Migrations
+
+Migrations aren't auto-mounted in Docker. Execute via stdin:
+```bash
+docker compose exec -T db psql -U polygon -d polygon_dashboard < docker/migrations/FILENAME.sql
+```
+
+After code changes, rebuild the container to test new API routes:
+```bash
+docker compose up -d --build app
+```
+
 ## Architecture
 
 ### Indexers
