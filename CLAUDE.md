@@ -45,6 +45,17 @@ docker compose logs -f app      # Check logs
 docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 ```
 
+## Git Worktrees
+
+Feature branches use worktrees for isolated development:
+- Location: `.worktrees/<feature-name>`
+- Branch: `feature/<feature-name>`
+
+```bash
+git worktree add .worktrees/my-feature -b feature/my-feature  # Create
+git worktree remove .worktrees/my-feature                      # Remove after merge
+```
+
 ## Running Migrations
 
 Migrations aren't auto-mounted in Docker. Execute via stdin:
