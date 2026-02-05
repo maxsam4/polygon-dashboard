@@ -12,7 +12,8 @@ interface AnomalyData {
   value: number | null;
   expectedValue: number | null;
   threshold: number | null;
-  blockNumber: string | null;
+  startBlockNumber: string | null;
+  endBlockNumber: string | null;
   createdAt: string;
   acknowledged: boolean;
   acknowledgedAt: string | null;
@@ -383,7 +384,7 @@ export default function AlertsPage() {
                         <th className="px-4 py-3 text-left font-medium">Value</th>
                         <th className="px-4 py-3 text-left font-medium">Threshold</th>
                         <th className="px-4 py-3 text-left font-medium">Severity</th>
-                        <th className="px-4 py-3 text-left font-medium">Block</th>
+                        <th className="px-4 py-3 text-left font-medium">Blocks</th>
                         <th className="px-4 py-3 text-left font-medium">Status</th>
                       </tr>
                     </thead>
@@ -432,14 +433,32 @@ export default function AlertsPage() {
                               {anomaly.severity}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            {anomaly.blockNumber ? (
-                              <Link
-                                href={`/blocks?block=${anomaly.blockNumber}`}
-                                className="text-accent hover:underline font-mono"
-                              >
-                                #{anomaly.blockNumber}
-                              </Link>
+                          <td className="px-4 py-3 font-mono">
+                            {anomaly.startBlockNumber ? (
+                              anomaly.startBlockNumber === anomaly.endBlockNumber ? (
+                                <Link
+                                  href={`/blocks?block=${anomaly.startBlockNumber}`}
+                                  className="text-accent hover:underline"
+                                >
+                                  #{anomaly.startBlockNumber}
+                                </Link>
+                              ) : (
+                                <span>
+                                  <Link
+                                    href={`/blocks?block=${anomaly.startBlockNumber}`}
+                                    className="text-accent hover:underline"
+                                  >
+                                    #{anomaly.startBlockNumber}
+                                  </Link>
+                                  <span className="text-muted"> - </span>
+                                  <Link
+                                    href={`/blocks?block=${anomaly.endBlockNumber}`}
+                                    className="text-accent hover:underline"
+                                  >
+                                    #{anomaly.endBlockNumber}
+                                  </Link>
+                                </span>
+                              )
                             ) : (
                               <span className="text-muted">-</span>
                             )}

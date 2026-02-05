@@ -31,7 +31,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { metricType, warningLow, warningHigh, criticalLow, criticalHigh } = body;
+    const { metricType, warningLow, warningHigh, criticalLow, criticalHigh, minConsecutiveBlocks } = body;
 
     if (!metricType) {
       return NextResponse.json(
@@ -49,12 +49,23 @@ export async function PUT(request: Request) {
       );
     }
 
+    // Validate minConsecutiveBlocks if provided
+    if (minConsecutiveBlocks !== undefined && minConsecutiveBlocks !== null) {
+      if (!Number.isInteger(minConsecutiveBlocks) || minConsecutiveBlocks < 1) {
+        return NextResponse.json(
+          { error: 'minConsecutiveBlocks must be a positive integer' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Update the threshold
     const updated = await updateMetricThreshold(metricType, {
       warningLow: warningLow ?? null,
       warningHigh: warningHigh ?? null,
       criticalLow: criticalLow ?? null,
       criticalHigh: criticalHigh ?? null,
+      minConsecutiveBlocks: minConsecutiveBlocks ?? 1,
     });
 
     // Clear the cache so changes take effect immediately

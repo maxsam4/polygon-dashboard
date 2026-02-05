@@ -10,6 +10,7 @@ interface Threshold {
   criticalLow: number | null;
   criticalHigh: number | null;
   useAbsolute: boolean;
+  minConsecutiveBlocks: number;
 }
 
 interface MetricConfig {
@@ -58,6 +59,7 @@ function ThresholdCard({
     warningHigh: threshold.warningHigh?.toString() ?? '',
     criticalLow: threshold.criticalLow?.toString() ?? '',
     criticalHigh: threshold.criticalHigh?.toString() ?? '',
+    minConsecutiveBlocks: threshold.minConsecutiveBlocks?.toString() ?? '1',
   });
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -79,6 +81,7 @@ function ThresholdCard({
         warningHigh: values.warningHigh ? parseFloat(values.warningHigh) : null,
         criticalLow: values.criticalLow ? parseFloat(values.criticalLow) : null,
         criticalHigh: values.criticalHigh ? parseFloat(values.criticalHigh) : null,
+        minConsecutiveBlocks: values.minConsecutiveBlocks ? parseInt(values.minConsecutiveBlocks, 10) : 1,
       });
       setMessage({ type: 'success', text: 'Saved' });
       setTimeout(() => setMessage(null), 2000);
@@ -96,7 +99,8 @@ function ThresholdCard({
     (values.warningLow || null) !== (threshold.warningLow?.toString() || null) ||
     (values.warningHigh || null) !== (threshold.warningHigh?.toString() || null) ||
     (values.criticalLow || null) !== (threshold.criticalLow?.toString() || null) ||
-    (values.criticalHigh || null) !== (threshold.criticalHigh?.toString() || null);
+    (values.criticalHigh || null) !== (threshold.criticalHigh?.toString() || null) ||
+    (values.minConsecutiveBlocks || '1') !== (threshold.minConsecutiveBlocks?.toString() || '1');
 
   return (
     <div className="terminal-card rounded-lg p-4 relative overflow-hidden">
@@ -112,7 +116,7 @@ function ThresholdCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
           <label className="block text-xs text-warning mb-1">Warning Low</label>
           <input
@@ -156,6 +160,22 @@ function ThresholdCard({
             placeholder="None"
             className="w-full px-2 py-1 text-sm bg-surface dark:bg-surface-elevated text-foreground rounded border border-accent/20 focus:outline-none focus:ring-1 focus:ring-danger/50"
           />
+        </div>
+      </div>
+
+      <div className="mb-4 pt-3 border-t border-accent/10">
+        <label className="block text-xs text-muted mb-1">Min Consecutive Blocks</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={values.minConsecutiveBlocks}
+            onChange={(e) => setValues({ ...values, minConsecutiveBlocks: e.target.value })}
+            placeholder="1"
+            className="w-24 px-2 py-1 text-sm bg-surface dark:bg-surface-elevated text-foreground rounded border border-accent/20 focus:outline-none focus:ring-1 focus:ring-accent/50"
+          />
+          <span className="text-xs text-muted">blocks required before alert shows</span>
         </div>
       </div>
 
@@ -213,6 +233,7 @@ export function ThresholdEditor() {
           criticalLow: defaults.critical_low,
           criticalHigh: defaults.critical_high,
           useAbsolute: true,
+          minConsecutiveBlocks: defaults.min_consecutive_blocks,
         };
       });
 
@@ -235,6 +256,7 @@ export function ThresholdEditor() {
         warningHigh: updated.warningHigh,
         criticalLow: updated.criticalLow,
         criticalHigh: updated.criticalHigh,
+        minConsecutiveBlocks: updated.minConsecutiveBlocks,
       }),
     });
 

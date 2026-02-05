@@ -119,13 +119,22 @@ Password-protected admin panel at `/admin` with JWT session authentication:
 Detects anomalies in key metrics and stores them for alerting:
 
 - **Tables**: `anomalies` (detected anomalies), `metric_thresholds` (configurable thresholds)
+- **Block Ranges**: Consecutive blocks with the same anomaly are grouped into ranges (e.g., "blocks 100-105" instead of 6 separate alerts)
+  - `start_block_number` and `end_block_number` columns define the range
+  - Ranges are extended across indexer batches via `findExtendableAnomalyRange()`
+  - Different severities or metric types are never merged
 - **Thresholds**: Configurable via admin panel at `/admin`
   - Gas Price: warning 10-2000 Gwei, critical 2-5000 Gwei
   - Block Time: warning > 3s, critical 1-5s
   - Finality: warning > 10s, critical > 30s
   - TPS: warning 5-2000, critical > 3000
   - MGAS/s: warning < 2
-  - Reorgs: Always critical
+  - Reorgs: Always critical (exempt from min_consecutive_blocks filter)
+- **Min Consecutive Blocks**: Each metric can require N consecutive blocks with anomaly before showing
+  - Set via admin panel per metric type
+  - Filters transient spikes (e.g., gas_price defaults to 2 blocks)
+  - Applied at query time in `getAnomalies()` and `getAnomalyCount()`
+  - Reorgs always shown regardless of this setting
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
 - **API**:
   - `GET /api/anomalies` - filtering, pagination, count-only mode (requires auth)
