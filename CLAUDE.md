@@ -29,6 +29,8 @@ UPDATE blocks SET x = y WHERE block_number = 12345;
 UPDATE blocks SET x = y WHERE (timestamp, block_number) = ('2026-02-03 09:25:58+00', 12345);
 ```
 
+**Timestamp filters must be < 7 days** - Chunks are compressed after 35 days. Queries spanning compressed chunks are slow. Always use timestamp filters within 7 days for hypertable queries (blocks, block_finality).
+
 **Check for stuck queries before retrying** - Failed SSH sessions can leave queries running:
 ```sql
 -- Find stuck queries
