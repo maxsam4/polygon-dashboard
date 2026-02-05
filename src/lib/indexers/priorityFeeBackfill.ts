@@ -11,7 +11,10 @@ interface PendingBlock {
   blockNumber: bigint;
   timestamp: Date;
   baseFeeGwei: number;
+  retryCount?: number;  // Track retry attempts
 }
+
+const MAX_RETRIES = 5;  // Max retry attempts before giving up
 
 /**
  * Queue for backfilling priority fee data after blocks are indexed.
@@ -113,15 +116,42 @@ export class PriorityFeeBackfiller {
       receiptsCount: number;
     }> = [];
 
+    // Track blocks that failed to get receipts for retry
+    const blocksToRetry: PendingBlock[] = [];
+
     for (const block of blocks) {
-      const receipts = receiptsMap.get(block.blockNumber);
-      if (!receipts || receipts.length === 0) continue;
+      let receipts: TransactionReceipt[] | null | undefined = receiptsMap.get(block.blockNumber);
+
+      // If receipts not available, wait briefly and retry once
+      // This handles the race condition where very recent blocks
+      // don't have receipts ready yet
+      if (!receipts || receipts.length === 0) {
+        await sleep(500);
+        receipts = await rpc.getBlockReceipts(block.blockNumber);
+      }
+
+      if (!receipts || receipts.length === 0) {
+        // Still no receipts - re-queue for later if under retry limit
+        const retryCount = (block.retryCount || 0) + 1;
+        if (retryCount < MAX_RETRIES) {
+          blocksToRetry.push({ ...block, retryCount });
+        }
+        // If max retries exceeded, block is dropped silently
+        // It will be picked up by getBlocksMissingPriorityFees() later
+        continue;
+      }
 
       const metrics = calculatePriorityFeeMetrics(receipts, block.baseFeeGwei);
 
       if (metrics.avgPriorityFeeGwei !== null && metrics.totalPriorityFeeGwei !== null) {
         updates.push({ block, metrics, receiptsCount: receipts.length });
       }
+    }
+
+    // Re-queue blocks that failed to get receipts
+    if (blocksToRetry.length > 0) {
+      this.queue.push(...blocksToRetry);
+      console.log(`[PriorityFeeBackfiller] Re-queued ${blocksToRetry.length} blocks for retry (receipts not ready)`);
     }
 
     // Execute batch DB update (single query instead of N parallel queries)
@@ -290,10 +320,12 @@ export class HistoricalPriorityFeeBackfiller {
   private running = false;
   private batchSize: number;
   private delayMs: number;
+  private targetBlock: bigint;
 
   constructor() {
     this.batchSize = parseInt(process.env.HISTORICAL_PRIORITY_FEE_BATCH_SIZE || '100', 10);
     this.delayMs = parseInt(process.env.HISTORICAL_PRIORITY_FEE_DELAY_MS || '100', 10);
+    this.targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '50000000');
   }
 
   async start(): Promise<void> {
@@ -301,7 +333,7 @@ export class HistoricalPriorityFeeBackfiller {
     this.running = true;
 
     console.log(`[HistoricalPriorityFeeBackfiller] Starting historical priority fee backfiller`);
-    console.log(`[HistoricalPriorityFeeBackfiller] Batch size: ${this.batchSize}, Delay: ${this.delayMs}ms`);
+    console.log(`[HistoricalPriorityFeeBackfiller] Target block: ${this.targetBlock}, Batch size: ${this.batchSize}, Delay: ${this.delayMs}ms`);
 
     // Load cursor from DB
     const state = await getIndexerState(HISTORICAL_SERVICE_NAME);
@@ -353,18 +385,15 @@ export class HistoricalPriorityFeeBackfiller {
         if (blocks.length === 0) {
           // No missing blocks in current range, move cursor down
           if (this.cursor !== null) {
-            const stats = await getTableStats('blocks');
-            const minBlock = stats?.minValue ?? 0n;
-
-            if (this.cursor <= minBlock) {
-              console.log(`[HistoricalPriorityFeeBackfiller] Complete! Reached min block ${minBlock}`);
+            if (this.cursor <= this.targetBlock) {
+              console.log(`[HistoricalPriorityFeeBackfiller] Complete! Reached target block ${this.targetBlock}`);
               this.running = false;
               break;
             }
 
             // Move cursor down
             this.cursor = this.cursor - BigInt(this.batchSize * 10);
-            if (this.cursor < minBlock) this.cursor = minBlock;
+            if (this.cursor < this.targetBlock) this.cursor = this.targetBlock;
             await updateIndexerState(HISTORICAL_SERVICE_NAME, this.cursor, '0x0');
           }
           await sleep(this.delayMs);
