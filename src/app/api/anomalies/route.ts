@@ -83,8 +83,8 @@ export async function GET(request: NextRequest) {
       offset,
     });
 
-    // Also get counts for the stats header
-    const counts = await getAnomalyCount({ from, to });
+    // Also get counts for the stats header (include acknowledged alerts in total stats)
+    const counts = await getAnomalyCount({ from, to, excludeAcknowledged: false });
 
     // Serialize anomalies (convert BigInt to string)
     const serializedAnomalies = anomalies.map(a => ({
