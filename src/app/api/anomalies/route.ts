@@ -80,7 +80,8 @@ export async function GET(request: NextRequest) {
       value: a.value,
       expectedValue: a.expectedValue,
       threshold: a.threshold,
-      blockNumber: a.blockNumber?.toString() ?? null,
+      startBlockNumber: a.startBlockNumber?.toString() ?? null,
+      endBlockNumber: a.endBlockNumber?.toString() ?? null,
       createdAt: a.createdAt.toISOString(),
     }));
 

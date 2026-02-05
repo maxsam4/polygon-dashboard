@@ -9,7 +9,8 @@ export interface Anomaly {
   value: number | null;
   expectedValue: number | null;
   threshold: number | null;
-  blockNumber: bigint | null;
+  startBlockNumber: bigint | null;
+  endBlockNumber: bigint | null;
   createdAt: Date;
 }
 
@@ -21,7 +22,8 @@ export interface AnomalyRow {
   value: number | null;
   expected_value: number | null;
   threshold: number | null;
-  block_number: string | null;
+  start_block_number: string | null;
+  end_block_number: string | null;
   created_at: Date;
 }
 
@@ -52,7 +54,8 @@ function rowToAnomaly(row: AnomalyRow): Anomaly {
     value: row.value,
     expectedValue: row.expected_value,
     threshold: row.threshold,
-    blockNumber: row.block_number ? BigInt(row.block_number) : null,
+    startBlockNumber: row.start_block_number ? BigInt(row.start_block_number) : null,
+    endBlockNumber: row.end_block_number ? BigInt(row.end_block_number) : null,
     createdAt: row.created_at,
   };
 }
@@ -173,7 +176,7 @@ export async function getAnomalyCount(options: {
 }
 
 /**
- * Insert a new anomaly record.
+ * Insert a new anomaly record with block range.
  */
 export async function insertAnomaly(anomaly: {
   timestamp?: Date;
@@ -182,11 +185,12 @@ export async function insertAnomaly(anomaly: {
   value?: number | null;
   expectedValue?: number | null;
   threshold?: number | null;
-  blockNumber?: bigint | null;
+  startBlockNumber?: bigint | null;
+  endBlockNumber?: bigint | null;
 }): Promise<number> {
   const result = await queryOne<{ id: number }>(
-    `INSERT INTO anomalies (timestamp, metric_type, severity, value, expected_value, threshold, block_number)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO anomalies (timestamp, metric_type, severity, value, expected_value, threshold, start_block_number, end_block_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id`,
     [
       anomaly.timestamp || new Date(),
@@ -195,7 +199,73 @@ export async function insertAnomaly(anomaly: {
       anomaly.value ?? null,
       anomaly.expectedValue ?? null,
       anomaly.threshold ?? null,
-      anomaly.blockNumber?.toString() ?? null,
+      anomaly.startBlockNumber?.toString() ?? null,
+      anomaly.endBlockNumber?.toString() ?? anomaly.startBlockNumber?.toString() ?? null,
+    ]
+  );
+  return result?.id ?? 0;
+}
+
+/**
+ * Find an anomaly range that can be extended (ends at previousBlock).
+ * Used to extend existing ranges when consecutive blocks have the same anomaly.
+ */
+export async function findExtendableAnomalyRange(
+  metricType: string,
+  severity: string,
+  previousBlockNumber: bigint
+): Promise<{ id: number; timestamp: Date } | null> {
+  const result = await queryOne<{ id: number; timestamp: Date }>(
+    `SELECT id, timestamp FROM anomalies
+     WHERE metric_type = $1 AND severity = $2 AND end_block_number = $3
+     ORDER BY timestamp DESC LIMIT 1`,
+    [metricType, severity, previousBlockNumber.toString()]
+  );
+  return result;
+}
+
+/**
+ * Extend an existing anomaly range to include more blocks.
+ * Requires timestamp for efficient TimescaleDB lookup.
+ */
+export async function extendAnomalyRange(
+  id: number,
+  timestamp: Date,
+  newEndBlock: bigint,
+  newValue: number | null
+): Promise<void> {
+  await query(
+    `UPDATE anomalies
+     SET end_block_number = $1, value = COALESCE($2, value)
+     WHERE id = $3 AND timestamp = $4`,
+    [newEndBlock.toString(), newValue, id, timestamp]
+  );
+}
+
+/**
+ * Insert anomaly with explicit block range.
+ */
+export async function insertAnomalyRange(params: {
+  timestamp: Date;
+  metricType: AnomalyMetricType;
+  severity: AnomalySeverity;
+  value: number | null;
+  threshold: number | null;
+  startBlockNumber: bigint;
+  endBlockNumber: bigint;
+}): Promise<number> {
+  const result = await queryOne<{ id: number }>(
+    `INSERT INTO anomalies (timestamp, metric_type, severity, value, threshold, start_block_number, end_block_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [
+      params.timestamp,
+      params.metricType,
+      params.severity,
+      params.value,
+      params.threshold,
+      params.startBlockNumber.toString(),
+      params.endBlockNumber.toString(),
     ]
   );
   return result?.id ?? 0;

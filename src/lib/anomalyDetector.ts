@@ -1,7 +1,13 @@
 import { AnomalyMetricType, AnomalySeverity, ANOMALY_THRESHOLDS } from './constants';
-import { insertAnomaly, getMetricThresholds, MetricThreshold } from './queries/anomalies';
+import {
+  insertAnomalyRange,
+  findExtendableAnomalyRange,
+  extendAnomalyRange,
+  getMetricThresholds,
+  MetricThreshold,
+} from './queries/anomalies';
 
-interface BlockMetrics {
+export interface BlockMetrics {
   blockNumber: bigint;
   timestamp: Date;
   baseFeeGwei: number | null;
@@ -9,6 +15,15 @@ interface BlockMetrics {
   timeToFinalitySec: number | null;
   tps: number | null;
   mgasPerSec: number | null;
+}
+
+interface BlockAnomalyResult {
+  blockNumber: bigint;
+  timestamp: Date;
+  metricType: AnomalyMetricType;
+  severity: AnomalySeverity;
+  value: number;
+  threshold: number;
 }
 
 // Cache thresholds to avoid repeated DB queries
@@ -99,32 +114,23 @@ function checkThreshold(
 }
 
 /**
- * Check block metrics for anomalies and insert any detected anomalies.
- * This function is called by the BlockIndexer after processing each block.
- * It runs asynchronously and doesn't block the indexer.
+ * Check block metrics and return anomalies (without inserting).
  */
-export async function checkBlockForAnomalies(block: BlockMetrics): Promise<void> {
-  const anomaliesToInsert: Array<{
-    timestamp: Date;
-    metricType: AnomalyMetricType;
-    severity: AnomalySeverity;
-    value: number;
-    threshold: number;
-    blockNumber: bigint;
-  }> = [];
+async function checkBlockMetrics(block: BlockMetrics): Promise<BlockAnomalyResult[]> {
+  const anomalies: BlockAnomalyResult[] = [];
 
   // Check gas price (base fee)
   if (block.baseFeeGwei !== null) {
     const thresholds = await getThresholdForMetric('gas_price');
     const result = checkThreshold(block.baseFeeGwei, thresholds);
     if (result) {
-      anomaliesToInsert.push({
+      anomalies.push({
+        blockNumber: block.blockNumber,
         timestamp: block.timestamp,
         metricType: 'gas_price',
         severity: result.severity,
         value: block.baseFeeGwei,
         threshold: result.threshold,
-        blockNumber: block.blockNumber,
       });
     }
   }
@@ -134,13 +140,13 @@ export async function checkBlockForAnomalies(block: BlockMetrics): Promise<void>
     const thresholds = await getThresholdForMetric('block_time');
     const result = checkThreshold(block.blockTimeSec, thresholds);
     if (result) {
-      anomaliesToInsert.push({
+      anomalies.push({
+        blockNumber: block.blockNumber,
         timestamp: block.timestamp,
         metricType: 'block_time',
         severity: result.severity,
         value: block.blockTimeSec,
         threshold: result.threshold,
-        blockNumber: block.blockNumber,
       });
     }
   }
@@ -150,13 +156,13 @@ export async function checkBlockForAnomalies(block: BlockMetrics): Promise<void>
     const thresholds = await getThresholdForMetric('finality');
     const result = checkThreshold(block.timeToFinalitySec, thresholds);
     if (result) {
-      anomaliesToInsert.push({
+      anomalies.push({
+        blockNumber: block.blockNumber,
         timestamp: block.timestamp,
         metricType: 'finality',
         severity: result.severity,
         value: block.timeToFinalitySec,
         threshold: result.threshold,
-        blockNumber: block.blockNumber,
       });
     }
   }
@@ -166,13 +172,13 @@ export async function checkBlockForAnomalies(block: BlockMetrics): Promise<void>
     const thresholds = await getThresholdForMetric('tps');
     const result = checkThreshold(block.tps, thresholds);
     if (result) {
-      anomaliesToInsert.push({
+      anomalies.push({
+        blockNumber: block.blockNumber,
         timestamp: block.timestamp,
         metricType: 'tps',
         severity: result.severity,
         value: block.tps,
         threshold: result.threshold,
-        blockNumber: block.blockNumber,
       });
     }
   }
@@ -182,60 +188,153 @@ export async function checkBlockForAnomalies(block: BlockMetrics): Promise<void>
     const thresholds = await getThresholdForMetric('mgas');
     const result = checkThreshold(block.mgasPerSec, thresholds);
     if (result) {
-      anomaliesToInsert.push({
+      anomalies.push({
+        blockNumber: block.blockNumber,
         timestamp: block.timestamp,
         metricType: 'mgas',
         severity: result.severity,
         value: block.mgasPerSec,
         threshold: result.threshold,
-        blockNumber: block.blockNumber,
       });
     }
   }
 
-  // Insert all detected anomalies
-  for (const anomaly of anomaliesToInsert) {
-    try {
-      await insertAnomaly(anomaly);
-    } catch (error) {
-      console.error('[AnomalyDetector] Failed to insert anomaly:', error);
+  return anomalies;
+}
+
+/**
+ * Group consecutive anomalies by (metricType, severity).
+ * Returns array of groups, where each group has consecutive blocks.
+ */
+export function groupConsecutiveAnomalies(results: BlockAnomalyResult[]): BlockAnomalyResult[][] {
+  if (results.length === 0) return [];
+
+  // Sort by metricType, severity, then blockNumber
+  const sorted = [...results].sort((a, b) => {
+    if (a.metricType !== b.metricType) return a.metricType.localeCompare(b.metricType);
+    if (a.severity !== b.severity) return a.severity.localeCompare(b.severity);
+    return a.blockNumber < b.blockNumber ? -1 : a.blockNumber > b.blockNumber ? 1 : 0;
+  });
+
+  const groups: BlockAnomalyResult[][] = [];
+  let currentGroup: BlockAnomalyResult[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+
+    const sameMetricAndSeverity =
+      prev.metricType === curr.metricType && prev.severity === curr.severity;
+    const consecutive = curr.blockNumber === prev.blockNumber + 1n;
+
+    if (sameMetricAndSeverity && consecutive) {
+      currentGroup.push(curr);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [curr];
     }
   }
 
-  if (anomaliesToInsert.length > 0) {
-    console.log(`[AnomalyDetector] Detected ${anomaliesToInsert.length} anomalies for block #${block.blockNumber}`);
+  groups.push(currentGroup);
+  return groups;
+}
+
+/**
+ * Process a group of consecutive anomalies.
+ * Either extends an existing range or creates a new one.
+ */
+async function processAnomalyGroup(group: BlockAnomalyResult[]): Promise<void> {
+  const first = group[0];
+  const last = group[group.length - 1];
+
+  try {
+    // Check if we can extend a previous range
+    const extendable = await findExtendableAnomalyRange(
+      first.metricType,
+      first.severity,
+      first.blockNumber - 1n // Previous block
+    );
+
+    if (extendable) {
+      // Extend existing range
+      await extendAnomalyRange(
+        extendable.id,
+        extendable.timestamp,
+        last.blockNumber,
+        last.value
+      );
+      console.log(
+        `[AnomalyDetector] Extended ${first.metricType} ${first.severity} range to block #${last.blockNumber}`
+      );
+    } else {
+      // Create new range
+      await insertAnomalyRange({
+        timestamp: first.timestamp,
+        metricType: first.metricType,
+        severity: first.severity,
+        value: first.value,
+        threshold: first.threshold,
+        startBlockNumber: first.blockNumber,
+        endBlockNumber: last.blockNumber,
+      });
+      const rangeStr =
+        first.blockNumber === last.blockNumber
+          ? `block #${first.blockNumber}`
+          : `blocks #${first.blockNumber}-${last.blockNumber}`;
+      console.log(`[AnomalyDetector] Created ${first.metricType} ${first.severity} for ${rangeStr}`);
+    }
+  } catch (error) {
+    console.error('[AnomalyDetector] Failed to process anomaly group:', error);
   }
 }
 
 /**
- * Check multiple blocks for anomalies in batch.
+ * Check multiple blocks for anomalies and group consecutive blocks.
  * Used when processing multiple blocks at once.
  */
 export async function checkBlocksForAnomalies(blocks: BlockMetrics[]): Promise<void> {
-  // Process blocks in parallel but with a limit to avoid overwhelming the DB
-  const batchSize = 10;
-  for (let i = 0; i < blocks.length; i += batchSize) {
-    const batch = blocks.slice(i, i + batchSize);
-    await Promise.all(batch.map(block => checkBlockForAnomalies(block)));
+  if (blocks.length === 0) return;
+
+  // Sort blocks by block number ascending
+  const sorted = [...blocks].sort((a, b) =>
+    a.blockNumber < b.blockNumber ? -1 : a.blockNumber > b.blockNumber ? 1 : 0
+  );
+
+  // Check each block and collect anomaly results
+  const anomalyResults: BlockAnomalyResult[] = [];
+  for (const block of sorted) {
+    const blockAnomalies = await checkBlockMetrics(block);
+    anomalyResults.push(...blockAnomalies);
+  }
+
+  if (anomalyResults.length === 0) return;
+
+  // Group consecutive blocks by (metricType, severity)
+  const groups = groupConsecutiveAnomalies(anomalyResults);
+
+  // Process each group (extend or create)
+  for (const group of groups) {
+    await processAnomalyGroup(group);
   }
 }
 
 /**
  * Record a reorg as an anomaly.
- * Reorgs are always critical.
+ * Reorgs are always critical and single-block events.
  */
 export async function recordReorgAnomaly(
   blockNumber: bigint,
   timestamp: Date
 ): Promise<void> {
   try {
-    await insertAnomaly({
+    await insertAnomalyRange({
       timestamp,
       metricType: 'reorg',
       severity: 'critical',
       value: null,
       threshold: null,
-      blockNumber,
+      startBlockNumber: blockNumber,
+      endBlockNumber: blockNumber,
     });
     console.log(`[AnomalyDetector] Recorded reorg anomaly for block #${blockNumber}`);
   } catch (error) {
