@@ -92,7 +92,6 @@ export default function AlertsPage() {
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set());
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [showAcknowledged, setShowAcknowledged] = useState<'all' | 'unacknowledged' | 'acknowledged'>('all');
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [acknowledging, setAcknowledging] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -142,10 +141,9 @@ export default function AlertsPage() {
     return () => clearInterval(interval);
   }, [fetchAnomalies]);
 
-  // Reset page and selection when filters change
+  // Reset page when filters change
   useEffect(() => {
     setPage(1);
-    setSelectedIds(new Set());
   }, [timeRangeHours, selectedSeverity, selectedMetrics, showAcknowledged]);
 
   const toggleMetric = (metric: string) => {
@@ -160,26 +158,6 @@ export default function AlertsPage() {
     });
   };
 
-  const toggleSelectId = (id: number) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === anomalies.filter(a => !a.acknowledged).length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(anomalies.filter(a => !a.acknowledged).map(a => a.id)));
-    }
-  };
-
   const handleAcknowledge = async (ids: number[]) => {
     if (ids.length === 0) return;
     setAcknowledging(true);
@@ -190,7 +168,6 @@ export default function AlertsPage() {
         body: JSON.stringify({ ids }),
       });
       if (!res.ok) throw new Error('Failed to acknowledge');
-      setSelectedIds(new Set());
       fetchAnomalies();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to acknowledge');
@@ -210,7 +187,6 @@ export default function AlertsPage() {
         body: JSON.stringify({ all: true, from: from.toISOString() }),
       });
       if (!res.ok) throw new Error('Failed to acknowledge');
-      setSelectedIds(new Set());
       fetchAnomalies();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to acknowledge');
@@ -338,18 +314,11 @@ export default function AlertsPage() {
             {unacknowledgedCount > 0 && (
               <div className="flex gap-2 mb-4">
                 <button
-                  onClick={() => handleAcknowledge(Array.from(selectedIds))}
-                  disabled={selectedIds.size === 0 || acknowledging}
-                  className="px-3 py-1.5 text-sm btn-gradient-active rounded disabled:opacity-50"
-                >
-                  {acknowledging ? 'Acknowledging...' : `Acknowledge Selected (${selectedIds.size})`}
-                </button>
-                <button
                   onClick={handleAcknowledgeAll}
                   disabled={acknowledging}
                   className="px-3 py-1.5 text-sm terminal-btn rounded disabled:opacity-50"
                 >
-                  Acknowledge All
+                  {acknowledging ? 'Acknowledging...' : 'Acknowledge All'}
                 </button>
               </div>
             )}
@@ -370,15 +339,6 @@ export default function AlertsPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="text-muted text-sm border-b border-accent/10 dark:border-accent/15">
-                        <th className="px-2 py-3 text-center font-medium w-10">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.size > 0 && selectedIds.size === anomalies.filter(a => !a.acknowledged).length}
-                            onChange={toggleSelectAll}
-                            className="w-4 h-4 accent-accent"
-                            title="Select all unacknowledged"
-                          />
-                        </th>
                         <th className="px-4 py-3 text-left font-medium">Time</th>
                         <th className="px-4 py-3 text-left font-medium">Metric</th>
                         <th className="px-4 py-3 text-left font-medium">Value</th>
@@ -396,16 +356,6 @@ export default function AlertsPage() {
                             anomaly.acknowledged ? 'opacity-50' : ''
                           }`}
                         >
-                          <td className="px-2 py-3 text-center">
-                            {!anomaly.acknowledged && (
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(anomaly.id)}
-                                onChange={() => toggleSelectId(anomaly.id)}
-                                className="w-4 h-4 accent-accent"
-                              />
-                            )}
-                          </td>
                           <td className="px-4 py-3 text-muted">
                             <span title={new Date(anomaly.timestamp).toLocaleString()}>
                               {formatTimeAgo(anomaly.timestamp)}
@@ -466,15 +416,19 @@ export default function AlertsPage() {
                           <td className="px-4 py-3">
                             {anomaly.acknowledged ? (
                               <span
-                                className="px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-500"
+                                className="text-muted text-xs"
                                 title={anomaly.acknowledgedAt ? `Acknowledged ${new Date(anomaly.acknowledgedAt).toLocaleString()}` : undefined}
                               >
-                                ack
+                                Acknowledged
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent">
-                                new
-                              </span>
+                              <button
+                                onClick={() => handleAcknowledge([anomaly.id])}
+                                disabled={acknowledging}
+                                className="px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent hover:bg-accent/30 disabled:opacity-50 transition-colors"
+                              >
+                                Acknowledge
+                              </button>
                             )}
                           </td>
                         </tr>
