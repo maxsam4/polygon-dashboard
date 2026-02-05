@@ -53,10 +53,11 @@ docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 Feature branches use worktrees for isolated development:
 - Location: `.worktrees/<feature-name>`
 - Branch: `feature/<feature-name>`
+- **Always clean up after merge**: Remove worktree and delete branch
 
 ```bash
 git worktree add .worktrees/my-feature -b feature/my-feature  # Create
-git worktree remove .worktrees/my-feature                      # Remove after merge
+git worktree remove .worktrees/my-feature && git branch -d feature/my-feature  # Clean up after merge
 ```
 
 ## Running Migrations
