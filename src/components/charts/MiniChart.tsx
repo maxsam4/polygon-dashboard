@@ -55,8 +55,12 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
   // Track if chart is valid - set to false BEFORE chart.remove() to prevent race conditions
   const isChartValidRef = useRef(true);
 
+  // Check if we have any data to render
+  const hasData = (series && series.some(s => s.data.length > 0)) || (data && data.length > 0);
+
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    // Don't create chart until we have data - prevents "Value is null" errors
+    if (!chartContainerRef.current || !hasData) return;
 
     // Mark chart as valid when creating
     isChartValidRef.current = true;
@@ -133,12 +137,13 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
       chart.remove();
       chartRef.current = null;
     };
-  }, [theme, chartColor]);
+  }, [theme, chartColor, hasData]);
 
   useEffect(() => {
+    // Don't run until we have data and a valid chart
     // Check both chartRef and isChartValidRef - the latter catches race conditions
     // where the chart is being destroyed but chartRef hasn't been nulled yet
-    if (!chartRef.current || !isChartValidRef.current) return;
+    if (!hasData || !chartRef.current || !isChartValidRef.current) return;
 
     // Track if this effect has been cleaned up to prevent operations on destroyed chart
     let isCleanedUp = false;
@@ -158,9 +163,9 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
     });
     seriesRefs.current = [];
 
-    // Determine which data to use
-    const allSeries: SeriesData[] = series || (data ? [{ data, color: chartColor }] : []);
-    if (allSeries.length === 0) return;
+    // Determine which data to use - check data.length > 0 to avoid creating series with empty arrays
+    const allSeries: SeriesData[] = series || (data && data.length > 0 ? [{ data, color: chartColor }] : []);
+    if (allSeries.length === 0 || allSeries.every(s => s.data.length === 0)) return;
 
     // Build block number map for tick formatting from first series
     blockMapRef.current.clear();
@@ -174,6 +179,9 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
 
     // Create series for each data set
     allSeries.forEach((s) => {
+      // Skip empty data arrays - lightweight-charts throws "Value is null" on empty data
+      if (s.data.length === 0) return;
+
       // Check if chart is still safe for operations
       if (!isChartSafe()) return;
 
@@ -186,10 +194,19 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
         });
 
         // Use actual timestamps if available, otherwise fall back to index
-        const chartData: LineData<UTCTimestamp>[] = s.data.map((d) => ({
-          time: (d.timestamp ?? d.time) as UTCTimestamp,
-          value: d.value,
-        }));
+        // Filter out any invalid data points (NaN, null, undefined values cause "Value is null" errors)
+        const chartData: LineData<UTCTimestamp>[] = s.data
+          .filter((d) => {
+            const time = d.timestamp ?? d.time;
+            return time != null && !isNaN(time) && d.value != null && !isNaN(d.value);
+          })
+          .map((d) => ({
+            time: (d.timestamp ?? d.time) as UTCTimestamp,
+            value: d.value,
+          }));
+
+        // Skip if all data was filtered out
+        if (chartData.length === 0) return;
 
         // Check before setData - chart may have been destroyed during map
         if (!isChartSafe()) return;
@@ -201,8 +218,8 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
       }
     });
 
-    // Fit content if chart is still valid
-    if (isChartSafe()) {
+    // Fit content if chart is still valid and we have data
+    if (isChartSafe() && seriesRefs.current.length > 0) {
       try {
         chartRef.current!.timeScale().fitContent();
       } catch {
@@ -213,7 +230,7 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
     return () => {
       isCleanedUp = true;
     };
-  }, [data, series, chartColor]);
+  }, [data, series, chartColor, hasData]);
 
   return (
     <div className="terminal-card rounded-lg p-4 relative overflow-hidden">
