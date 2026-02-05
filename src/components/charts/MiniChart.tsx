@@ -52,8 +52,14 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
     }
   };
 
+  // Track if chart is valid - set to false BEFORE chart.remove() to prevent race conditions
+  const isChartValidRef = useRef(true);
+
   useEffect(() => {
     if (!chartContainerRef.current) return;
+
+    // Mark chart as valid when creating
+    isChartValidRef.current = true;
 
     const isDark = theme === 'dark';
 
@@ -93,6 +99,8 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
 
     // Subscribe to crosshair move to track hovered block
     chart.subscribeCrosshairMove((param) => {
+      // Guard against callbacks firing during/after chart destruction
+      if (!isChartValidRef.current) return;
       if (param.time !== undefined) {
         const blockNum = blockMapRef.current.get(param.time as number);
         setHoveredBlock(blockNum ?? null);
@@ -105,28 +113,49 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
     seriesRefs.current = [];
 
     const handleResize = () => {
-      if (chartContainerRef.current) {
+      // Guard against resize events during/after chart destruction
+      if (!isChartValidRef.current || !chartContainerRef.current) return;
+      try {
         chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+      } catch {
+        // Chart was destroyed, ignore
       }
     };
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      // Mark invalid BEFORE destroying to prevent race conditions with data effect
+      isChartValidRef.current = false;
       window.removeEventListener('resize', handleResize);
+      // Clear series refs before removing chart - they'll be invalid after remove()
+      seriesRefs.current = [];
       chart.remove();
       chartRef.current = null;
     };
   }, [theme, chartColor]);
 
   useEffect(() => {
-    if (!chartRef.current) return;
+    // Check both chartRef and isChartValidRef - the latter catches race conditions
+    // where the chart is being destroyed but chartRef hasn't been nulled yet
+    if (!chartRef.current || !isChartValidRef.current) return;
 
     // Track if this effect has been cleaned up to prevent operations on destroyed chart
     let isCleanedUp = false;
 
-    // Clear existing series
-    seriesRefs.current.forEach((s) => chartRef.current?.removeSeries(s));
+    // Helper to check if chart operations are safe
+    const isChartSafe = () => !isCleanedUp && chartRef.current && isChartValidRef.current;
+
+    // Clear existing series - wrap in try-catch as series may be from destroyed chart
+    seriesRefs.current.forEach((s) => {
+      try {
+        if (isChartSafe()) {
+          chartRef.current?.removeSeries(s);
+        }
+      } catch {
+        // Series was from a destroyed chart, ignore
+      }
+    });
     seriesRefs.current = [];
 
     // Determine which data to use
@@ -145,32 +174,40 @@ export function MiniChart({ title, data, series, currentValue, unit, color }: Mi
 
     // Create series for each data set
     allSeries.forEach((s) => {
-      // Check if effect was cleaned up during iteration
-      if (isCleanedUp || !chartRef.current) return;
+      // Check if chart is still safe for operations
+      if (!isChartSafe()) return;
 
-      const lineSeries = chartRef.current.addSeries(LineSeries, {
-        color: s.color || chartColor,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
+      try {
+        const lineSeries = chartRef.current!.addSeries(LineSeries, {
+          color: s.color || chartColor,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
 
-      // Use actual timestamps if available, otherwise fall back to index
-      const chartData: LineData<UTCTimestamp>[] = s.data.map((d) => ({
-        time: (d.timestamp ?? d.time) as UTCTimestamp,
-        value: d.value,
-      }));
+        // Use actual timestamps if available, otherwise fall back to index
+        const chartData: LineData<UTCTimestamp>[] = s.data.map((d) => ({
+          time: (d.timestamp ?? d.time) as UTCTimestamp,
+          value: d.value,
+        }));
 
-      // Check before setData - series becomes invalid if chart is destroyed
-      if (isCleanedUp || !chartRef.current) return;
+        // Check before setData - chart may have been destroyed during map
+        if (!isChartSafe()) return;
 
-      lineSeries.setData(chartData);
-      seriesRefs.current.push(lineSeries);
+        lineSeries.setData(chartData);
+        seriesRefs.current.push(lineSeries);
+      } catch {
+        // Chart was destroyed during operations, ignore
+      }
     });
 
-    // Check if effect was cleaned up during series creation
-    if (!isCleanedUp && chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+    // Fit content if chart is still valid
+    if (isChartSafe()) {
+      try {
+        chartRef.current!.timeScale().fitContent();
+      } catch {
+        // Chart was destroyed, ignore
+      }
     }
 
     return () => {
