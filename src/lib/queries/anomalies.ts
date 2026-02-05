@@ -34,6 +34,7 @@ export interface MetricThreshold {
   criticalLow: number | null;
   criticalHigh: number | null;
   useAbsolute: boolean;
+  minConsecutiveBlocks: number;
 }
 
 interface MetricThresholdRow {
@@ -43,6 +44,7 @@ interface MetricThresholdRow {
   critical_low: number | null;
   critical_high: number | null;
   use_absolute: boolean;
+  min_consecutive_blocks: number | null;
 }
 
 function rowToAnomaly(row: AnomalyRow): Anomaly {
@@ -68,12 +70,14 @@ function rowToThreshold(row: MetricThresholdRow): MetricThreshold {
     criticalLow: row.critical_low,
     criticalHigh: row.critical_high,
     useAbsolute: row.use_absolute,
+    minConsecutiveBlocks: row.min_consecutive_blocks ?? 1,
   };
 }
 
 /**
  * Get anomalies with filtering and pagination.
  * Always filters by timestamp to avoid scanning compressed chunks.
+ * Applies min_consecutive_blocks filter from thresholds (reorgs exempt).
  */
 export async function getAnomalies(options: {
   from?: Date;
@@ -93,32 +97,47 @@ export async function getAnomalies(options: {
   } = options;
 
   // Build query with filters
-  let whereClause = 'WHERE timestamp >= $1 AND timestamp <= $2';
+  // Join with thresholds to apply min_consecutive_blocks filter
+  let whereClause = 'WHERE a.timestamp >= $1 AND a.timestamp <= $2';
   const params: (Date | string | number)[] = [from, to];
   let paramIndex = 3;
 
   if (metricType) {
-    whereClause += ` AND metric_type = $${paramIndex++}`;
+    whereClause += ` AND a.metric_type = $${paramIndex++}`;
     params.push(metricType);
   }
 
   if (severity) {
-    whereClause += ` AND severity = $${paramIndex++}`;
+    whereClause += ` AND a.severity = $${paramIndex++}`;
     params.push(severity);
   }
 
+  // Filter by min_consecutive_blocks (reorgs always shown)
+  const minBlocksFilter = `
+    AND (
+      a.end_block_number - a.start_block_number + 1 >= COALESCE(mt.min_consecutive_blocks, 1)
+      OR a.metric_type = 'reorg'
+    )
+  `;
+
+  const fromClause = `
+    FROM anomalies a
+    LEFT JOIN metric_thresholds mt ON a.metric_type = mt.metric_type
+  `;
+
   // Get total count
   const countResult = await queryOne<{ count: string }>(
-    `SELECT COUNT(*) as count FROM anomalies ${whereClause}`,
+    `SELECT COUNT(*) as count ${fromClause} ${whereClause} ${minBlocksFilter}`,
     params
   );
   const total = parseInt(countResult?.count || '0', 10);
 
   // Get paginated results
   const dataQuery = `
-    SELECT * FROM anomalies
+    SELECT a.* ${fromClause}
     ${whereClause}
-    ORDER BY timestamp DESC
+    ${minBlocksFilter}
+    ORDER BY a.timestamp DESC
     LIMIT $${paramIndex++} OFFSET $${paramIndex}
   `;
   params.push(limit, offset);
@@ -133,6 +152,7 @@ export async function getAnomalies(options: {
 /**
  * Get count of anomalies within a time window.
  * Used for the nav badge.
+ * Applies min_consecutive_blocks filter from thresholds (reorgs exempt).
  */
 export async function getAnomalyCount(options: {
   from?: Date;
@@ -145,19 +165,29 @@ export async function getAnomalyCount(options: {
     severity,
   } = options;
 
-  let whereClause = 'WHERE timestamp >= $1 AND timestamp <= $2';
+  let whereClause = 'WHERE a.timestamp >= $1 AND a.timestamp <= $2';
   const params: (Date | string)[] = [from, to];
 
   if (severity) {
-    whereClause += ' AND severity = $3';
+    whereClause += ' AND a.severity = $3';
     params.push(severity);
   }
 
+  // Filter by min_consecutive_blocks (reorgs always counted)
+  const minBlocksFilter = `
+    AND (
+      a.end_block_number - a.start_block_number + 1 >= COALESCE(mt.min_consecutive_blocks, 1)
+      OR a.metric_type = 'reorg'
+    )
+  `;
+
   const result = await query<{ severity: string; count: string }>(
-    `SELECT severity, COUNT(*) as count
-     FROM anomalies
+    `SELECT a.severity, COUNT(*) as count
+     FROM anomalies a
+     LEFT JOIN metric_thresholds mt ON a.metric_type = mt.metric_type
      ${whereClause}
-     GROUP BY severity`,
+     ${minBlocksFilter}
+     GROUP BY a.severity`,
     params
   );
 
@@ -352,17 +382,19 @@ export async function updateMetricThreshold(
     warningHigh: number | null;
     criticalLow: number | null;
     criticalHigh: number | null;
+    minConsecutiveBlocks?: number;
   }
 ): Promise<MetricThreshold> {
   const row = await queryOne<MetricThresholdRow>(
-    `INSERT INTO metric_thresholds (metric_type, warning_low, warning_high, critical_low, critical_high)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO metric_thresholds (metric_type, warning_low, warning_high, critical_low, critical_high, min_consecutive_blocks)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (metric_type)
      DO UPDATE SET
        warning_low = EXCLUDED.warning_low,
        warning_high = EXCLUDED.warning_high,
        critical_low = EXCLUDED.critical_low,
        critical_high = EXCLUDED.critical_high,
+       min_consecutive_blocks = EXCLUDED.min_consecutive_blocks,
        updated_at = NOW()
      RETURNING *`,
     [
@@ -371,6 +403,7 @@ export async function updateMetricThreshold(
       threshold.warningHigh,
       threshold.criticalLow,
       threshold.criticalHigh,
+      threshold.minConsecutiveBlocks ?? 1,
     ]
   );
 

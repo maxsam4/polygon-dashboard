@@ -143,30 +143,35 @@ export const ANOMALY_THRESHOLDS = {
     warning_high: 2000,
     critical_low: 2,
     critical_high: 5000,
+    min_consecutive_blocks: 2, // Gas spikes often transient
   },
   block_time: {
     warning_low: null,
     warning_high: 3,
     critical_low: 1,
     critical_high: 5,
+    min_consecutive_blocks: 1,
   },
   finality: {
     warning_low: null,
     warning_high: 10,
     critical_low: null,
     critical_high: 30,
+    min_consecutive_blocks: 1,
   },
   tps: {
     warning_low: 5,
     warning_high: 2000,
     critical_low: null,
     critical_high: 3000,
+    min_consecutive_blocks: 1,
   },
   mgas: {
     warning_low: 2,
     warning_high: null,
     critical_low: null,
     critical_high: null,
+    min_consecutive_blocks: 1,
   },
 } as const;
 

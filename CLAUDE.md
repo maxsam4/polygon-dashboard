@@ -115,7 +115,12 @@ Detects anomalies in key metrics and stores them for alerting:
   - Finality: warning > 10s, critical > 30s
   - TPS: warning 5-2000, critical > 3000
   - MGAS/s: warning < 2
-  - Reorgs: Always critical
+  - Reorgs: Always critical (exempt from min_consecutive_blocks filter)
+- **Min Consecutive Blocks**: Each metric can require N consecutive blocks with anomaly before showing
+  - Set via admin panel per metric type
+  - Filters transient spikes (e.g., gas_price defaults to 2 blocks)
+  - Applied at query time in `getAnomalies()` and `getAnomalyCount()`
+  - Reorgs always shown regardless of this setting
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
 - **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode
 - **UI**: `/alerts` page with stats, filters, and sortable table (displays ranges like "#100 - #105")
