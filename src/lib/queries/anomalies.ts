@@ -344,21 +344,19 @@ export async function acknowledgeAnomalies(ids: number[]): Promise<number> {
   // Create placeholders for the IN clause
   const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
 
+  // Use CTE to count updated rows efficiently in a single query
   const result = await queryOne<{ count: string }>(
-    `UPDATE anomalies
-     SET acknowledged = TRUE, acknowledged_at = NOW()
-     WHERE id IN (${placeholders}) AND (acknowledged = FALSE OR acknowledged IS NULL)
-     RETURNING (SELECT COUNT(*) FROM anomalies WHERE id IN (${placeholders}) AND acknowledged = TRUE) as count`,
+    `WITH updated AS (
+       UPDATE anomalies
+       SET acknowledged = TRUE, acknowledged_at = NOW()
+       WHERE id IN (${placeholders}) AND (acknowledged = FALSE OR acknowledged IS NULL)
+       RETURNING 1
+     )
+     SELECT COUNT(*) as count FROM updated`,
     ids
   );
 
-  // Count how many were actually updated
-  const countResult = await queryOne<{ count: string }>(
-    `SELECT COUNT(*) as count FROM anomalies WHERE id IN (${placeholders}) AND acknowledged = TRUE`,
-    ids
-  );
-
-  return parseInt(countResult?.count || '0', 10);
+  return parseInt(result?.count || '0', 10);
 }
 
 /**
