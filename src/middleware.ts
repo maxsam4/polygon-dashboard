@@ -5,8 +5,11 @@ import { getSessionFromRequest } from '@/lib/auth';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only protect /admin routes
-  if (!pathname.startsWith('/admin')) {
+  // Check if this is a protected route
+  const isAdminRoute = pathname.startsWith('/admin');
+  const isAlertsRoute = pathname === '/alerts';
+
+  if (!isAdminRoute && !isAlertsRoute) {
     return NextResponse.next();
   }
 
@@ -20,7 +23,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check authentication for all other /admin routes
+  // Check authentication for /admin/* and /alerts routes
   const session = await getSessionFromRequest(request);
   if (!session) {
     // Redirect to login page
@@ -32,5 +35,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: '/admin/:path*',
+  matcher: ['/admin/:path*', '/alerts'],
 };

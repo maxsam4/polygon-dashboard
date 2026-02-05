@@ -97,8 +97,8 @@ Password-protected admin panel at `/admin` with JWT session authentication:
 - **Session**: JWT token stored in HttpOnly cookie, 24-hour expiry
 - **Secret**: Auto-generated on server start (sessions invalidate on restart), or set `ADMIN_SESSION_SECRET` for persistence
 - **Password**: Set `ADMIN_PASSWORD` env var (falls back to `ADD_RATE_PASSWORD`)
-- **Middleware**: `src/middleware.ts` protects all `/admin/*` routes except login
-- **Nav**: Admin link only visible when authenticated
+- **Middleware**: `src/middleware.ts` protects `/admin/*` and `/alerts` routes
+- **Nav**: Admin and Alerts links only visible when authenticated
 
 ### Anomaly Detection
 
@@ -113,7 +113,7 @@ Detects anomalies in key metrics and stores them for alerting:
   - MGAS/s: warning < 2
   - Reorgs: Always critical
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
-- **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode
+- **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode (requires authentication)
 - **UI**: `/alerts` page with stats, filters, and sortable table
 
 ## Testing

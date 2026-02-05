@@ -15,8 +15,10 @@ export function Nav() {
     { href: '/analytics', label: 'Analytics' },
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
-    { href: '/alerts', label: 'Alerts', hasBadge: true },
-    ...(isAuthenticated ? [{ href: '/admin', label: 'Admin' }] : []),
+    ...(isAuthenticated ? [
+      { href: '/alerts', label: 'Alerts', hasBadge: true },
+      { href: '/admin', label: 'Admin' },
+    ] : []),
   ];
 
   return (
