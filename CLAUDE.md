@@ -49,6 +49,7 @@ docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 
 ## Git Worktrees
 
+.worktrees/ exists and is properly ignored.
 Feature branches use worktrees for isolated development:
 - Location: `.worktrees/<feature-name>`
 - Branch: `feature/<feature-name>`
