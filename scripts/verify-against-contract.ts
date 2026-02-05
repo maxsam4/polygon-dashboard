@@ -4,8 +4,7 @@
  */
 
 import { ethers } from 'ethers';
-import { calculateSupplyAt, exp2 } from '../src/lib/inflationCalc';
-import { SECONDS_PER_YEAR, WEI_PER_POL } from '../src/lib/constants';
+import { calculateSupplyAt } from '../src/lib/inflationCalc';
 
 const EMISSION_MANAGER_ADDRESS = '0xbC9f74b3b14f460a6c47dCdDFd17411cBc7b6c53';
 const RPC_URL = 'https://ethereum-rpc.publicnode.com';
