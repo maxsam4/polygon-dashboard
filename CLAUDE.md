@@ -124,8 +124,14 @@ Detects anomalies in key metrics and stores them for alerting:
   - MGAS/s: warning < 2
   - Reorgs: Always critical
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
-- **API**: `GET /api/anomalies` with filtering, pagination, and count-only mode (requires authentication)
-- **UI**: `/alerts` page with stats, filters, and sortable table
+- **API**:
+  - `GET /api/anomalies` - filtering, pagination, count-only mode (requires auth)
+  - `POST /api/anomalies/acknowledge` - acknowledge alerts by id(s) or all in time range
+- **UI**: `/alerts` page with stats, filters, sortable table, and acknowledgement controls
+- **Acknowledgement**: Alerts can be acknowledged to remove them from the nav badge count
+  - Select individual alerts or use "Acknowledge All" for bulk operations
+  - Acknowledged alerts shown with reduced opacity and "ack" status badge
+  - Filter by status: All / Unacknowledged / Acknowledged
 
 ## Testing
 

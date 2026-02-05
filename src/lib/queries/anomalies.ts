@@ -11,6 +11,8 @@ export interface Anomaly {
   threshold: number | null;
   blockNumber: bigint | null;
   createdAt: Date;
+  acknowledged: boolean;
+  acknowledgedAt: Date | null;
 }
 
 export interface AnomalyRow {
@@ -23,6 +25,8 @@ export interface AnomalyRow {
   threshold: number | null;
   block_number: string | null;
   created_at: Date;
+  acknowledged: boolean;
+  acknowledged_at: Date | null;
 }
 
 export interface MetricThreshold {
@@ -54,6 +58,8 @@ function rowToAnomaly(row: AnomalyRow): Anomaly {
     threshold: row.threshold,
     blockNumber: row.block_number ? BigInt(row.block_number) : null,
     createdAt: row.created_at,
+    acknowledged: row.acknowledged ?? false,
+    acknowledgedAt: row.acknowledged_at,
   };
 }
 
@@ -77,6 +83,7 @@ export async function getAnomalies(options: {
   to?: Date;
   metricType?: string;
   severity?: AnomalySeverity;
+  acknowledged?: boolean;
   limit?: number;
   offset?: number;
 }): Promise<{ anomalies: Anomaly[]; total: number }> {
@@ -85,13 +92,14 @@ export async function getAnomalies(options: {
     to = new Date(),
     metricType,
     severity,
+    acknowledged,
     limit = 100,
     offset = 0,
   } = options;
 
   // Build query with filters
   let whereClause = 'WHERE timestamp >= $1 AND timestamp <= $2';
-  const params: (Date | string | number)[] = [from, to];
+  const params: (Date | string | number | boolean)[] = [from, to];
   let paramIndex = 3;
 
   if (metricType) {
@@ -102,6 +110,14 @@ export async function getAnomalies(options: {
   if (severity) {
     whereClause += ` AND severity = $${paramIndex++}`;
     params.push(severity);
+  }
+
+  if (acknowledged !== undefined) {
+    if (acknowledged) {
+      whereClause += ` AND acknowledged = TRUE`;
+    } else {
+      whereClause += ` AND (acknowledged = FALSE OR acknowledged IS NULL)`;
+    }
   }
 
   // Get total count
@@ -129,24 +145,31 @@ export async function getAnomalies(options: {
 
 /**
  * Get count of anomalies within a time window.
- * Used for the nav badge.
+ * Used for the nav badge - excludes acknowledged alerts by default.
  */
 export async function getAnomalyCount(options: {
   from?: Date;
   to?: Date;
   severity?: AnomalySeverity;
+  excludeAcknowledged?: boolean;
 }): Promise<{ total: number; critical: number; warning: number }> {
   const {
     from = new Date(Date.now() - 60 * 60 * 1000), // Default: 1 hour ago
     to = new Date(),
     severity,
+    excludeAcknowledged = true, // Exclude acknowledged by default for badge
   } = options;
 
   let whereClause = 'WHERE timestamp >= $1 AND timestamp <= $2';
-  const params: (Date | string)[] = [from, to];
+  const params: (Date | string | boolean)[] = [from, to];
+  let paramIndex = 3;
+
+  if (excludeAcknowledged) {
+    whereClause += ` AND (acknowledged = FALSE OR acknowledged IS NULL)`;
+  }
 
   if (severity) {
-    whereClause += ' AND severity = $3';
+    whereClause += ` AND severity = $${paramIndex++}`;
     params.push(severity);
   }
 
@@ -309,4 +332,58 @@ export async function updateMetricThreshold(
   }
 
   return rowToThreshold(row);
+}
+
+/**
+ * Acknowledge one or more anomalies.
+ * Returns the number of rows updated.
+ */
+export async function acknowledgeAnomalies(ids: number[]): Promise<number> {
+  if (ids.length === 0) return 0;
+
+  // Create placeholders for the IN clause
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+
+  const result = await queryOne<{ count: string }>(
+    `UPDATE anomalies
+     SET acknowledged = TRUE, acknowledged_at = NOW()
+     WHERE id IN (${placeholders}) AND (acknowledged = FALSE OR acknowledged IS NULL)
+     RETURNING (SELECT COUNT(*) FROM anomalies WHERE id IN (${placeholders}) AND acknowledged = TRUE) as count`,
+    ids
+  );
+
+  // Count how many were actually updated
+  const countResult = await queryOne<{ count: string }>(
+    `SELECT COUNT(*) as count FROM anomalies WHERE id IN (${placeholders}) AND acknowledged = TRUE`,
+    ids
+  );
+
+  return parseInt(countResult?.count || '0', 10);
+}
+
+/**
+ * Acknowledge all anomalies within a time range.
+ * Returns the number of rows updated.
+ */
+export async function acknowledgeAllAnomalies(options: {
+  from?: Date;
+  to?: Date;
+}): Promise<number> {
+  const {
+    from = new Date(Date.now() - 24 * 60 * 60 * 1000),
+    to = new Date(),
+  } = options;
+
+  const result = await queryOne<{ count: string }>(
+    `WITH updated AS (
+       UPDATE anomalies
+       SET acknowledged = TRUE, acknowledged_at = NOW()
+       WHERE timestamp >= $1 AND timestamp <= $2 AND (acknowledged = FALSE OR acknowledged IS NULL)
+       RETURNING 1
+     )
+     SELECT COUNT(*) as count FROM updated`,
+    [from, to]
+  );
+
+  return parseInt(result?.count || '0', 10);
 }

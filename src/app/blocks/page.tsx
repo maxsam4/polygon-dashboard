@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Nav } from '@/components/Nav';
 import { BlockTable } from '@/components/blocks/BlockTable';
 
@@ -35,6 +36,7 @@ interface Pagination {
 const BLOCKS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 
 export default function BlocksPage() {
+  const searchParams = useSearchParams();
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,8 @@ export default function BlocksPage() {
   const [goToPage, setGoToPage] = useState('');
   const [page, setPage] = useState(1);
   const [blocksPerPage, setBlocksPerPage] = useState(50);
+  const initialBlockParam = useRef(searchParams.get('block'));
+  const hasJumpedToBlock = useRef(false);
 
   const fetchBlocks = useCallback(async (pageNum: number, limit: number) => {
     setLoading(true);
@@ -60,6 +64,37 @@ export default function BlocksPage() {
   useEffect(() => {
     fetchBlocks(page, blocksPerPage);
   }, [page, blocksPerPage, fetchBlocks]);
+
+  // Auto-jump to block from query param on mount
+  useEffect(() => {
+    const blockParam = initialBlockParam.current;
+    if (blockParam && !hasJumpedToBlock.current) {
+      hasJumpedToBlock.current = true;
+      const blockNum = parseInt(blockParam, 10);
+      if (!isNaN(blockNum)) {
+        // Trigger the jump to block logic
+        (async () => {
+          setLoading(true);
+          try {
+            const response = await fetch('/api/blocks?page=1&limit=1');
+            const data = await response.json();
+            if (data.blocks?.length > 0 && data.pagination) {
+              const latestBlock = parseInt(data.blocks[0].blockNumber, 10);
+              const blocksFromTop = latestBlock - blockNum;
+              if (blocksFromTop >= 0) {
+                const targetPage = Math.floor(blocksFromTop / blocksPerPage) + 1;
+                setPage(Math.min(targetPage, data.pagination.totalPages));
+              }
+            }
+          } catch (error) {
+            console.error('Failed to jump to block:', error);
+          } finally {
+            setLoading(false);
+          }
+        })();
+      }
+    }
+  }, [blocksPerPage]);
 
   const handleGoToPage = () => {
     const targetPage = parseInt(goToPage, 10);

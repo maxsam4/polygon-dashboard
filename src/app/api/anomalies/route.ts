@@ -50,6 +50,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(counts);
     }
 
+    // Parse acknowledged filter
+    const acknowledgedParam = searchParams.get('acknowledged');
+    const acknowledged = acknowledgedParam === 'true' ? true : acknowledgedParam === 'false' ? false : undefined;
+
     // Parse pagination
     const limit = limitParam ? parseInt(limitParam, 10) : 100;
     const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
@@ -74,6 +78,7 @@ export async function GET(request: NextRequest) {
       to,
       metricType,
       severity,
+      acknowledged,
       limit,
       offset,
     });
@@ -92,6 +97,8 @@ export async function GET(request: NextRequest) {
       threshold: a.threshold,
       blockNumber: a.blockNumber?.toString() ?? null,
       createdAt: a.createdAt.toISOString(),
+      acknowledged: a.acknowledged,
+      acknowledgedAt: a.acknowledgedAt?.toISOString() ?? null,
     }));
 
     return NextResponse.json({

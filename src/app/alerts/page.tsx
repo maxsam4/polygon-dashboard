@@ -14,6 +14,8 @@ interface AnomalyData {
   threshold: number | null;
   blockNumber: string | null;
   createdAt: string;
+  acknowledged: boolean;
+  acknowledgedAt: string | null;
 }
 
 interface AnomalyStats {
@@ -88,6 +90,9 @@ export default function AlertsPage() {
   const [timeRangeHours, setTimeRangeHours] = useState(24);
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set());
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
+  const [showAcknowledged, setShowAcknowledged] = useState<'all' | 'unacknowledged' | 'acknowledged'>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [acknowledging, setAcknowledging] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 50;
@@ -99,6 +104,12 @@ export default function AlertsPage() {
 
       if (selectedSeverity !== 'all') {
         url += `&severity=${selectedSeverity}`;
+      }
+
+      if (showAcknowledged === 'acknowledged') {
+        url += '&acknowledged=true';
+      } else if (showAcknowledged === 'unacknowledged') {
+        url += '&acknowledged=false';
       }
 
       // Note: metric filtering is done client-side for multiple metrics
@@ -121,7 +132,7 @@ export default function AlertsPage() {
     } finally {
       setLoading(false);
     }
-  }, [timeRangeHours, selectedSeverity, selectedMetrics, page]);
+  }, [timeRangeHours, selectedSeverity, selectedMetrics, showAcknowledged, page]);
 
   useEffect(() => {
     setLoading(true);
@@ -130,10 +141,11 @@ export default function AlertsPage() {
     return () => clearInterval(interval);
   }, [fetchAnomalies]);
 
-  // Reset page when filters change
+  // Reset page and selection when filters change
   useEffect(() => {
     setPage(1);
-  }, [timeRangeHours, selectedSeverity, selectedMetrics]);
+    setSelectedIds(new Set());
+  }, [timeRangeHours, selectedSeverity, selectedMetrics, showAcknowledged]);
 
   const toggleMetric = (metric: string) => {
     setSelectedMetrics(prev => {
@@ -147,6 +159,66 @@ export default function AlertsPage() {
     });
   };
 
+  const toggleSelectId = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === anomalies.filter(a => !a.acknowledged).length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(anomalies.filter(a => !a.acknowledged).map(a => a.id)));
+    }
+  };
+
+  const handleAcknowledge = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    setAcknowledging(true);
+    try {
+      const res = await fetch('/api/anomalies/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error('Failed to acknowledge');
+      setSelectedIds(new Set());
+      fetchAnomalies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to acknowledge');
+    } finally {
+      setAcknowledging(false);
+    }
+  };
+
+  const handleAcknowledgeAll = async () => {
+    if (!confirm('Acknowledge all alerts in this time range?')) return;
+    setAcknowledging(true);
+    try {
+      const from = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000);
+      const res = await fetch('/api/anomalies/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true, from: from.toISOString() }),
+      });
+      if (!res.ok) throw new Error('Failed to acknowledge');
+      setSelectedIds(new Set());
+      fetchAnomalies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to acknowledge');
+    } finally {
+      setAcknowledging(false);
+    }
+  };
+
+  const unacknowledgedCount = anomalies.filter(a => !a.acknowledged).length;
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -244,8 +316,42 @@ export default function AlertsPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Acknowledged Filter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted text-sm">Status:</span>
+                  <select
+                    value={showAcknowledged}
+                    onChange={(e) => setShowAcknowledged(e.target.value as 'all' | 'unacknowledged' | 'acknowledged')}
+                    className="bg-background border border-accent/20 rounded px-2 py-1 text-sm text-foreground"
+                  >
+                    <option value="all">All</option>
+                    <option value="unacknowledged">Unacknowledged</option>
+                    <option value="acknowledged">Acknowledged</option>
+                  </select>
+                </div>
               </div>
             </div>
+
+            {/* Acknowledge Actions */}
+            {unacknowledgedCount > 0 && (
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => handleAcknowledge(Array.from(selectedIds))}
+                  disabled={selectedIds.size === 0 || acknowledging}
+                  className="px-3 py-1.5 text-sm btn-gradient-active rounded disabled:opacity-50"
+                >
+                  {acknowledging ? 'Acknowledging...' : `Acknowledge Selected (${selectedIds.size})`}
+                </button>
+                <button
+                  onClick={handleAcknowledgeAll}
+                  disabled={acknowledging}
+                  className="px-3 py-1.5 text-sm terminal-btn rounded disabled:opacity-50"
+                >
+                  Acknowledge All
+                </button>
+              </div>
+            )}
 
             {/* Alerts Table */}
             <div className="glass-card-solid rounded-xl overflow-hidden relative">
@@ -263,17 +369,42 @@ export default function AlertsPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="text-muted text-sm border-b border-accent/10 dark:border-accent/15">
+                        <th className="px-2 py-3 text-center font-medium w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.size > 0 && selectedIds.size === anomalies.filter(a => !a.acknowledged).length}
+                            onChange={toggleSelectAll}
+                            className="w-4 h-4 accent-accent"
+                            title="Select all unacknowledged"
+                          />
+                        </th>
                         <th className="px-4 py-3 text-left font-medium">Time</th>
                         <th className="px-4 py-3 text-left font-medium">Metric</th>
                         <th className="px-4 py-3 text-left font-medium">Value</th>
                         <th className="px-4 py-3 text-left font-medium">Threshold</th>
                         <th className="px-4 py-3 text-left font-medium">Severity</th>
                         <th className="px-4 py-3 text-left font-medium">Block</th>
+                        <th className="px-4 py-3 text-left font-medium">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {anomalies.map((anomaly) => (
-                        <tr key={anomaly.id} className="border-b border-accent/10 last:border-0 hover:bg-surface-hover transition-colors">
+                        <tr
+                          key={anomaly.id}
+                          className={`border-b border-accent/10 last:border-0 hover:bg-surface-hover transition-colors ${
+                            anomaly.acknowledged ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <td className="px-2 py-3 text-center">
+                            {!anomaly.acknowledged && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(anomaly.id)}
+                                onChange={() => toggleSelectId(anomaly.id)}
+                                className="w-4 h-4 accent-accent"
+                              />
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-muted">
                             <span title={new Date(anomaly.timestamp).toLocaleString()}>
                               {formatTimeAgo(anomaly.timestamp)}
@@ -311,6 +442,20 @@ export default function AlertsPage() {
                               </Link>
                             ) : (
                               <span className="text-muted">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {anomaly.acknowledged ? (
+                              <span
+                                className="px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-500"
+                                title={anomaly.acknowledgedAt ? `Acknowledged ${new Date(anomaly.acknowledgedAt).toLocaleString()}` : undefined}
+                              >
+                                ack
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-accent/20 text-accent">
+                                new
+                              </span>
                             )}
                           </td>
                         </tr>
