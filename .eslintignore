@@ -1,0 +1,7 @@
+# Compiled output
+services/live-stream/dist/
+.next/
+out/
+
+# Worktrees
+.worktrees/

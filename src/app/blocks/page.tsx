@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Nav } from '@/components/Nav';
 import { BlockTable } from '@/components/blocks/BlockTable';
@@ -35,7 +35,7 @@ interface Pagination {
 
 const BLOCKS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 
-export default function BlocksPage() {
+function BlocksPageContent() {
   const searchParams = useSearchParams();
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -230,5 +230,20 @@ export default function BlocksPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function BlocksPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background">
+        <Nav />
+        <main className="w-full px-4 py-6">
+          <div className="text-center py-8 text-muted">Loading...</div>
+        </main>
+      </div>
+    }>
+      <BlocksPageContent />
+    </Suspense>
   );
 }

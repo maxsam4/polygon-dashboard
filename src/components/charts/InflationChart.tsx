@@ -355,7 +355,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
 
     setChartData(data);
-  }, [rates, burnData, timeRange, bucketSize, appliedCustomRange]);
+  }, [rates, burnData, timeRange, bucketSize, appliedCustomRange, metric]);
 
   interface SeriesOption {
     key: string;
