@@ -13,12 +13,15 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     // Use Server-Sent Events for real-time updates
     const connectSSE = () => {
       const eventSource = new EventSource('/api/blocks/stream');
       eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {
+        if (!mounted) return;
         try {
           const data = JSON.parse(event.data);
 
@@ -70,6 +73,7 @@ export default function Home() {
       };
 
       eventSource.onerror = () => {
+        if (!mounted) return;
         console.warn('SSE connection error, reconnecting...');
         setIsStreaming(false);
         eventSource.close();
@@ -81,6 +85,7 @@ export default function Home() {
     connectSSE();
 
     return () => {
+      mounted = false;
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }

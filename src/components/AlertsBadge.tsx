@@ -12,14 +12,16 @@ export function AlertsBadge() {
   const [counts, setCounts] = useState<AlertCounts | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+
     const fetchCounts = async () => {
       try {
         // Fetch count for the last 1 hour
         const from = new Date(Date.now() - 60 * 60 * 1000);
         const res = await fetch(`/api/anomalies?from=${from.toISOString()}&countOnly=true`);
-        if (!res.ok) return;
+        if (!res.ok || !mounted) return;
         const data = await res.json();
-        setCounts(data);
+        if (mounted) setCounts(data);
       } catch {
         // Silently fail - badge is not critical
       }
@@ -27,7 +29,10 @@ export function AlertsBadge() {
 
     fetchCounts();
     const interval = setInterval(fetchCounts, 60000); // Refresh every minute
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   if (!counts || counts.total === 0) {
