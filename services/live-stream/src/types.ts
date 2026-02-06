@@ -94,5 +94,6 @@ export interface WSConnectionState {
   url: string;
   connected: boolean;
   lastBlock: number | null;
+  lastMessageTime: number | null;
   reconnectAttempts: number;
 }

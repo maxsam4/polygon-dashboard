@@ -9,6 +9,10 @@ const MGAS = 1e6;
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 
+// Staleness detection: reconnect if no messages for 60 seconds
+const STALE_CONNECTION_TIMEOUT = 60000;
+const STALENESS_CHECK_INTERVAL = 30000;
+
 type BlockCallback = (block: StreamBlock) => void;
 
 export class WSManager {
@@ -18,6 +22,7 @@ export class WSManager {
   private ringBuffer: RingBuffer;
   private onNewBlock: BlockCallback | null = null;
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private stalenessCheckTimer: NodeJS.Timeout | null = null;
 
   constructor(urls: string[], ringBuffer: RingBuffer) {
     this.urls = urls;
@@ -28,6 +33,7 @@ export class WSManager {
         url,
         connected: false,
         lastBlock: null,
+        lastMessageTime: null,
         reconnectAttempts: 0,
       });
     }
@@ -47,6 +53,74 @@ export class WSManager {
     for (const url of this.urls) {
       this.connect(url);
     }
+    this.startStalenessCheck();
+  }
+
+  /**
+   * Start periodic staleness check for all connections.
+   */
+  private startStalenessCheck(): void {
+    if (this.stalenessCheckTimer) {
+      clearInterval(this.stalenessCheckTimer);
+    }
+
+    this.stalenessCheckTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [url, state] of this.connectionStates) {
+        if (!state.connected) continue;
+
+        const timeSinceLastMessage = state.lastMessageTime
+          ? now - state.lastMessageTime
+          : Infinity;
+
+        if (timeSinceLastMessage > STALE_CONNECTION_TIMEOUT) {
+          console.log(
+            `[WS] Connection to ${url} is stale (no messages for ${Math.round(timeSinceLastMessage / 1000)}s), reconnecting...`
+          );
+          this.forceReconnect(url);
+        }
+      }
+    }, STALENESS_CHECK_INTERVAL);
+  }
+
+  /**
+   * Stop the staleness check timer.
+   */
+  private stopStalenessCheck(): void {
+    if (this.stalenessCheckTimer) {
+      clearInterval(this.stalenessCheckTimer);
+      this.stalenessCheckTimer = null;
+    }
+  }
+
+  /**
+   * Force reconnect to a URL, bypassing exponential backoff.
+   */
+  private forceReconnect(url: string): void {
+    const state = this.connectionStates.get(url)!;
+
+    // Close existing WebSocket if any
+    const existingWs = this.connections.get(url);
+    if (existingWs) {
+      existingWs.removeAllListeners();
+      existingWs.close();
+      this.connections.delete(url);
+    }
+
+    // Clear any pending reconnect timer
+    const existingTimer = this.reconnectTimers.get(url);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.reconnectTimers.delete(url);
+    }
+
+    // Reset state
+    state.connected = false;
+    state.lastMessageTime = null;
+    state.reconnectAttempts = 0;
+
+    // Immediately reconnect
+    this.connect(url);
   }
 
   /**
@@ -62,6 +136,7 @@ export class WSManager {
         console.log(`[WS] Connected to ${url}`);
         state.connected = true;
         state.reconnectAttempts = 0;
+        state.lastMessageTime = Date.now();
 
         // Subscribe to newHeads with full transaction objects
         const subscribeMsg = {
@@ -128,6 +203,9 @@ export class WSManager {
    * Handle incoming WebSocket message.
    */
   private handleMessage(url: string, data: string): void {
+    const state = this.connectionStates.get(url)!;
+    state.lastMessageTime = Date.now();
+
     try {
       const msg = JSON.parse(data);
 
@@ -293,6 +371,8 @@ export class WSManager {
    * Disconnect all WebSocket connections.
    */
   disconnectAll(): void {
+    this.stopStalenessCheck();
+
     for (const [url, ws] of this.connections) {
       ws.close();
       this.connections.delete(url);
