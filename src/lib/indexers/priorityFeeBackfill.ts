@@ -1,4 +1,4 @@
-import { getRpcClient, TransactionReceipt } from '../rpc';
+import { getRpcClient, TransactionReceipt, ReceiptsNotAvailableError } from '../rpc';
 import { updateBlockPriorityFeesBatch } from '../queries/blocks';
 import { query } from '../db';
 import { pushBlockUpdate } from '../liveStreamClient';
@@ -27,7 +27,7 @@ export class PriorityFeeBackfiller {
   private batchSize: number;
   private running = false;
 
-  constructor(batchSize: number = 10) {
+  constructor(batchSize: number = 3) {
     this.batchSize = batchSize;
   }
 
@@ -120,24 +120,32 @@ export class PriorityFeeBackfiller {
     const blocksToRetry: PendingBlock[] = [];
 
     for (const block of blocks) {
-      let receipts: TransactionReceipt[] | null | undefined = receiptsMap.get(block.blockNumber);
+      let receipts: TransactionReceipt[] | undefined = receiptsMap.get(block.blockNumber);
 
-      // If receipts not available, wait briefly and retry once
-      // This handles the race condition where very recent blocks
-      // don't have receipts ready yet
-      if (!receipts || receipts.length === 0) {
+      // If receipts not in map, they weren't available on ANY endpoint
+      // Wait briefly and retry once more (all endpoints will be tried again)
+      if (!receipts) {
         await sleep(500);
-        receipts = await rpc.getBlockReceipts(block.blockNumber);
+        try {
+          receipts = await rpc.getBlockReceipts(block.blockNumber);
+        } catch (error) {
+          if (error instanceof ReceiptsNotAvailableError) {
+            // Still not available on any endpoint - re-queue for later
+            const retryCount = (block.retryCount || 0) + 1;
+            if (retryCount < MAX_RETRIES) {
+              blocksToRetry.push({ ...block, retryCount });
+              console.warn(`[PriorityFeeBackfiller] Block #${block.blockNumber} receipts not ready on any endpoint, retry ${retryCount}/${MAX_RETRIES}`);
+            } else {
+              console.error(`[PriorityFeeBackfiller] Block #${block.blockNumber} dropped after ${MAX_RETRIES} retries - will be picked up by getBlocksMissingPriorityFees()`);
+            }
+            continue;
+          }
+          throw error; // Re-throw other errors
+        }
       }
 
-      if (!receipts || receipts.length === 0) {
-        // Still no receipts - re-queue for later if under retry limit
-        const retryCount = (block.retryCount || 0) + 1;
-        if (retryCount < MAX_RETRIES) {
-          blocksToRetry.push({ ...block, retryCount });
-        }
-        // If max retries exceeded, block is dropped silently
-        // It will be picked up by getBlocksMissingPriorityFees() later
+      // Empty receipts array means block has no transactions - skip
+      if (receipts.length === 0) {
         continue;
       }
 
@@ -301,7 +309,7 @@ let backfillerInstance: PriorityFeeBackfiller | null = null;
  */
 export function getPriorityFeeBackfiller(): PriorityFeeBackfiller {
   if (!backfillerInstance) {
-    const batchSize = parseInt(process.env.PRIORITY_FEE_BATCH_SIZE || '10', 10);
+    const batchSize = parseInt(process.env.PRIORITY_FEE_BATCH_SIZE || '3', 10);
     backfillerInstance = new PriorityFeeBackfiller(batchSize);
   }
   return backfillerInstance;

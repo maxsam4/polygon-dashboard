@@ -70,10 +70,7 @@ export class HeimdallClient {
           return (await response.json()) as T;
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          // Only log occasionally to avoid spam
-          if (attempt === 0 && retry === 0) {
-            console.warn(`Heimdall ${this.baseUrl} failed: ${lastError.message}, rotating...`);
-          }
+          console.warn(`Heimdall ${this.baseUrl} failed (retry ${retry + 1}/${this.retryConfig.maxRetries + 1}, endpoint ${attempt + 1}/${this.urls.length}): ${lastError.message}`);
           this.rotateEndpoint();
         }
       }
@@ -84,7 +81,7 @@ export class HeimdallClient {
       }
     }
 
-    // Throw error but callers should handle gracefully and retry
+    console.error(`All ${this.urls.length} Heimdall endpoints failed after ${this.retryConfig.maxRetries + 1} retry rounds`);
     throw new HeimdallExhaustedError(
       `All Heimdall endpoints failed after ${this.retryConfig.maxRetries} retries`,
       lastError
@@ -123,11 +120,13 @@ export class HeimdallClient {
           return this.parseMilestone(data, seqId);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
+          console.warn(`Heimdall getMilestones(${seqId}) failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
           if (retry < this.retryConfig.maxRetries) {
             await sleep(this.retryConfig.delayMs);
           }
         }
       }
+      console.error(`Heimdall getMilestones(${seqId}) failed after all retries`);
       throw lastError;
     });
 

@@ -58,10 +58,7 @@ export class EthRpcClient {
           return await fn(client);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          // Log on first failure of primary endpoint
-          if (endpointIndex === 0 && retry === 0) {
-            console.warn(`ETH RPC ${this.urls[endpointIndex]} failed: ${lastError.message}, retrying...`);
-          }
+          console.warn(`ETH RPC ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
           // Delay before retry (but not after last retry on this endpoint)
           if (retry < this.retryConfig.maxRetries) {
             await sleep(this.retryConfig.delayMs);
@@ -71,10 +68,11 @@ export class EthRpcClient {
 
       // All retries exhausted on this endpoint, try next one
       if (endpointIndex < this.urls.length - 1) {
-        console.warn(`ETH RPC ${this.urls[endpointIndex]} exhausted retries, falling back to ${this.urls[endpointIndex + 1]}`);
+        console.warn(`ETH RPC ${this.urls[endpointIndex]} exhausted ${this.retryConfig.maxRetries + 1} retries, falling back to ${this.urls[endpointIndex + 1]}`);
       }
     }
 
+    console.error(`All ${this.urls.length} ETH RPC endpoints failed after ${this.retryConfig.maxRetries + 1} attempts each`);
     throw new EthRpcExhaustedError(
       `All Ethereum RPC endpoints failed after ${this.retryConfig.maxRetries} retries each`,
       lastError

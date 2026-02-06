@@ -85,6 +85,13 @@ export class RpcExhaustedError extends Error {
   }
 }
 
+export class ReceiptsNotAvailableError extends Error {
+  constructor(public blockNumber: bigint) {
+    super(`Receipts not available for block ${blockNumber}`);
+    this.name = 'ReceiptsNotAvailableError';
+  }
+}
+
 export class RpcClient {
   private urls: string[];
   private clients: PublicClient[];
@@ -127,10 +134,7 @@ export class RpcClient {
           return await fn(client);
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
-          // Log on first failure of primary endpoint
-          if (endpointIndex === 0 && retry === 0) {
-            console.warn(`RPC ${this.urls[endpointIndex]} failed: ${lastError.message}, retrying...`);
-          }
+          console.warn(`RPC ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
           // Delay before retry (but not after last retry on this endpoint)
           if (retry < this.retryConfig.maxRetries) {
             await sleep(this.retryConfig.delayMs);
@@ -140,10 +144,11 @@ export class RpcClient {
 
       // All retries exhausted on this endpoint, try next one
       if (endpointIndex < this.urls.length - 1) {
-        console.warn(`RPC ${this.urls[endpointIndex]} exhausted retries, falling back to ${this.urls[endpointIndex + 1]}`);
+        console.warn(`RPC ${this.urls[endpointIndex]} exhausted ${this.retryConfig.maxRetries + 1} retries, falling back to ${this.urls[endpointIndex + 1]}`);
       }
     }
 
+    console.error(`All ${this.urls.length} RPC endpoints failed after ${this.retryConfig.maxRetries + 1} attempts each`);
     throw new RpcExhaustedError(
       `All RPC endpoints failed after ${this.retryConfig.maxRetries} retries each`,
       lastError
@@ -169,6 +174,7 @@ export class RpcClient {
             return await fn(client);
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
+            console.warn(`RPC parallel call to ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
             if (retry < this.retryConfig.maxRetries) {
               await sleep(this.retryConfig.delayMs);
             }
@@ -254,19 +260,24 @@ export class RpcClient {
   }
 
   // Fetch transaction receipts for a block using eth_getBlockReceipts RPC method
-  async getBlockReceipts(blockNumber: bigint): Promise<TransactionReceipt[] | null> {
+  // Throws ReceiptsNotAvailableError if receipts not ready (triggers endpoint fallback)
+  async getBlockReceipts(blockNumber: bigint): Promise<TransactionReceipt[]> {
     return this.call(async (client) => {
       // eth_getBlockReceipts is not in viem's typed methods, so we use a type assertion
       const result = await (client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
         method: 'eth_getBlockReceipts',
         params: [numberToHex(blockNumber)],
       });
-      if (!result || !Array.isArray(result)) return null;
+      if (!result || !Array.isArray(result)) {
+        // Throw to trigger retry on next endpoint
+        throw new ReceiptsNotAvailableError(blockNumber);
+      }
       return (result as RawReceipt[]).map(parseReceipt);
     });
   }
 
   // Fetch transaction receipts for multiple blocks in parallel
+  // Each block independently retries across all endpoints before giving up
   async getBlocksReceipts(blockNumbers: bigint[]): Promise<Map<bigint, TransactionReceipt[]>> {
     const results = new Map<bigint, TransactionReceipt[]>();
 
@@ -276,7 +287,10 @@ export class RpcClient {
         method: 'eth_getBlockReceipts',
         params: [numberToHex(blockNumber)],
       });
-      if (!result || !Array.isArray(result)) return null;
+      if (!result || !Array.isArray(result)) {
+        // Throw to trigger retry on next endpoint
+        throw new ReceiptsNotAvailableError(blockNumber);
+      }
       return (result as RawReceipt[]).map(parseReceipt);
     });
 
