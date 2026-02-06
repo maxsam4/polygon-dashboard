@@ -1,6 +1,7 @@
 import { query, queryOne } from '../db';
 import { Block, BlockRow } from '../types';
 import { getTableStats } from './stats';
+import { BLOCK_TIME_SUSPECT_THRESHOLD_SEC } from '../constants';
 
 function rowToBlock(row: BlockRow): Block {
   return {
@@ -45,11 +46,29 @@ export async function getLatestBlocks(limit = 20): Promise<Block[]> {
 }
 
 export async function getBlockByNumber(blockNumber: bigint): Promise<Block | null> {
+  // Polygon produces blocks every ~2s. Estimate timestamp from block number
+  // to enable TimescaleDB chunk pruning and avoid full table scans on 80M+ rows.
+  // Polygon genesis: June 1, 2020. Use a generous ±1 day window around estimate.
+  const POLYGON_GENESIS_UNIX = 1590969600; // 2020-06-01T00:00:00Z
+  const AVG_BLOCK_TIME_SEC = 2;
+  const estimatedTimestamp = POLYGON_GENESIS_UNIX + Number(blockNumber) * AVG_BLOCK_TIME_SEC;
+  const windowSec = 86400; // ±1 day to account for block time variance over millions of blocks
+  const tsLow = new Date((estimatedTimestamp - windowSec) * 1000);
+  const tsHigh = new Date((estimatedTimestamp + windowSec) * 1000);
+
   const row = await queryOne<BlockRow>(
+    `SELECT * FROM blocks WHERE block_number = $1 AND timestamp BETWEEN $2 AND $3`,
+    [blockNumber.toString(), tsLow, tsHigh]
+  );
+  if (row) return rowToBlock(row);
+
+  // Fallback: if estimation missed (e.g., very old block with different block times),
+  // try without timestamp filter. This is slower but ensures correctness.
+  const fallbackRow = await queryOne<BlockRow>(
     `SELECT * FROM blocks WHERE block_number = $1`,
     [blockNumber.toString()]
   );
-  return row ? rowToBlock(row) : null;
+  return fallbackRow ? rowToBlock(fallbackRow) : null;
 }
 
 export async function getBlocksPaginated(
@@ -143,8 +162,21 @@ export async function getHighestBlockNumber(): Promise<bigint | null> {
 /**
  * Get highest block number directly from DB (not cached stats).
  * Used for indexer initialization where correctness is critical.
+ *
+ * Queries only the last 7 days first (fast, uses chunk pruning), then
+ * falls back to unfiltered scan if no recent data exists.
  */
 export async function getHighestBlockNumberFromDb(): Promise<bigint | null> {
+  // Try recent data first (fast - avoids scanning compressed chunks)
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recent = await query<{ max: string | null }>(
+    'SELECT MAX(block_number) as max FROM blocks WHERE timestamp >= $1',
+    [sevenDaysAgo]
+  );
+  const recentRows = recent as unknown as Array<{ max: string | null }>;
+  if (recentRows[0]?.max) return BigInt(recentRows[0].max);
+
+  // Fallback: full scan (only hits if DB has no data in last 7 days)
   const result = await query<{ max: string | null }>(
     'SELECT MAX(block_number) as max FROM blocks'
   );
@@ -152,6 +184,15 @@ export async function getHighestBlockNumberFromDb(): Promise<bigint | null> {
   return rows[0]?.max ? BigInt(rows[0].max) : null;
 }
 
+/**
+ * Insert a single block with ON CONFLICT DO UPDATE semantics.
+ * Used by the live BlockIndexer where blocks may be re-indexed due to reorgs.
+ * The UPDATE preserves receipt-based metrics (avg/total priority fees) if already populated,
+ * and conditionally updates block_time/mgas/tps based on data quality.
+ *
+ * Note: insertBlocksBatch() uses ON CONFLICT DO NOTHING because it's used by the
+ * backfiller where blocks are immutable and skipping duplicates is correct behavior.
+ */
 export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>): Promise<void> {
   await query(
     `INSERT INTO blocks (
@@ -175,20 +216,22 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       total_base_fee_gwei = EXCLUDED.total_base_fee_gwei,
       total_priority_fee_gwei = COALESCE(EXCLUDED.total_priority_fee_gwei, blocks.total_priority_fee_gwei),
       tx_count = EXCLUDED.tx_count,
-      -- Only update block_time if new value is not null, or existing value is null/wrong (>3s)
+      -- Only update block_time if new value is not null, or existing value is null/suspect.
+      -- Polygon target block time is 2s; values > BLOCK_TIME_SUSPECT_THRESHOLD_SEC (${BLOCK_TIME_SUSPECT_THRESHOLD_SEC}s)
+      -- are likely stale (e.g., from a missed previous block) and should be overwritten.
       block_time_sec = CASE
         WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.block_time_sec
-        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.block_time_sec
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > ${BLOCK_TIME_SUSPECT_THRESHOLD_SEC} THEN EXCLUDED.block_time_sec
         ELSE blocks.block_time_sec
       END,
       mgas_per_sec = CASE
         WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.mgas_per_sec
-        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.mgas_per_sec
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > ${BLOCK_TIME_SUSPECT_THRESHOLD_SEC} THEN EXCLUDED.mgas_per_sec
         ELSE blocks.mgas_per_sec
       END,
       tps = CASE
         WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.tps
-        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > 3 THEN EXCLUDED.tps
+        WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > ${BLOCK_TIME_SUSPECT_THRESHOLD_SEC} THEN EXCLUDED.tps
         ELSE blocks.tps
       END,
       updated_at = NOW()
@@ -219,6 +262,13 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
   );
 }
 
+/**
+ * Batch insert blocks with ON CONFLICT DO NOTHING semantics.
+ * Used by the BlockBackfiller for historical data where blocks are immutable.
+ * Skipping duplicates is correct here - if a block already exists, the live
+ * indexer's insertBlock() has already written the authoritative version.
+ * Finality is reconciled in a separate UPDATE after the insert.
+ */
 export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updatedAt'>[]): Promise<void> {
   if (blocks.length === 0) return;
 

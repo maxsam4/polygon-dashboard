@@ -88,17 +88,37 @@ describe('blocks queries', () => {
   });
 
   describe('getBlockByNumber', () => {
-    it('returns block when found', async () => {
+    it('returns block when found (fast path with timestamp estimate)', async () => {
       mockQueryOne.mockResolvedValueOnce(sampleBlockRow);
 
       const result = await getBlockByNumber(50000000n);
 
       expect(mockQueryOne).toHaveBeenCalledTimes(1);
-      expect(mockQueryOne.mock.calls[0][1]).toEqual(['50000000']);
+      // First param is block number, followed by estimated timestamp range
+      const params = mockQueryOne.mock.calls[0][1];
+      expect(params[0]).toBe('50000000');
+      expect(params[1]).toBeInstanceOf(Date);
+      expect(params[2]).toBeInstanceOf(Date);
+      // Timestamp window should be ±1 day around estimate
+      expect(params[2].getTime() - params[1].getTime()).toBe(2 * 86400 * 1000);
+      expect(result?.blockNumber).toBe(50000000n);
+    });
+
+    it('falls back to unfiltered query when timestamp estimate misses', async () => {
+      // First call (with timestamp) returns null, second (fallback) returns the row
+      mockQueryOne.mockResolvedValueOnce(null);
+      mockQueryOne.mockResolvedValueOnce(sampleBlockRow);
+
+      const result = await getBlockByNumber(50000000n);
+
+      expect(mockQueryOne).toHaveBeenCalledTimes(2);
+      // Fallback call should only have block number param
+      expect(mockQueryOne.mock.calls[1][1]).toEqual(['50000000']);
       expect(result?.blockNumber).toBe(50000000n);
     });
 
     it('returns null when not found', async () => {
+      mockQueryOne.mockResolvedValueOnce(null);
       mockQueryOne.mockResolvedValueOnce(null);
 
       const result = await getBlockByNumber(99999999n);

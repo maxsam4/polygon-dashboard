@@ -53,6 +53,11 @@ export const TIME_SEC = {
   YEAR: 365 * 86400,
 } as const;
 
+// Block time threshold for data quality checks.
+// Polygon's target block time is 2s. Values above this threshold are likely
+// stale or incorrect (e.g., from a missed previous block) and should be overwritten.
+export const BLOCK_TIME_SUSPECT_THRESHOLD_SEC = 3;
+
 // Worker polling intervals
 export const WORKER_INTERVALS = {
   LIVE_POLL_MS: 2000,

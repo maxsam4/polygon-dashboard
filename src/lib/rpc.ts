@@ -70,13 +70,26 @@ export type BlockCallback = (block: WsBlock) => void;
 
 interface RetryConfig {
   maxRetries: number;
-  delayMs: number; // Fixed delay between retries (no exponential backoff)
+  initialDelayMs: number;
+  maxDelayMs: number;
+  // Circuit breaker: skip endpoint for this duration after consecutive failures
+  circuitBreakerThreshold: number; // consecutive failures before opening circuit
+  circuitBreakerDurationMs: number; // how long to keep circuit open
 }
 
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: RPC_RETRY_CONFIG.MAX_RETRIES,
-  delayMs: RPC_RETRY_CONFIG.DELAY_MS,
+  initialDelayMs: RPC_RETRY_CONFIG.DELAY_MS,
+  maxDelayMs: 8000,
+  circuitBreakerThreshold: 5,
+  circuitBreakerDurationMs: 30_000,
 };
+
+// Circuit breaker state per endpoint
+interface CircuitBreakerState {
+  consecutiveFailures: number;
+  openUntil: number; // timestamp when circuit closes again
+}
 
 export class RpcExhaustedError extends Error {
   constructor(message: string, public lastError?: Error) {
@@ -96,6 +109,7 @@ export class RpcClient {
   private urls: string[];
   private clients: PublicClient[];
   private retryConfig: RetryConfig;
+  private circuitBreakers: CircuitBreakerState[];
 
   constructor(urls: string[], retryConfig = DEFAULT_RETRY_CONFIG) {
     if (urls.length === 0) {
@@ -106,53 +120,88 @@ export class RpcClient {
     this.clients = urls.map((url) =>
       createPublicClient({
         chain: polygon,
-        transport: http(url),
+        transport: http(url, { timeout: 30_000 }),
       })
     );
+    this.circuitBreakers = urls.map(() => ({ consecutiveFailures: 0, openUntil: 0 }));
   }
 
   get endpointCount(): number {
     return this.urls.length;
   }
 
-  // Get client for a specific endpoint index
   private getClientByIndex(index: number): PublicClient {
     return this.clients[index % this.urls.length];
   }
 
-  // Primary-first strategy: try first endpoint with retries, then fall back to others
-  async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
+  private isCircuitOpen(endpointIndex: number): boolean {
+    const cb = this.circuitBreakers[endpointIndex];
+    return cb.consecutiveFailures >= this.retryConfig.circuitBreakerThreshold
+      && Date.now() < cb.openUntil;
+  }
+
+  private recordSuccess(endpointIndex: number): void {
+    this.circuitBreakers[endpointIndex].consecutiveFailures = 0;
+  }
+
+  private recordFailure(endpointIndex: number): void {
+    const cb = this.circuitBreakers[endpointIndex];
+    cb.consecutiveFailures++;
+    if (cb.consecutiveFailures >= this.retryConfig.circuitBreakerThreshold) {
+      cb.openUntil = Date.now() + this.retryConfig.circuitBreakerDurationMs;
+      console.warn(`RPC circuit breaker OPEN for ${this.urls[endpointIndex]} (${cb.consecutiveFailures} consecutive failures, skipping for ${this.retryConfig.circuitBreakerDurationMs / 1000}s)`);
+    }
+  }
+
+  private getBackoffDelay(retry: number): number {
+    return Math.min(
+      this.retryConfig.initialDelayMs * Math.pow(2, retry),
+      this.retryConfig.maxDelayMs
+    );
+  }
+
+  // Shared retry-with-fallback logic used by both call() and callParallel()
+  private async retryWithFallback<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
     let lastError: Error | undefined;
 
-    // Try each endpoint in order (primary first)
     for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
+      // Skip endpoints with open circuit breaker
+      if (this.isCircuitOpen(endpointIndex)) {
+        continue;
+      }
+
       const client = this.getClientByIndex(endpointIndex);
 
-      // Try this endpoint up to maxRetries times
       for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
         try {
-          return await fn(client);
+          const result = await fn(client);
+          this.recordSuccess(endpointIndex);
+          return result;
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
+          this.recordFailure(endpointIndex);
           console.warn(`RPC ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
-          // Delay before retry (but not after last retry on this endpoint)
           if (retry < this.retryConfig.maxRetries) {
-            await sleep(this.retryConfig.delayMs);
+            await sleep(this.getBackoffDelay(retry));
           }
         }
       }
 
-      // All retries exhausted on this endpoint, try next one
       if (endpointIndex < this.urls.length - 1) {
-        console.warn(`RPC ${this.urls[endpointIndex]} exhausted ${this.retryConfig.maxRetries + 1} retries, falling back to ${this.urls[endpointIndex + 1]}`);
+        console.warn(`RPC ${this.urls[endpointIndex]} exhausted retries, falling back to next endpoint`);
       }
     }
 
-    console.error(`All ${this.urls.length} RPC endpoints failed after ${this.retryConfig.maxRetries + 1} attempts each`);
+    console.error(`All ${this.urls.length} RPC endpoints failed`);
     throw new RpcExhaustedError(
-      `All RPC endpoints failed after ${this.retryConfig.maxRetries} retries each`,
+      `All RPC endpoints failed after retries`,
       lastError
     );
+  }
+
+  // Primary-first strategy: try first endpoint with retries, then fall back to others
+  async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
+    return this.retryWithFallback(fn);
   }
 
   // Execute multiple calls in parallel using primary-first strategy
@@ -160,29 +209,7 @@ export class RpcClient {
   async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<(T | null)[]> {
     const errors: Error[] = [];
 
-    // All requests start with primary endpoint (index 0), fall back on failure
-    const promises = fns.map(async (fn) => {
-      let lastError: Error | undefined;
-
-      // Try each endpoint in order
-      for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
-        const client = this.getClientByIndex(endpointIndex);
-
-        // Try this endpoint up to maxRetries times
-        for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
-          try {
-            return await fn(client);
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error(String(error));
-            console.warn(`RPC parallel call to ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
-            if (retry < this.retryConfig.maxRetries) {
-              await sleep(this.retryConfig.delayMs);
-            }
-          }
-        }
-      }
-      throw lastError;
-    });
+    const promises = fns.map(fn => this.retryWithFallback(fn));
 
     const settled = await Promise.allSettled(promises);
     const results: (T | null)[] = [];

@@ -182,6 +182,17 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/components/AlertsBadge.tsx` - Nav badge showing recent alert count
 - `src/components/ThresholdEditor.tsx` - Admin component for editing anomaly thresholds
 
+## Reliability
+
+- **DB statement_timeout**: 30s max per query prevents runaway queries from exhausting the connection pool
+- **RPC request timeout**: 30s per HTTP transport call prevents hanging on unresponsive endpoints
+- **RPC circuit breaker**: Endpoints are skipped for 30s after 5 consecutive failures, with exponential backoff on retries
+- **SSE proxy reconnection**: Upstream live-stream disconnects trigger automatic reconnection with exponential backoff (max 5 retries)
+- **Worker startup**: Uses `Promise.allSettled` - partial failures are logged, remaining workers continue running
+- **PriorityFeeBackfiller queue**: Bounded to 500 entries; overflow is dropped and caught by HistoricalPriorityFeeBackfiller
+- **Admin login rate limiting**: 5 attempts per IP per minute (in-memory)
+- **App health check**: Docker healthcheck on `/api/status` enables automatic container restart
+
 ## Key Patterns
 
 - Timestamps: TIMESTAMPTZ

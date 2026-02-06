@@ -53,12 +53,17 @@ services:
       MILESTONE_BACKFILL_TO_SEQUENCE: ${MILESTONE_BACKFILL_TO_SEQUENCE:-1}
       MILESTONE_BACKFILL_DELAY_MS: ${MILESTONE_BACKFILL_DELAY_MS:-500}
       # Priority fee backfiller
-      PRIORITY_FEE_BATCH_SIZE: ${PRIORITY_FEE_BATCH_SIZE:-50}
+      PRIORITY_FEE_BATCH_SIZE: ${PRIORITY_FEE_BATCH_SIZE:-3}
       HISTORICAL_PRIORITY_FEE_BATCH_SIZE: ${HISTORICAL_PRIORITY_FEE_BATCH_SIZE:-100}
       HISTORICAL_PRIORITY_FEE_DELAY_MS: ${HISTORICAL_PRIORITY_FEE_DELAY_MS:-100}
       PORT: 3000
     ports:
       - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   live-stream:
     build: ./services/live-stream

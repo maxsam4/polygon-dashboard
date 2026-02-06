@@ -103,93 +103,142 @@ function liveStreamUpdateToUI(
   return result;
 }
 
+// SSE reconnection config
+const SSE_MAX_RETRIES = 5;
+const SSE_INITIAL_BACKOFF_MS = 1000;
+const SSE_MAX_BACKOFF_MS = 30000;
+
 // SSE endpoint for streaming new blocks to the frontend
 export async function GET(): Promise<Response> {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Use Node.js http for proper SSE streaming support
-      const http = await import('http');
-      const url = new URL(`${LIVE_STREAM_URL}/stream`);
+      let closed = false;
+      let retryCount = 0;
 
-      const req = http.request(
-        {
-          hostname: url.hostname,
-          port: url.port || 80,
-          path: url.pathname,
-          method: 'GET',
-          headers: {
-            'Accept': 'text/event-stream',
+      const closeStream = () => {
+        if (!closed) {
+          closed = true;
+          controller.close();
+        }
+      };
+
+      const connectToUpstream = async () => {
+        if (closed) return;
+
+        const http = await import('http');
+        const url = new URL(`${LIVE_STREAM_URL}/stream`);
+
+        const req = http.request(
+          {
+            hostname: url.hostname,
+            port: url.port || 80,
+            path: url.pathname,
+            method: 'GET',
+            headers: {
+              'Accept': 'text/event-stream',
+            },
           },
-        },
-        (res) => {
-          if (res.statusCode !== 200) {
-            console.error(`[SSE] Live stream service returned ${res.statusCode}`);
-            controller.close();
-            return;
-          }
+          (res) => {
+            if (res.statusCode !== 200) {
+              console.error(`[SSE] Live stream service returned ${res.statusCode}`);
+              scheduleReconnect();
+              return;
+            }
 
-          let buffer = '';
+            // Reset retry count on successful connection
+            retryCount = 0;
+            let buffer = '';
 
-          res.on('data', (chunk: Buffer) => {
-            buffer += chunk.toString();
-            const lines = buffer.split('\n');
-            // Keep the last incomplete line in buffer
-            buffer = lines.pop() || '';
+            res.on('data', (chunk: Buffer) => {
+              if (closed) return;
+              buffer += chunk.toString();
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(line.slice(6));
 
-                  if (data.type === 'initial') {
-                    const transformed = {
-                      type: 'initial',
-                      blocks: (data.blocks as LiveStreamBlock[]).map(liveStreamBlockToUI),
-                    };
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
-                  } else if (data.type === 'update') {
-                    const transformed = {
-                      type: 'update',
-                      blocks: [liveStreamBlockToUI(data.block as LiveStreamBlock)],
-                    };
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
-                  } else if (data.type === 'block_update') {
-                    // Partial update message - transform and forward
-                    const transformed = {
-                      type: 'block_update',
-                      ...liveStreamUpdateToUI(data.blockNumber, data.updates as LiveStreamBlockUpdate),
-                    };
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
+                    if (data.type === 'initial') {
+                      const transformed = {
+                        type: 'initial',
+                        blocks: (data.blocks as LiveStreamBlock[]).map(liveStreamBlockToUI),
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
+                    } else if (data.type === 'update') {
+                      const transformed = {
+                        type: 'update',
+                        blocks: [liveStreamBlockToUI(data.block as LiveStreamBlock)],
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
+                    } else if (data.type === 'block_update') {
+                      const transformed = {
+                        type: 'block_update',
+                        ...liveStreamUpdateToUI(data.blockNumber, data.updates as LiveStreamBlockUpdate),
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(transformed)}\n\n`));
+                    }
+                  } catch {
+                    controller.enqueue(encoder.encode(`${line}\n`));
                   }
-                } catch {
-                  // Pass through unparseable lines
+                } else if (line.trim()) {
                   controller.enqueue(encoder.encode(`${line}\n`));
                 }
-              } else if (line.trim()) {
-                controller.enqueue(encoder.encode(`${line}\n`));
               }
-            }
-          });
+            });
 
-          res.on('end', () => {
-            controller.close();
-          });
+            res.on('end', () => {
+              console.warn('[SSE] Upstream connection ended, attempting reconnect');
+              scheduleReconnect();
+            });
 
-          res.on('error', (error) => {
-            console.error('[SSE] Error reading from live stream:', error);
-            controller.close();
-          });
+            res.on('error', (error) => {
+              console.error('[SSE] Error reading from live stream:', error);
+              scheduleReconnect();
+            });
+          }
+        );
+
+        req.on('error', (error) => {
+          console.error('[SSE] Failed to connect to live stream service:', error);
+          scheduleReconnect();
+        });
+
+        req.end();
+      };
+
+      const scheduleReconnect = () => {
+        if (closed) return;
+        retryCount++;
+
+        if (retryCount > SSE_MAX_RETRIES) {
+          console.error(`[SSE] Max retries (${SSE_MAX_RETRIES}) exceeded, closing stream`);
+          closeStream();
+          return;
         }
-      );
 
-      req.on('error', (error) => {
-        console.error('[SSE] Failed to connect to live stream service:', error);
-        controller.close();
-      });
+        const backoff = Math.min(
+          SSE_INITIAL_BACKOFF_MS * Math.pow(2, retryCount - 1),
+          SSE_MAX_BACKOFF_MS
+        );
+        console.log(`[SSE] Reconnecting in ${backoff}ms (attempt ${retryCount}/${SSE_MAX_RETRIES})`);
 
-      req.end();
+        // Send a comment to keep the connection alive while reconnecting
+        try {
+          controller.enqueue(encoder.encode(`: reconnecting\n\n`));
+        } catch {
+          // Stream may already be closed on client side
+          closeStream();
+          return;
+        }
+
+        setTimeout(() => connectToUpstream(), backoff);
+      };
+
+      connectToUpstream();
     },
   });
 

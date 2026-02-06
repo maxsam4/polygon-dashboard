@@ -10,6 +10,7 @@ export function getPool(): Pool {
       max: 30, // Increased from 20 to handle more concurrent queries
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000, // Increased from 2s to 10s
+      statement_timeout: 30000, // 30s max per query - prevents runaway queries from exhausting pool
     });
 
     pool.on('error', (err) => {

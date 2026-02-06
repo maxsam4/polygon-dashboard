@@ -15,11 +15,15 @@ interface PendingBlock {
 }
 
 const MAX_RETRIES = 5;  // Max retry attempts before giving up
+const MAX_QUEUE_SIZE = 500; // Drop oldest entries when queue exceeds this
 
 /**
  * Queue for backfilling priority fee data after blocks are indexed.
  * This allows the block indexer to insert blocks quickly without waiting
  * for receipt data, then fill in the priority fee metrics asynchronously.
+ *
+ * Queue is bounded to MAX_QUEUE_SIZE entries. When full, oldest entries
+ * are dropped (the HistoricalPriorityFeeBackfiller will catch them later).
  */
 export class PriorityFeeBackfiller {
   private queue: PendingBlock[] = [];
@@ -54,6 +58,7 @@ export class PriorityFeeBackfiller {
    */
   enqueue(block: PendingBlock): void {
     this.queue.push(block);
+    this.trimQueue();
   }
 
   /**
@@ -61,6 +66,19 @@ export class PriorityFeeBackfiller {
    */
   enqueueBatch(blocks: PendingBlock[]): void {
     this.queue.push(...blocks);
+    this.trimQueue();
+  }
+
+  /**
+   * Drop oldest entries when queue exceeds MAX_QUEUE_SIZE.
+   * Dropped blocks will be picked up by HistoricalPriorityFeeBackfiller.
+   */
+  private trimQueue(): void {
+    if (this.queue.length > MAX_QUEUE_SIZE) {
+      const dropped = this.queue.length - MAX_QUEUE_SIZE;
+      this.queue.splice(0, dropped);
+      console.warn(`[PriorityFeeBackfiller] Queue overflow: dropped ${dropped} oldest entries (will be caught by historical backfiller)`);
+    }
   }
 
   /**

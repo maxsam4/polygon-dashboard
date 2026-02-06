@@ -46,16 +46,34 @@ export async function startWorkers(): Promise<void> {
   globalState.__milestoneBackfiller = getMilestoneBackfiller();
   globalState.__historicalPriorityFeeBackfiller = getHistoricalPriorityFeeBackfiller();
 
-  await Promise.all([
-    globalState.__blockIndexer.start(),
-    globalState.__blockBackfiller.start(),
-    globalState.__milestoneIndexer.start(),
-    globalState.__milestoneBackfiller.start(),
-    globalState.__historicalPriorityFeeBackfiller.start(),
-  ]);
+  const workers = [
+    { name: 'BlockIndexer', start: () => globalState.__blockIndexer!.start() },
+    { name: 'BlockBackfiller', start: () => globalState.__blockBackfiller!.start() },
+    { name: 'MilestoneIndexer', start: () => globalState.__milestoneIndexer!.start() },
+    { name: 'MilestoneBackfiller', start: () => globalState.__milestoneBackfiller!.start() },
+    { name: 'HistoricalPriorityFeeBackfiller', start: () => globalState.__historicalPriorityFeeBackfiller!.start() },
+  ];
+
+  const results = await Promise.allSettled(workers.map(w => w.start()));
+
+  const failed = results
+    .map((r, i) => ({ result: r, name: workers[i].name }))
+    .filter((r): r is { result: PromiseRejectedResult; name: string } => r.result.status === 'rejected');
+
+  if (failed.length > 0) {
+    for (const { name, result } of failed) {
+      console.error(`[Workers] ${name} failed to start:`, result.reason);
+    }
+    if (failed.length === workers.length) {
+      // All workers failed - stop any that partially initialized and throw
+      stopWorkers();
+      throw new Error(`All ${workers.length} workers failed to start`);
+    }
+    console.warn(`[Workers] ${failed.length}/${workers.length} workers failed to start, continuing with remaining`);
+  }
 
   globalState.__workersStarted = true;
-  console.log('[Workers] All indexers started successfully');
+  console.log(`[Workers] ${workers.length - failed.length}/${workers.length} indexers started successfully`);
 }
 
 export function stopWorkers(): void {
