@@ -116,8 +116,9 @@ services:
     profiles: ["monitoring"]
     restart: always
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GRAFANA_PORT: ${GRAFANA_PORT:-3535}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-Gr4f4n4_P0lyg0n_2024!}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
