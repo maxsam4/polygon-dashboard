@@ -25,16 +25,16 @@ export default function AnalyticsPage() {
           />
         </div>
 
-        {/* Row 2: Net Inflation and Milestone Time */}
+        {/* Row 2: Net Inflation and Bor Block Time */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <LazyInflationChart title="Net Inflation (Issuance - Burned)" metric="netInflation" />
-          <LazyFullChart title="Milestone Time (seconds)" metric="heimdallBlockTime" />
+          <LazyFullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
         </div>
 
-        {/* Row 3: POL Issuance and Bor Block Time */}
+        {/* Row 3: POL Issuance and Total POL Supply */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <LazyInflationChart title="POL Issuance" metric="issuance" />
-          <LazyFullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
+          <LazyInflationChart title="Total POL Supply" metric="totalSupply" />
         </div>
 
         {/* Standard charts */}
@@ -51,11 +51,6 @@ export default function AnalyticsPage() {
           <LazyFullChart title="Cumulative Base Fee per Block (POL)" metric="totalBaseFee" showCumulative />
           <LazyFullChart title="Cumulative Priority Fee per Block (POL)" metric="totalPriorityFee" showCumulative />
           <LazyFullChart title="Cumulative Total Fee per Block (POL)" metric="totalFee" showCumulative />
-        </div>
-
-        {/* Total Supply Chart */}
-        <div className="mb-6">
-          <LazyInflationChart title="Total POL Supply" metric="totalSupply" />
         </div>
       </main>
     </div>

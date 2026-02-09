@@ -4,7 +4,7 @@
  */
 
 import { CHART_COLOR_PALETTE } from './constants';
-import { ChartDataPoint, MilestoneChartDataPoint } from './types';
+import { ChartDataPoint } from './types';
 
 export type ChartMetric =
   | 'gas'
@@ -16,8 +16,7 @@ export type ChartMetric =
   | 'totalFee'
   | 'blockLimit'
   | 'blockLimitUtilization'
-  | 'borBlockTime'
-  | 'heimdallBlockTime';
+  | 'borBlockTime';
 
 export interface SeriesOption {
   key: string;
@@ -82,7 +81,6 @@ export function getSeriesOptionsForMetric(
       ];
 
     case 'borBlockTime':
-    case 'heimdallBlockTime':
       return [
         { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
         { key: 'min', label: 'Min', enabled: false, color: colors[1] },
@@ -104,10 +102,9 @@ export function getSeriesOptionsForMetric(
  * @param metric - The chart metric type
  * @returns API endpoint path
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function getApiEndpointForMetric(metric: ChartMetric): string {
-  return metric === 'heimdallBlockTime'
-    ? '/api/milestone-chart-data'
-    : '/api/chart-data';
+  return '/api/chart-data';
 }
 
 /**
@@ -118,7 +115,7 @@ export function getApiEndpointForMetric(metric: ChartMetric): string {
  */
 export function getBlockRangeInfo(
   metric: ChartMetric,
-  dataPoint: ChartDataPoint | MilestoneChartDataPoint
+  dataPoint: ChartDataPoint
 ): { display: string; copyValue: string } | undefined {
   if (metric === 'borBlockTime' && 'blockStart' in dataPoint && 'blockEnd' in dataPoint) {
     const start = dataPoint.blockStart;
@@ -132,11 +129,6 @@ export function getBlockRangeInfo(
     return {
       display: `Blocks ${start.toLocaleString()} - ${end.toLocaleString()}`,
       copyValue: `${start}-${end}`,
-    };
-  } else if (metric === 'heimdallBlockTime' && 'milestoneId' in dataPoint) {
-    return {
-      display: `Milestone #${dataPoint.milestoneId.toLocaleString()}`,
-      copyValue: String(dataPoint.milestoneId),
     };
   }
   return undefined;

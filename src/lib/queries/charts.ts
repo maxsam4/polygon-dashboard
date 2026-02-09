@@ -1,5 +1,5 @@
 import { query } from '../db';
-import { ChartDataPoint, MilestoneChartDataPoint } from '../types';
+import { ChartDataPoint } from '../types';
 
 type BucketSize = '2s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
 
@@ -281,65 +281,3 @@ async function getChartDataFromSource(
   );
 }
 
-interface MilestoneChartRow {
-  bucket: Date;
-  milestone_count: string;
-  block_time_avg: number | null;
-  block_time_min: number | null;
-  block_time_max: number | null;
-}
-
-/**
- * Get Heimdall milestone block time chart data.
- * Calculates time between consecutive milestones using LAG window function.
- */
-export async function getMilestoneChartData(
-  fromTime: Date,
-  toTime: Date,
-  bucketSize: BucketSize,
-  page = 1,
-  limit = 500
-): Promise<{ data: MilestoneChartDataPoint[]; total: number }> {
-  const interval = BUCKET_INTERVALS[bucketSize];
-  const offset = (page - 1) * limit;
-
-  // Calculate milestone block times and aggregate into buckets
-  const rows = await query<MilestoneChartRow>(
-    `WITH milestone_times AS (
-      SELECT
-        milestone_id,
-        sequence_id,
-        timestamp,
-        EXTRACT(EPOCH FROM (timestamp - LAG(timestamp) OVER (ORDER BY sequence_id))) AS block_time_sec
-      FROM milestones
-      WHERE timestamp >= $2 AND timestamp <= $3
-    )
-    SELECT
-      time_bucket($1::interval, timestamp) AS bucket,
-      COUNT(*) AS milestone_count,
-      AVG(block_time_sec) AS block_time_avg,
-      MIN(block_time_sec) AS block_time_min,
-      MAX(block_time_sec) AS block_time_max
-    FROM milestone_times
-    WHERE block_time_sec IS NOT NULL
-    GROUP BY bucket
-    ORDER BY bucket
-    LIMIT $4 OFFSET $5`,
-    [interval, fromTime, toTime, limit, offset]
-  );
-
-  const timeRangeMs = toTime.getTime() - fromTime.getTime();
-  const bucketMs = getBucketMs(bucketSize);
-  const total = Math.ceil(timeRangeMs / bucketMs);
-
-  const data: MilestoneChartDataPoint[] = rows.map((row) => ({
-    timestamp: Math.floor(new Date(row.bucket).getTime() / 1000),
-    milestoneId: 0, // Not applicable for aggregated data
-    sequenceId: parseInt(row.milestone_count, 10),
-    blockTimeAvg: row.block_time_avg !== null ? parseFloat(String(row.block_time_avg)) : null,
-    blockTimeMin: row.block_time_min !== null ? parseFloat(String(row.block_time_min)) : null,
-    blockTimeMax: row.block_time_max !== null ? parseFloat(String(row.block_time_max)) : null,
-  }));
-
-  return { data, total };
-}

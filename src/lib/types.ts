@@ -106,15 +106,6 @@ export interface ChartDataPoint {
   blockTimeMax: number | null;
 }
 
-export interface MilestoneChartDataPoint {
-  timestamp: number;
-  milestoneId: number;
-  sequenceId: number;
-  blockTimeAvg: number | null;
-  blockTimeMin: number | null;
-  blockTimeMax: number | null;
-}
-
 // Inflation rate data from database
 export interface InflationRate {
   id: number;

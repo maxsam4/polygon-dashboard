@@ -203,7 +203,6 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `GET /api/chart-data?fromTime=X&toTime=Y&bucketSize=Z` | Get aggregated chart data with configurable time buckets |
 | `GET /api/milestones/latest` | Get the most recent milestones |
 | `GET /api/milestones?page=X&limit=Y` | Get paginated milestones |
-| `GET /api/milestone-chart-data` | Milestone finality timing data |
 | `GET /api/export?type=blocks&format=csv` | Export data in CSV/JSON format |
 | `GET /api/workers/start` | Start background workers |
 | `GET /api/status` | Worker status (running/idle/stopped) |

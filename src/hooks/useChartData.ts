@@ -3,24 +3,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { TIME_RANGE_SECONDS } from '@/lib/constants';
 import { getApiEndpointForMetric, ChartMetric } from '@/lib/chartSeriesConfig';
-import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
+import { ChartDataPoint } from '@/lib/types';
 import { cachedFetch } from '@/lib/fetchCache';
-
-export type ChartData = ChartDataPoint | MilestoneChartDataPoint;
-
-/**
- * Type guard to check if a data point is a ChartDataPoint (block-based chart data).
- */
-export function isChartDataPoint(data: ChartData): data is ChartDataPoint {
-  return 'baseFee' in data;
-}
-
-/**
- * Type guard to check if a data point is a MilestoneChartDataPoint.
- */
-export function isMilestoneChartDataPoint(data: ChartData): data is MilestoneChartDataPoint {
-  return 'milestoneId' in data && !('baseFee' in data);
-}
 
 export interface TimeRangeBounds {
   from: number;
@@ -35,7 +19,7 @@ export interface UseChartDataOptions {
 }
 
 export interface UseChartDataResult {
-  data: ChartData[];
+  data: ChartDataPoint[];
   isDataComplete: boolean;
   timeRangeBounds: TimeRangeBounds | null;
   fetchData: () => Promise<void>;
@@ -51,7 +35,7 @@ export function useChartData({
   bucketSize,
   appliedCustomRange,
 }: UseChartDataOptions): UseChartDataResult {
-  const [data, setData] = useState<ChartData[]>([]);
+  const [data, setData] = useState<ChartDataPoint[]>([]);
   const [isDataComplete, setIsDataComplete] = useState(true);
   const [timeRangeBounds, setTimeRangeBounds] = useState<TimeRangeBounds | null>(null);
 
@@ -84,7 +68,7 @@ export function useChartData({
 
     try {
       const endpoint = getApiEndpointForMetric(metric);
-      const json = await cachedFetch<{ data?: ChartData[]; pagination?: { total: number; limit: number } }>(
+      const json = await cachedFetch<{ data?: ChartDataPoint[]; pagination?: { total: number; limit: number } }>(
         `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
       setData(json.data || []);

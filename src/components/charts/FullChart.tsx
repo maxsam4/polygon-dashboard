@@ -36,7 +36,7 @@ import {
   getSeriesOptionsForMetric,
   getBlockRangeInfo,
 } from '@/lib/chartSeriesConfig';
-import { useChartData, ChartData, isChartDataPoint } from '@/hooks/useChartData';
+import { useChartData } from '@/hooks/useChartData';
 
 interface FullChartProps {
   title: string;
@@ -124,7 +124,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
   );
 
   // Current hovered data point for click handling
-  const hoveredDataPointRef = useRef<ChartData | null>(null);
+  const hoveredDataPointRef = useRef<ChartDataPoint | null>(null);
 
   // Handle clicking on chart to copy block range
   const handleChartClick = useCallback(() => {
@@ -175,11 +175,11 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
       .forEach((opt) => {
         let value: number | null = null;
 
-        if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
+        if (metric === 'borBlockTime') {
           if (opt.key === 'avg') value = dataPoint.blockTimeAvg;
           else if (opt.key === 'min') value = dataPoint.blockTimeMin;
           else if (opt.key === 'max') value = dataPoint.blockTimeMax;
-        } else if (metric === 'gas' && isChartDataPoint(dataPoint)) {
+        } else if (metric === 'gas') {
           if (opt.key === 'base') value = dataPoint.baseFee.avg;
           else if (opt.key === 'medianPriority') value = dataPoint.priorityFee.median;
           else if (opt.key === 'minPriority') value = dataPoint.priorityFee.min;
@@ -190,7 +190,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
         if (value !== null && value !== undefined) {
           values.push({
             label: opt.label,
-            value: value.toFixed(2) + (metric === 'borBlockTime' || metric === 'heimdallBlockTime' ? 's' : ' Gwei'),
+            value: value.toFixed(2) + (metric === 'borBlockTime' ? 's' : ' Gwei'),
             color: opt.color,
           });
         }
@@ -422,9 +422,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             time: d.timestamp as UTCTimestamp,
             value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
           }));
-        } else if (metric === 'borBlockTime' || metric === 'heimdallBlockTime') {
-          // Show block time (time between consecutive blocks/milestones)
-          // Both ChartDataPoint and MilestoneChartDataPoint have blockTimeAvg/Min/Max
+        } else if (metric === 'borBlockTime') {
           seriesData = data
             .filter((d) => d.blockTimeAvg !== null)
             .map((d) => {
