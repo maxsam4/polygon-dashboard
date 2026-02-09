@@ -25,6 +25,7 @@ const WORKER_NAME = 'BlockIndexer';
 export class BlockIndexer {
   private cursor: IndexerCursor | null = null;
   private running = false;
+  private abortController: AbortController | null = null;
   private pollMs: number;
   private batchSize: number;
 
@@ -39,6 +40,7 @@ export class BlockIndexer {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.abortController = new AbortController();
 
     initWorkerStatus(WORKER_NAME);
     updateWorkerState(WORKER_NAME, 'running');
@@ -82,6 +84,7 @@ export class BlockIndexer {
    * Stop the block indexer.
    */
   stop(): void {
+    this.abortController?.abort();
     this.running = false;
     updateWorkerState(WORKER_NAME, 'stopped');
     console.log(`[${WORKER_NAME}] Stopped`);
@@ -129,11 +132,11 @@ export class BlockIndexer {
           // Convert blocks
           const blockData = await this.convertBlocks(blocks);
 
-          // Enrich with receipt-based priority fees before insert
-          const { enrichedCount, failedBlockNumbers } = await enrichBlocksWithReceipts(blockData, { pushToLiveStream: true });
-          if (failedBlockNumbers.length > 0) {
-            console.warn(`[${WORKER_NAME}] Receipt fetch failed for ${failedBlockNumbers.length} blocks: ${failedBlockNumbers.join(', ')} (admin backfill API available at /api/admin/backfill-priority-fees)`);
-          }
+          // Enrich with receipt-based priority fees before insert (all-or-nothing)
+          const { enrichedCount } = await enrichBlocksWithReceipts(blockData, {
+            pushToLiveStream: true,
+            signal: this.abortController!.signal,
+          });
 
           // Insert complete blocks
           await insertBlocksBatch(blockData);
@@ -167,6 +170,7 @@ export class BlockIndexer {
         const sleepMs = gap > 10 ? 100 : this.pollMs;
         await sleep(sleepMs);
       } catch (error) {
+        if (!this.running) break; // Clean abort exit
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[${WORKER_NAME}] Error:`, errorMsg);
         updateWorkerError(WORKER_NAME, errorMsg);

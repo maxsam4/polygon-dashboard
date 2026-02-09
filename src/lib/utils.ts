@@ -8,6 +8,28 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Abort-aware sleep. Resolves after `ms`, or rejects immediately if `signal` fires.
+ */
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    function onAbort() {
+      clearTimeout(timer);
+      reject(signal!.reason ?? new DOMException('Aborted', 'AbortError'));
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
  * Format a relative time string (e.g., "5s ago", "2h ago")
  */
 export function getTimeAgo(date: Date): string {

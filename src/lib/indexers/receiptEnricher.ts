@@ -1,23 +1,24 @@
-import { getRpcClient, TransactionReceipt } from '../rpc';
+import { getRpcClient } from '../rpc';
 import { Block } from '../types';
 import { calculatePriorityFeeMetrics } from './priorityFeeBackfill';
 import { pushBlockUpdates } from '../liveStreamClient';
 
 interface EnrichResult {
   enrichedCount: number;
-  failedBlockNumbers: bigint[];
 }
 
 interface EnrichOptions {
   pushToLiveStream?: boolean;
+  signal?: AbortSignal;
 }
 
+const DEFAULT_TIMEOUT_MS = 300_000; // 5 minute fallback for callers without signal
+
 /**
- * Enrich blocks with receipt-based priority fee metrics.
+ * Enrich blocks with receipt-based priority fee metrics (all-or-nothing).
  *
- * Fetches receipts for blocks with transactions, calculates accurate priority fees
- * from effectiveGasPrice, and overwrites the tx-level estimates in-place.
- * Blocks where receipts fail keep their tx-level estimates (avg/total stay NULL).
+ * Uses indefinite round-robin RPC retry to guarantee receipts for every block.
+ * Only returns on success or abort — never inserts blocks with incomplete data.
  */
 export async function enrichBlocksWithReceipts(
   blocks: Block[],
@@ -26,24 +27,16 @@ export async function enrichBlocksWithReceipts(
   const blocksWithTx = blocks.filter(b => b.txCount > 0);
 
   if (blocksWithTx.length === 0) {
-    return { enrichedCount: 0, failedBlockNumbers: [] };
+    return { enrichedCount: 0 };
   }
+
+  const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
 
   const rpc = getRpcClient();
   const blockNumbers = blocksWithTx.map(b => b.blockNumber);
-
-  let receiptsMap: Map<bigint, TransactionReceipt[]>;
-  try {
-    receiptsMap = await rpc.getBlocksReceipts(blockNumbers);
-  } catch {
-    // Total RPC failure — return all blocks as failed so they get inserted
-    // with NULL priority fees. HistoricalPriorityFeeBackfiller or admin API
-    // will backfill later.
-    return { enrichedCount: 0, failedBlockNumbers: [...blockNumbers] };
-  }
+  const receiptsMap = await rpc.getBlocksReceiptsReliably(blockNumbers, signal);
 
   let enrichedCount = 0;
-  const failedBlockNumbers: bigint[] = [];
   const liveStreamPayloads: Array<{
     blockNumber: number;
     txCount: number;
@@ -55,12 +48,9 @@ export async function enrichBlocksWithReceipts(
   }> = [];
 
   for (const block of blocksWithTx) {
-    const receipts = receiptsMap.get(block.blockNumber);
+    const receipts = receiptsMap.get(block.blockNumber)!;
 
-    if (!receipts || receipts.length === 0) {
-      failedBlockNumbers.push(block.blockNumber);
-      continue;
-    }
+    if (receipts.length === 0) continue;
 
     const metrics = calculatePriorityFeeMetrics(receipts, block.baseFeeGwei);
 
@@ -91,5 +81,5 @@ export async function enrichBlocksWithReceipts(
     pushBlockUpdates(liveStreamPayloads).catch(() => {});
   }
 
-  return { enrichedCount, failedBlockNumbers };
+  return { enrichedCount };
 }

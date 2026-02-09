@@ -23,6 +23,7 @@ export class BlockBackfiller {
   private cursor: bigint | null = null; // Current lowest indexed block
   private targetBlock: bigint;
   private running = false;
+  private abortController: AbortController | null = null;
   private batchSize: number;
   private delayMs: number;
 
@@ -38,6 +39,7 @@ export class BlockBackfiller {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.abortController = new AbortController();
 
     initWorkerStatus(WORKER_NAME);
     updateWorkerState(WORKER_NAME, 'running');
@@ -84,6 +86,7 @@ export class BlockBackfiller {
    * Stop the block backfiller.
    */
   stop(): void {
+    this.abortController?.abort();
     this.running = false;
     updateWorkerState(WORKER_NAME, 'stopped');
     console.log(`[${WORKER_NAME}] Stopped`);
@@ -151,8 +154,10 @@ export class BlockBackfiller {
         // Convert blocks
         const blockData = await this.convertBlocks(blocks, prevBlockTimestamp);
 
-        // Enrich with receipt-based priority fees before insert
-        const { enrichedCount } = await enrichBlocksWithReceipts(blockData);
+        // Enrich with receipt-based priority fees before insert (all-or-nothing)
+        const { enrichedCount } = await enrichBlocksWithReceipts(blockData, {
+          signal: this.abortController!.signal,
+        });
 
         // Insert complete blocks
         await insertBlocksBatch(blockData);
@@ -174,6 +179,7 @@ export class BlockBackfiller {
         // Small delay to avoid overwhelming the RPC
         await sleep(this.delayMs);
       } catch (error) {
+        if (!this.running) break; // Clean abort exit
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[${WORKER_NAME}] Error:`, errorMsg);
         updateWorkerError(WORKER_NAME, errorMsg);

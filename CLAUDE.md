@@ -189,7 +189,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - **RPC circuit breaker**: Endpoints are skipped for 30s after 5 consecutive failures, with exponential backoff on retries
 - **SSE proxy reconnection**: Upstream live-stream disconnects trigger automatic reconnection with exponential backoff (max 5 retries)
 - **Worker startup**: Uses `Promise.allSettled` - partial failures are logged, remaining workers continue running
-- **Inline receipt enrichment**: BlockIndexer and BlockBackfiller fetch receipts before insert for complete data; failures are caught by HistoricalPriorityFeeBackfiller
+- **Inline receipt enrichment**: Indefinite round-robin RPC retry ensures blocks are only inserted with complete data (all-or-nothing). Each block's receipts retry across all endpoints until success or abort.
 - **Admin login rate limiting**: 5 attempts per IP per minute (in-memory)
 - **App health check**: Docker healthcheck on `/api/status` enables automatic container restart
 

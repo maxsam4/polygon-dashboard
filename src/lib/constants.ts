@@ -17,6 +17,7 @@ export const RPC_RETRY_CONFIG = {
   DELAY_MS: 500,
   RECONNECT_DELAY_MS: 1000,
   RECONNECT_INTERVAL_MS: 10000,
+  ROUND_ROBIN_CYCLE_DELAY_MS: 500, // delay after cycling all endpoints once
 } as const;
 
 // Status page thresholds

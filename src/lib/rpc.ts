@@ -1,6 +1,6 @@
 import { createPublicClient, http, webSocket, PublicClient, TransactionReceipt, numberToHex, hexToBigInt } from 'viem';
 import { polygon } from 'viem/chains';
-import { sleep } from './utils';
+import { sleep, abortableSleep } from './utils';
 import { RPC_RETRY_CONFIG } from './constants';
 
 // Re-export Block type for convenience
@@ -227,6 +227,69 @@ export class RpcClient {
       throw new RpcExhaustedError(`All parallel RPC calls failed`, errors[0]);
     }
 
+    return results;
+  }
+
+  // Indefinite round-robin retry: cycles through endpoints until success or abort.
+  // After a full cycle with all endpoints skipped/failed, waits ROUND_ROBIN_CYCLE_DELAY_MS.
+  private async retryRoundRobin<T>(fn: (client: PublicClient) => Promise<T>, signal: AbortSignal): Promise<T> {
+    let lastError: Error | undefined;
+
+    while (!signal.aborted) {
+      let anyAttempted = false;
+
+      for (let i = 0; i < this.urls.length; i++) {
+        if (signal.aborted) break;
+
+        if (this.isCircuitOpen(i)) continue;
+
+        anyAttempted = true;
+        const client = this.getClientByIndex(i);
+
+        try {
+          const result = await fn(client);
+          this.recordSuccess(i);
+          return result;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          this.recordFailure(i);
+          console.warn(`RPC round-robin ${this.urls[i]} failed: ${lastError.message}`);
+        }
+      }
+
+      if (signal.aborted) break;
+
+      // After a full cycle, wait before retrying
+      if (!anyAttempted) {
+        console.warn('RPC round-robin: all endpoints have open circuit breakers, waiting...');
+      }
+      await abortableSleep(RPC_RETRY_CONFIG.ROUND_ROBIN_CYCLE_DELAY_MS, signal);
+    }
+
+    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  }
+
+  // Fetch receipts for multiple blocks with indefinite round-robin retry per block.
+  // Guarantees ALL requested block numbers are present in the returned Map.
+  async getBlocksReceiptsReliably(blockNumbers: bigint[], signal: AbortSignal): Promise<Map<bigint, TransactionReceipt[]>> {
+    const results = new Map<bigint, TransactionReceipt[]>();
+
+    const promises = blockNumbers.map(async (blockNumber) => {
+      const receipts = await this.retryRoundRobin(async (client) => {
+        const result = await (client.request as (args: { method: string; params: unknown[] }) => Promise<unknown>)({
+          method: 'eth_getBlockReceipts',
+          params: [numberToHex(blockNumber)],
+        });
+        if (!result || !Array.isArray(result)) {
+          throw new ReceiptsNotAvailableError(blockNumber);
+        }
+        return (result as RawReceipt[]).map(parseReceipt);
+      }, signal);
+
+      results.set(blockNumber, receipts);
+    });
+
+    await Promise.all(promises);
     return results;
   }
 
