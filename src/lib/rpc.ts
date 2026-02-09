@@ -120,7 +120,7 @@ export class RpcClient {
     this.clients = urls.map((url) =>
       createPublicClient({
         chain: polygon,
-        transport: http(url, { timeout: 30_000 }),
+        transport: http(url, { timeout: 60_000 }),
       })
     );
     this.circuitBreakers = urls.map(() => ({ consecutiveFailures: 0, openUntil: 0 }));
