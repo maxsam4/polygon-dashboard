@@ -17,6 +17,7 @@ export function Nav() {
     { href: '/milestones', label: 'Milestones' },
     ...(isAuthenticated ? [
       { href: '/alerts', label: 'Alerts', hasBadge: true },
+      { href: '/admin/rpc', label: 'RPC Status' },
       { href: '/admin', label: 'Admin' },
     ] : []),
   ];
