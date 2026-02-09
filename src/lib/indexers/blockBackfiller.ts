@@ -3,6 +3,7 @@ import { insertBlocksBatch, getLowestBlockNumber } from '../queries/blocks';
 import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
+import { enrichBlocksWithReceipts } from './receiptEnricher';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -27,7 +28,7 @@ export class BlockBackfiller {
 
   constructor() {
     this.targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '50000000');
-    this.batchSize = parseInt(process.env.BACKFILL_BATCH_SIZE || '100', 10);
+    this.batchSize = parseInt(process.env.BACKFILL_BATCH_SIZE || '10', 10);
     this.delayMs = parseInt(process.env.BACKFILL_DELAY_MS || '100', 10);
   }
 
@@ -147,8 +148,13 @@ export class BlockBackfiller {
           continue;
         }
 
-        // Convert and insert blocks
+        // Convert blocks
         const blockData = await this.convertBlocks(blocks, prevBlockTimestamp);
+
+        // Enrich with receipt-based priority fees before insert
+        const { enrichedCount } = await enrichBlocksWithReceipts(blockData);
+
+        // Insert complete blocks
         await insertBlocksBatch(blockData);
 
         // Update cursor to the lowest block we just processed
@@ -160,14 +166,10 @@ export class BlockBackfiller {
         const highestBlock = blocks[blocks.length - 1];
         await updateTableStats('blocks', lowestBlock.number, highestBlock.number, blocks.length);
 
-        // Note: Historical blocks don't need immediate priority fee calculation.
-        // They will be backfilled separately by getBlocksMissingPriorityFees
-        // to avoid overwhelming the priority fee queue.
-
         updateWorkerRun(WORKER_NAME, blocks.length);
 
         const remaining = this.cursor - this.targetBlock;
-        console.log(`[${WORKER_NAME}] Backfilled ${blocks.length} blocks (${startBlock}-${endBlock}), remaining: ${remaining}`);
+        console.log(`[${WORKER_NAME}] Backfilled ${blocks.length} blocks (${startBlock}-${endBlock}), ${enrichedCount} enriched, remaining: ${remaining}`);
 
         // Small delay to avoid overwhelming the RPC
         await sleep(this.delayMs);
