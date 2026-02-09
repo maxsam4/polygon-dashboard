@@ -1,4 +1,4 @@
-import { getRpcClient } from '../rpc';
+import { getRpcClient, TransactionReceipt } from '../rpc';
 import { Block } from '../types';
 import { calculatePriorityFeeMetrics } from './priorityFeeBackfill';
 import { pushBlockUpdates } from '../liveStreamClient';
@@ -12,29 +12,28 @@ interface EnrichOptions {
   signal?: AbortSignal;
 }
 
+interface ApplyOptions {
+  pushToLiveStream?: boolean;
+}
+
 const DEFAULT_TIMEOUT_MS = 300_000; // 5 minute fallback for callers without signal
 
 /**
- * Enrich blocks with receipt-based priority fee metrics (all-or-nothing).
+ * Apply pre-fetched receipts to blocks, computing priority fee metrics in-place.
  *
- * Uses indefinite round-robin RPC retry to guarantee receipts for every block.
- * Only returns on success or abort — never inserts blocks with incomplete data.
+ * No RPC calls — takes a receipts map (from getBlocksReceiptsReliably) and
+ * mutates blocks with computed priority fee metrics.
  */
-export async function enrichBlocksWithReceipts(
+export function applyReceiptsToBlocks(
   blocks: Block[],
-  options: EnrichOptions = {}
-): Promise<EnrichResult> {
+  receiptsMap: Map<bigint, TransactionReceipt[]>,
+  options: ApplyOptions = {}
+): EnrichResult {
   const blocksWithTx = blocks.filter(b => b.txCount > 0);
 
   if (blocksWithTx.length === 0) {
     return { enrichedCount: 0 };
   }
-
-  const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
-
-  const rpc = getRpcClient();
-  const blockNumbers = blocksWithTx.map(b => b.blockNumber);
-  const receiptsMap = await rpc.getBlocksReceiptsReliably(blockNumbers, signal);
 
   let enrichedCount = 0;
   const liveStreamPayloads: Array<{
@@ -48,9 +47,9 @@ export async function enrichBlocksWithReceipts(
   }> = [];
 
   for (const block of blocksWithTx) {
-    const receipts = receiptsMap.get(block.blockNumber)!;
+    const receipts = receiptsMap.get(block.blockNumber);
 
-    if (receipts.length === 0) continue;
+    if (!receipts || receipts.length === 0) continue;
 
     const metrics = calculatePriorityFeeMetrics(receipts, block.baseFeeGwei);
 
@@ -82,4 +81,29 @@ export async function enrichBlocksWithReceipts(
   }
 
   return { enrichedCount };
+}
+
+/**
+ * Enrich blocks with receipt-based priority fee metrics (all-or-nothing).
+ *
+ * Uses indefinite round-robin RPC retry to guarantee receipts for every block.
+ * Only returns on success or abort — never inserts blocks with incomplete data.
+ */
+export async function enrichBlocksWithReceipts(
+  blocks: Block[],
+  options: EnrichOptions = {}
+): Promise<EnrichResult> {
+  const blocksWithTx = blocks.filter(b => b.txCount > 0);
+
+  if (blocksWithTx.length === 0) {
+    return { enrichedCount: 0 };
+  }
+
+  const signal = options.signal ?? AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+
+  const rpc = getRpcClient();
+  const blockNumbers = blocksWithTx.map(b => b.blockNumber);
+  const receiptsMap = await rpc.getBlocksReceiptsReliably(blockNumbers, signal);
+
+  return applyReceiptsToBlocks(blocks, receiptsMap, { pushToLiveStream: options.pushToLiveStream });
 }

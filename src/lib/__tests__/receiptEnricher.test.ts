@@ -11,8 +11,8 @@ jest.mock('../indexers/priorityFeeBackfill', () => ({
   calculatePriorityFeeMetrics: jest.fn(),
 }));
 
-import { enrichBlocksWithReceipts } from '../indexers/receiptEnricher';
-import { getRpcClient } from '../rpc';
+import { enrichBlocksWithReceipts, applyReceiptsToBlocks } from '../indexers/receiptEnricher';
+import { getRpcClient, TransactionReceipt } from '../rpc';
 import { pushBlockUpdates } from '../liveStreamClient';
 import { calculatePriorityFeeMetrics } from '../indexers/priorityFeeBackfill';
 import { Block } from '../types';
@@ -185,5 +185,131 @@ describe('enrichBlocksWithReceipts', () => {
 
     expect(result.enrichedCount).toBe(0);
     expect(mockRpc.getBlocksReceiptsReliably).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyReceiptsToBlocks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPushBlockUpdates.mockResolvedValue(undefined);
+  });
+
+  it('enriches blocks with pre-fetched receipts', () => {
+    const blocks = [makeBlock({ blockNumber: 100n, txCount: 5 })];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>([
+      [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
+    ]);
+
+    mockCalculatePriorityFeeMetrics.mockReturnValue({
+      minPriorityFeeGwei: 0.5,
+      maxPriorityFeeGwei: 3,
+      avgPriorityFeeGwei: 1.5,
+      medianPriorityFeeGwei: 1,
+      totalPriorityFeeGwei: 50,
+    });
+
+    const result = applyReceiptsToBlocks(blocks, receiptsMap);
+
+    expect(result.enrichedCount).toBe(1);
+    expect(blocks[0].avgPriorityFeeGwei).toBe(1.5);
+    expect(blocks[0].totalPriorityFeeGwei).toBe(50);
+    expect(blocks[0].minPriorityFeeGwei).toBe(0.5);
+    expect(blocks[0].maxPriorityFeeGwei).toBe(3);
+    expect(blocks[0].medianPriorityFeeGwei).toBe(1);
+  });
+
+  it('skips blocks with 0 transactions', () => {
+    const blocks = [
+      makeBlock({ blockNumber: 100n, txCount: 5 }),
+      makeBlock({ blockNumber: 101n, txCount: 0 }),
+      makeBlock({ blockNumber: 102n, txCount: 3 }),
+    ];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>([
+      [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
+      [101n, []],
+      [102n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
+    ]);
+
+    mockCalculatePriorityFeeMetrics.mockReturnValue({
+      minPriorityFeeGwei: 0.5,
+      maxPriorityFeeGwei: 3,
+      avgPriorityFeeGwei: 1.5,
+      medianPriorityFeeGwei: 1,
+      totalPriorityFeeGwei: 50,
+    });
+
+    const result = applyReceiptsToBlocks(blocks, receiptsMap);
+
+    expect(result.enrichedCount).toBe(2);
+    // Only called for blocks with txCount > 0 and non-empty receipts
+    expect(mockCalculatePriorityFeeMetrics).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns 0 enriched for all-empty-tx blocks', () => {
+    const blocks = [makeBlock({ txCount: 0 })];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>();
+
+    const result = applyReceiptsToBlocks(blocks, receiptsMap);
+
+    expect(result.enrichedCount).toBe(0);
+    expect(mockCalculatePriorityFeeMetrics).not.toHaveBeenCalled();
+  });
+
+  it('pushes to live stream when option is set', () => {
+    const blocks = [makeBlock({ blockNumber: 100n, txCount: 5 })];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>([
+      [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
+    ]);
+
+    mockCalculatePriorityFeeMetrics.mockReturnValue({
+      minPriorityFeeGwei: 0.5,
+      maxPriorityFeeGwei: 3,
+      avgPriorityFeeGwei: 1.5,
+      medianPriorityFeeGwei: 1,
+      totalPriorityFeeGwei: 50,
+    });
+
+    applyReceiptsToBlocks(blocks, receiptsMap, { pushToLiveStream: true });
+
+    expect(mockPushBlockUpdates).toHaveBeenCalledWith([
+      {
+        blockNumber: 100,
+        txCount: 5,
+        minPriorityFeeGwei: 0.5,
+        maxPriorityFeeGwei: 3,
+        avgPriorityFeeGwei: 1.5,
+        medianPriorityFeeGwei: 1,
+        totalPriorityFeeGwei: 50,
+      },
+    ]);
+  });
+
+  it('does not push to live stream by default', () => {
+    const blocks = [makeBlock({ blockNumber: 100n, txCount: 5 })];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>([
+      [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
+    ]);
+
+    mockCalculatePriorityFeeMetrics.mockReturnValue({
+      minPriorityFeeGwei: 0.5,
+      maxPriorityFeeGwei: 3,
+      avgPriorityFeeGwei: 1.5,
+      medianPriorityFeeGwei: 1,
+      totalPriorityFeeGwei: 50,
+    });
+
+    applyReceiptsToBlocks(blocks, receiptsMap);
+
+    expect(mockPushBlockUpdates).not.toHaveBeenCalled();
+  });
+
+  it('handles missing receipts in map gracefully', () => {
+    const blocks = [makeBlock({ blockNumber: 100n, txCount: 5 })];
+    const receiptsMap = new Map<bigint, TransactionReceipt[]>(); // Empty map - no receipts
+
+    const result = applyReceiptsToBlocks(blocks, receiptsMap);
+
+    expect(result.enrichedCount).toBe(0);
+    expect(mockCalculatePriorityFeeMetrics).not.toHaveBeenCalled();
   });
 });

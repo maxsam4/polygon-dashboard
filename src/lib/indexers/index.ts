@@ -4,7 +4,7 @@
 export { getIndexerState, updateIndexerState, initializeIndexerState, type IndexerCursor } from './indexerState';
 export { handleReorg, moveToReorgedBlocks, getBlockByNumber } from './reorgHandler';
 export { calculatePriorityFeeMetrics, HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller } from './priorityFeeBackfill';
-export { enrichBlocksWithReceipts } from './receiptEnricher';
+export { enrichBlocksWithReceipts, applyReceiptsToBlocks } from './receiptEnricher';
 export { BlockIndexer, getBlockIndexer } from './blockIndexer';
 export { MilestoneIndexer, getMilestoneIndexer } from './milestoneIndexer';
 export { BlockBackfiller, getBlockBackfiller } from './blockBackfiller';

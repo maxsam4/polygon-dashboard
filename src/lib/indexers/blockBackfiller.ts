@@ -3,7 +3,7 @@ import { insertBlocksBatch, getLowestBlockNumber } from '../queries/blocks';
 import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
-import { enrichBlocksWithReceipts } from './receiptEnricher';
+import { applyReceiptsToBlocks } from './receiptEnricher';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -125,8 +125,14 @@ export class BlockBackfiller {
         // Fetch blocks (include one extra block before startBlock for timestamp calculation)
         const fetchStart = startBlock > 0n ? startBlock - 1n : startBlock;
         const blockNumbers = this.range(fetchStart, endBlock);
+        const insertBlockNumbers = this.range(startBlock, endBlock);
         const rpc = getRpcClient();
-        const blocksMap = await rpc.getBlocksWithTransactions(blockNumbers);
+
+        // Fetch blocks and receipts in parallel
+        const [blocksMap, receiptsMap] = await Promise.all([
+          rpc.getBlocksWithTransactions(blockNumbers),
+          rpc.getBlocksReceiptsReliably(insertBlockNumbers, this.abortController!.signal),
+        ]);
 
         // Sort blocks by number (ascending for processing)
         const allBlocks = Array.from(blocksMap.values()).sort(
@@ -154,10 +160,8 @@ export class BlockBackfiller {
         // Convert blocks
         const blockData = await this.convertBlocks(blocks, prevBlockTimestamp);
 
-        // Enrich with receipt-based priority fees before insert (all-or-nothing)
-        const { enrichedCount } = await enrichBlocksWithReceipts(blockData, {
-          signal: this.abortController!.signal,
-        });
+        // Apply pre-fetched receipts to compute priority fee metrics
+        const { enrichedCount } = applyReceiptsToBlocks(blockData, receiptsMap);
 
         // Insert complete blocks
         await insertBlocksBatch(blockData);

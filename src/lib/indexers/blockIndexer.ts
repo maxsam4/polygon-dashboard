@@ -4,7 +4,7 @@ import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState, IndexerCursor } from './indexerState';
 import { handleReorg, getBlockByNumber } from './reorgHandler';
-import { enrichBlocksWithReceipts } from './receiptEnricher';
+import { applyReceiptsToBlocks } from './receiptEnricher';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep, bigintRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -115,9 +115,12 @@ export class BlockIndexer {
           const startBlock = this.cursor!.blockNumber + 1n;
           const endBlock = startBlock + BigInt(fetchCount) - 1n;
 
-          // Fetch blocks
+          // Fetch blocks and receipts in parallel
           const blockNumbers = bigintRange(startBlock, endBlock);
-          const blocksMap = await rpc.getBlocksWithTransactions(blockNumbers);
+          const [blocksMap, receiptsMap] = await Promise.all([
+            rpc.getBlocksWithTransactions(blockNumbers),
+            rpc.getBlocksReceiptsReliably(blockNumbers, this.abortController!.signal),
+          ]);
 
           // Sort blocks by number to process in order
           const blocks = Array.from(blocksMap.values()).sort(
@@ -142,10 +145,9 @@ export class BlockIndexer {
           // Convert blocks
           const blockData = await this.convertBlocks(blocks);
 
-          // Enrich with receipt-based priority fees before insert (all-or-nothing)
-          const { enrichedCount } = await enrichBlocksWithReceipts(blockData, {
+          // Apply pre-fetched receipts to compute priority fee metrics
+          const { enrichedCount } = applyReceiptsToBlocks(blockData, receiptsMap, {
             pushToLiveStream: true,
-            signal: this.abortController!.signal,
           });
 
           // Insert complete blocks
