@@ -4,14 +4,14 @@ services:
     image: timescale/timescaledb-ha:pg16
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER:-polygon}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-polygon}
-      POSTGRES_DB: ${DB_NAME:-polygon_dashboard}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/home/postgres/pgdata/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U polygon"]
       interval: 5s
@@ -27,38 +27,37 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-polygon}:${DB_PASSWORD:-polygon}@db:5432/${DB_NAME:-polygon_dashboard}
-      POLYGON_RPC_URLS: ${POLYGON_RPC_URLS:-https://polygon.drpc.org}
-      POLYGON_WS_URLS: ${POLYGON_WS_URLS:-wss://polygon.drpc.org}
-      HEIMDALL_API_URLS: ${HEIMDALL_API_URLS:-https://heimdall-api.polygon.technology}
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      POLYGON_RPC_URLS: ${POLYGON_RPC_URLS}
+      POLYGON_WS_URLS: ${POLYGON_WS_URLS}
+      HEIMDALL_API_URLS: ${HEIMDALL_API_URLS}
       # Authentication
       ADD_RATE_PASSWORD: ${ADD_RATE_PASSWORD:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
       # External APIs
-      LIVE_STREAM_URL: ${LIVE_STREAM_URL:-http://live-stream:3002}
+      LIVE_STREAM_URL: ${LIVE_STREAM_URL:-}
       ETH_RPC_URLS: ${ETH_RPC_URLS:-}
       # Block indexer
-      INDEXER_POLL_MS: ${INDEXER_POLL_MS:-1000}
-      INDEXER_BATCH_SIZE: ${INDEXER_BATCH_SIZE:-100}
+      INDEXER_POLL_MS: ${INDEXER_POLL_MS:-}
+      INDEXER_BATCH_SIZE: ${INDEXER_BATCH_SIZE:-}
       # Block backfiller
-      BACKFILL_TO_BLOCK: ${BACKFILL_TO_BLOCK:-50000000}
-      BACKFILL_BATCH_SIZE: ${BACKFILL_BATCH_SIZE:-100}
-      BACKFILL_DELAY_MS: ${BACKFILL_DELAY_MS:-100}
-      RPC_DELAY_MS: ${RPC_DELAY_MS:-100}
+      BACKFILL_TO_BLOCK: ${BACKFILL_TO_BLOCK:-}
+      BACKFILL_BATCH_SIZE: ${BACKFILL_BATCH_SIZE:-}
+      BACKFILL_DELAY_MS: ${BACKFILL_DELAY_MS:-}
+      RPC_DELAY_MS: ${RPC_DELAY_MS:-}
       # Milestone indexer
-      MILESTONE_POLL_MS: ${MILESTONE_POLL_MS:-500}
-      MILESTONE_BATCH_SIZE: ${MILESTONE_BATCH_SIZE:-50}
+      MILESTONE_POLL_MS: ${MILESTONE_POLL_MS:-}
+      MILESTONE_BATCH_SIZE: ${MILESTONE_BATCH_SIZE:-}
       # Milestone backfiller
-      MILESTONE_BACKFILL_TO_SEQUENCE: ${MILESTONE_BACKFILL_TO_SEQUENCE:-1}
-      MILESTONE_BACKFILL_DELAY_MS: ${MILESTONE_BACKFILL_DELAY_MS:-500}
+      MILESTONE_BACKFILL_TO_SEQUENCE: ${MILESTONE_BACKFILL_TO_SEQUENCE:-}
+      MILESTONE_BACKFILL_DELAY_MS: ${MILESTONE_BACKFILL_DELAY_MS:-}
       # Priority fee backfiller
-      PRIORITY_FEE_BATCH_SIZE: ${PRIORITY_FEE_BATCH_SIZE:-3}
-      HISTORICAL_PRIORITY_FEE_BATCH_SIZE: ${HISTORICAL_PRIORITY_FEE_BATCH_SIZE:-100}
-      HISTORICAL_PRIORITY_FEE_DELAY_MS: ${HISTORICAL_PRIORITY_FEE_DELAY_MS:-100}
+      HISTORICAL_PRIORITY_FEE_BATCH_SIZE: ${HISTORICAL_PRIORITY_FEE_BATCH_SIZE:-}
+      HISTORICAL_PRIORITY_FEE_DELAY_MS: ${HISTORICAL_PRIORITY_FEE_DELAY_MS:-}
       PORT: 3000
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_PORT}:3000"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/status"]
       interval: 10s
@@ -71,7 +70,7 @@ services:
     environment:
       POLYGON_WS_URLS: ${POLYGON_WS_URLS:-}
       PORT: 3002
-      RING_BUFFER_SIZE: ${RING_BUFFER_SIZE:-25}
+      RING_BUFFER_SIZE: ${RING_BUFFER_SIZE:-}
     ports:
       - "127.0.0.1:3002:3002"
     healthcheck:
@@ -117,14 +116,14 @@ services:
     profiles: ["monitoring"]
     restart: always
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+      - "127.0.0.1:${GRAFANA_PORT}:3000"
 
 volumes:
   postgres_data:
