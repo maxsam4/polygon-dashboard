@@ -32,7 +32,7 @@ export class BlockIndexer {
   private lastBlockTimestamp: Date | null = null;
 
   constructor() {
-    this.pollMs = parseInt(process.env.INDEXER_POLL_MS || '1000', 10);
+    this.pollMs = parseInt(process.env.INDEXER_POLL_MS || '500', 10);
     this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
     this.nearRealtimeThresholdMs = parseInt(process.env.INDEXER_NEAR_REALTIME_THRESHOLD_MS || String(5 * 60 * 1000), 10);
   }

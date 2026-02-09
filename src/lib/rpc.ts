@@ -259,11 +259,11 @@ export class RpcClient {
 
       if (signal.aborted) break;
 
-      // After a full cycle, wait before retrying
+      // Only wait if all endpoints had open circuit breakers (nothing was attempted)
       if (!anyAttempted) {
         console.warn('RPC round-robin: all endpoints have open circuit breakers, waiting...');
+        await abortableSleep(RPC_RETRY_CONFIG.ROUND_ROBIN_CYCLE_DELAY_MS, signal);
       }
-      await abortableSleep(RPC_RETRY_CONFIG.ROUND_ROBIN_CYCLE_DELAY_MS, signal);
     }
 
     throw signal.reason ?? new DOMException('Aborted', 'AbortError');
