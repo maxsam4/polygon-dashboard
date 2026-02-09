@@ -26,13 +26,8 @@ function getGeneratedSecret(): string {
   return generatedSecret;
 }
 
-/**
- * Get the secret key for signing JWTs.
- * Uses ADMIN_SESSION_SECRET env var if set, otherwise auto-generates.
- */
 function getSecretKey(): Uint8Array {
-  const secret = process.env.ADMIN_SESSION_SECRET || getGeneratedSecret();
-  return new TextEncoder().encode(secret);
+  return new TextEncoder().encode(getGeneratedSecret());
 }
 
 /**

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     if (!isAuthConfigured()) {
       return NextResponse.json(
-        { error: 'Authentication not configured. Set ADMIN_PASSWORD and ADMIN_SESSION_SECRET.' },
+        { error: 'Authentication not configured. Set ADMIN_PASSWORD.' },
         { status: 500 }
       );
     }

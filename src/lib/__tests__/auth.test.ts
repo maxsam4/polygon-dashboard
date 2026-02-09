@@ -30,7 +30,7 @@ const originalEnv = { ...process.env };
 beforeEach(() => {
   // Reset env for each test
   process.env.ADMIN_PASSWORD = 'test-admin-password';
-  process.env.ADMIN_SESSION_SECRET = 'test-session-secret-at-least-32-chars';
+
 });
 
 afterEach(() => {
@@ -104,8 +104,5 @@ describe('isAuthConfigured', () => {
     expect(isAuthConfigured()).toBe(true);
   });
 
-  it('returns true even without session secret (auto-generated)', () => {
-    delete process.env.ADMIN_SESSION_SECRET;
-    expect(isAuthConfigured()).toBe(true);
-  });
+
 });

@@ -34,7 +34,6 @@ services:
       # Authentication
       ADD_RATE_PASSWORD: ${ADD_RATE_PASSWORD:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
       # External APIs
       LIVE_STREAM_URL: ${LIVE_STREAM_URL:-}
       ETH_RPC_URLS: ${ETH_RPC_URLS:-}
