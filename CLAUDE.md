@@ -195,6 +195,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
 ## Key Patterns
 
+- **Code review with Codex**: Run `codex review --commit HEAD` to get an OpenAI Codex review of the last commit
 - Timestamps: TIMESTAMPTZ
 - Block numbers/milestone IDs: BigInt
 - Gwei values: DOUBLE PRECISION
