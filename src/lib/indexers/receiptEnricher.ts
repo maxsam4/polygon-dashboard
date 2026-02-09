@@ -1,4 +1,4 @@
-import { getRpcClient } from '../rpc';
+import { getRpcClient, TransactionReceipt } from '../rpc';
 import { Block } from '../types';
 import { calculatePriorityFeeMetrics } from './priorityFeeBackfill';
 import { pushBlockUpdates } from '../liveStreamClient';
@@ -31,7 +31,16 @@ export async function enrichBlocksWithReceipts(
 
   const rpc = getRpcClient();
   const blockNumbers = blocksWithTx.map(b => b.blockNumber);
-  const receiptsMap = await rpc.getBlocksReceipts(blockNumbers);
+
+  let receiptsMap: Map<bigint, TransactionReceipt[]>;
+  try {
+    receiptsMap = await rpc.getBlocksReceipts(blockNumbers);
+  } catch {
+    // Total RPC failure — return all blocks as failed so they get inserted
+    // with NULL priority fees. HistoricalPriorityFeeBackfiller or admin API
+    // will backfill later.
+    return { enrichedCount: 0, failedBlockNumbers: [...blockNumbers] };
+  }
 
   let enrichedCount = 0;
   const failedBlockNumbers: bigint[] = [];

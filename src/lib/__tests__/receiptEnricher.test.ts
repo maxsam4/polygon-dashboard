@@ -193,6 +193,25 @@ describe('enrichBlocksWithReceipts', () => {
     expect(mockPushBlockUpdates).not.toHaveBeenCalled();
   });
 
+  it('handles total RPC failure gracefully', async () => {
+    const blocks = [
+      makeBlock({ blockNumber: 100n, txCount: 5 }),
+      makeBlock({ blockNumber: 101n, txCount: 3 }),
+    ];
+
+    mockRpc.getBlocksReceipts.mockRejectedValue(new Error('All RPC endpoints exhausted'));
+
+    const result = await enrichBlocksWithReceipts(blocks);
+
+    expect(result.enrichedCount).toBe(0);
+    expect(result.failedBlockNumbers).toEqual([100n, 101n]);
+    // Blocks should keep original values (not mutated)
+    expect(blocks[0].avgPriorityFeeGwei).toBeNull();
+    expect(blocks[0].totalPriorityFeeGwei).toBeNull();
+    expect(blocks[1].avgPriorityFeeGwei).toBeNull();
+    expect(blocks[1].totalPriorityFeeGwei).toBeNull();
+  });
+
   it('returns empty results for empty blocks array', async () => {
     const result = await enrichBlocksWithReceipts([]);
 

@@ -132,7 +132,7 @@ export class BlockIndexer {
           // Enrich with receipt-based priority fees before insert
           const { enrichedCount, failedBlockNumbers } = await enrichBlocksWithReceipts(blockData, { pushToLiveStream: true });
           if (failedBlockNumbers.length > 0) {
-            console.warn(`[${WORKER_NAME}] Receipt fetch failed for ${failedBlockNumbers.length} blocks (will be caught by HistoricalPriorityFeeBackfiller)`);
+            console.warn(`[${WORKER_NAME}] Receipt fetch failed for ${failedBlockNumbers.length} blocks: ${failedBlockNumbers.join(', ')} (admin backfill API available at /api/admin/backfill-priority-fees)`);
           }
 
           // Insert complete blocks
