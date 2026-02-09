@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 const MAX_RACE_HISTORY = 100;
 const RACE_GRACE_MS = 500;
+const RACE_TIMEOUT_MS = 10_000;
+const PENALTY_DELTA_MS = 10_000;
 const RECONNECT_INITIAL_MS = 2000;
 const RECONNECT_MAX_MS = 30000;
 
@@ -25,13 +27,34 @@ export interface WsDeltaPoint {
 interface RaceEntry {
   firstArrival: number; // performance.now()
   arrivals: Map<string, number>; // url -> performance.now()
-  finalized: boolean;
+  recordedDeltas: Set<string>; // urls already recorded — prevents double-counting
+  settled: boolean; // true after Phase 1 (500ms)
+  finalized: boolean; // true after Phase 2 (10s)
 }
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, idx)];
+}
+
+function recordDelta(url: string, deltaMs: number, nowSec: number, stateRef: Map<string, { status: WsEndpointStatus; deltas: number[]; history: WsDeltaPoint[] }>) {
+  const state = stateRef.get(url);
+  if (!state) return;
+
+  state.deltas.push(deltaMs);
+  if (state.deltas.length > MAX_RACE_HISTORY) {
+    state.deltas = state.deltas.slice(-MAX_RACE_HISTORY);
+  }
+  state.history.push({ time: nowSec, deltaMs });
+  if (state.history.length > MAX_RACE_HISTORY) {
+    state.history = state.history.slice(-MAX_RACE_HISTORY);
+  }
+
+  const sorted = [...state.deltas].sort((a, b) => a - b);
+  state.status.p50 = percentile(sorted, 50);
+  state.status.p95 = percentile(sorted, 95);
+  state.status.p99 = percentile(sorted, 99);
 }
 
 export function useWsBlockRace(urls: string[]) {
@@ -64,32 +87,50 @@ export function useWsBlockRace(urls: string[]) {
     }
   }, [urls]);
 
+  const settleRace = useCallback((blockHex: string) => {
+    const race = racesRef.current.get(blockHex);
+    if (!race || race.settled) return;
+    race.settled = true;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    for (const [url, arrivalTime] of race.arrivals) {
+      if (race.recordedDeltas.has(url)) continue;
+      race.recordedDeltas.add(url);
+      const deltaMs = Math.round(arrivalTime - race.firstArrival);
+      recordDelta(url, deltaMs, nowSec, stateRef.current);
+    }
+
+    setRenderTick((t) => t + 1);
+  }, []);
+
   const finalizeRace = useCallback((blockHex: string) => {
     const race = racesRef.current.get(blockHex);
     if (!race || race.finalized) return;
+
+    // Settle first if not already done
+    if (!race.settled) {
+      race.settled = true;
+    }
     race.finalized = true;
 
-    const now = Math.floor(Date.now() / 1000);
+    const nowSec = Math.floor(Date.now() / 1000);
 
+    // Record deltas for late arrivals (between 500ms and 10s)
     for (const [url, arrivalTime] of race.arrivals) {
-      const state = stateRef.current.get(url);
-      if (!state) continue;
-
+      if (race.recordedDeltas.has(url)) continue;
+      race.recordedDeltas.add(url);
       const deltaMs = Math.round(arrivalTime - race.firstArrival);
-      state.deltas.push(deltaMs);
-      if (state.deltas.length > MAX_RACE_HISTORY) {
-        state.deltas = state.deltas.slice(-MAX_RACE_HISTORY);
-      }
-      state.history.push({ time: now, deltaMs });
-      if (state.history.length > MAX_RACE_HISTORY) {
-        state.history = state.history.slice(-MAX_RACE_HISTORY);
-      }
+      recordDelta(url, deltaMs, nowSec, stateRef.current);
+    }
 
-      // Compute percentiles
-      const sorted = [...state.deltas].sort((a, b) => a - b);
-      state.status.p50 = percentile(sorted, 50);
-      state.status.p95 = percentile(sorted, 95);
-      state.status.p99 = percentile(sorted, 99);
+    // Penalize connected endpoints that never delivered this block
+    for (const url of urlsRef.current) {
+      if (race.recordedDeltas.has(url)) continue;
+      const state = stateRef.current.get(url);
+      if (!state || !state.status.connected) continue;
+      race.recordedDeltas.add(url);
+      recordDelta(url, PENALTY_DELTA_MS, nowSec, stateRef.current);
     }
 
     setRenderTick((t) => t + 1);
@@ -104,7 +145,7 @@ export function useWsBlockRace(urls: string[]) {
     const now = performance.now();
     let race = racesRef.current.get(blockHex);
     if (!race) {
-      race = { firstArrival: now, arrivals: new Map(), finalized: false };
+      race = { firstArrival: now, arrivals: new Map(), recordedDeltas: new Set(), settled: false, finalized: false };
       racesRef.current.set(blockHex, race);
       // Clean up old races (keep last 20)
       if (racesRef.current.size > 20) {
@@ -113,16 +154,26 @@ export function useWsBlockRace(urls: string[]) {
           racesRef.current.delete(keys[i]);
         }
       }
-      // Finalize after grace period
-      setTimeout(() => finalizeRace(blockHex), RACE_GRACE_MS);
+      // Phase 1: settle after grace period
+      setTimeout(() => settleRace(blockHex), RACE_GRACE_MS);
+      // Phase 2: finalize with penalties after timeout
+      setTimeout(() => finalizeRace(blockHex), RACE_TIMEOUT_MS);
     }
 
     if (!race.finalized) {
       race.arrivals.set(url, now);
+
+      // If Phase 1 already settled, eagerly record this late arrival for immediate UI update
+      if (race.settled && !race.recordedDeltas.has(url)) {
+        race.recordedDeltas.add(url);
+        const deltaMs = Math.round(now - race.firstArrival);
+        const nowSec = Math.floor(Date.now() / 1000);
+        recordDelta(url, deltaMs, nowSec, stateRef.current);
+      }
     }
 
     setRenderTick((t) => t + 1);
-  }, [finalizeRace]);
+  }, [settleRace, finalizeRace]);
 
   const connectWs = useCallback((url: string) => {
     // Close existing connection if any
