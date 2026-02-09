@@ -13,9 +13,9 @@ export interface WsEndpointStatus {
   url: string;
   connected: boolean;
   lastBlock: bigint | null;
+  p25: number | null;
   p50: number | null;
-  p95: number | null;
-  p99: number | null;
+  p75: number | null;
   lastError: string | null;
 }
 
@@ -52,9 +52,9 @@ function recordDelta(url: string, deltaMs: number, nowSec: number, stateRef: Map
   }
 
   const sorted = [...state.deltas].sort((a, b) => a - b);
+  state.status.p25 = percentile(sorted, 25);
   state.status.p50 = percentile(sorted, 50);
-  state.status.p95 = percentile(sorted, 95);
-  state.status.p99 = percentile(sorted, 99);
+  state.status.p75 = percentile(sorted, 75);
 }
 
 export function useWsBlockRace(urls: string[]) {
@@ -75,9 +75,9 @@ export function useWsBlockRace(urls: string[]) {
             url,
             connected: false,
             lastBlock: null,
+            p25: null,
             p50: null,
-            p95: null,
-            p99: null,
+            p75: null,
             lastError: null,
           },
           deltas: [],

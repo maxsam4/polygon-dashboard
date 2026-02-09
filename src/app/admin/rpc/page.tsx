@@ -150,9 +150,9 @@ export default function RpcStatusPage() {
                             <th className="text-left py-2 px-3 text-muted font-medium">Endpoint</th>
                             <th className="text-right py-2 px-3 text-muted font-medium">Connected</th>
                             <th className="text-right py-2 px-3 text-muted font-medium">Last Block</th>
+                            <th className="text-right py-2 px-3 text-muted font-medium">p25</th>
                             <th className="text-right py-2 px-3 text-muted font-medium">p50</th>
-                            <th className="text-right py-2 px-3 text-muted font-medium">p95</th>
-                            <th className="text-right py-2 px-3 text-muted font-medium">p99</th>
+                            <th className="text-right py-2 px-3 text-muted font-medium">p75</th>
                             <th className="text-right py-2 px-3 text-muted font-medium">Status</th>
                           </tr>
                         </thead>
@@ -181,13 +181,13 @@ export default function RpcStatusPage() {
                                   {ep.lastBlock !== null ? Number(ep.lastBlock).toLocaleString() : '—'}
                                 </td>
                                 <td className="py-2 px-3 text-right font-mono text-foreground">
+                                  {ep.p25 !== null ? `${ep.p25}ms` : '—'}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono text-foreground">
                                   {ep.p50 !== null ? `${ep.p50}ms` : '—'}
                                 </td>
                                 <td className="py-2 px-3 text-right font-mono text-foreground">
-                                  {ep.p95 !== null ? `${ep.p95}ms` : '—'}
-                                </td>
-                                <td className="py-2 px-3 text-right font-mono text-foreground">
-                                  {ep.p99 !== null ? `${ep.p99}ms` : '—'}
+                                  {ep.p75 !== null ? `${ep.p75}ms` : '—'}
                                 </td>
                                 <td className="py-2 px-3 text-right">
                                   <WsStatusBadge ep={ep} />
