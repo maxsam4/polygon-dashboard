@@ -142,7 +142,6 @@ export interface InflationChartDataPoint {
   timestamp: number;
   issuance: number;         // POL issued in this bucket
   netInflation: number;     // issuance - burned
-  totalSupply: number;      // Total supply at bucket end
   supplyAtStart: number;    // Supply at start of time range (for % calc)
 }
 

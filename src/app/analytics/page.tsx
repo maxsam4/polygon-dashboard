@@ -31,15 +31,14 @@ export default function AnalyticsPage() {
           <LazyFullChart title="Bor Block Time (seconds)" metric="borBlockTime" />
         </div>
 
-        {/* Row 3: POL Issuance and Total POL Supply */}
+        {/* Row 3: POL Issuance and Gas Price */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <LazyInflationChart title="POL Issuance" metric="issuance" />
-          <LazyInflationChart title="Total POL Supply" metric="totalSupply" />
+          <LazyFullChart title="Gas Price (gwei)" metric="gas" />
         </div>
 
         {/* Standard charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <LazyFullChart title="Gas Price (gwei)" metric="gas" />
           <LazyFullChart title="Finality Time (seconds)" metric="finality" />
           <LazyFullChart title="MGAS/s" metric="mgas" />
           <LazyFullChart title="TPS" metric="tps" />
@@ -50,6 +49,10 @@ export default function AnalyticsPage() {
           <LazyFullChart title="Total Fee per Block (POL)" metric="totalFee" />
           <LazyFullChart title="Cumulative Base Fee per Block (POL)" metric="totalBaseFee" showCumulative />
           <LazyFullChart title="Cumulative Priority Fee per Block (POL)" metric="totalPriorityFee" showCumulative />
+        </div>
+
+        {/* Full-width cumulative total fee */}
+        <div className="grid grid-cols-1 gap-6 mb-6">
           <LazyFullChart title="Cumulative Total Fee per Block (POL)" metric="totalFee" showCumulative />
         </div>
       </main>

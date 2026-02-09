@@ -35,7 +35,7 @@ import {
 } from '@/lib/dateUtils';
 import { cachedFetch } from '@/lib/fetchCache';
 
-type InflationMetric = 'issuance' | 'netInflation' | 'totalSupply';
+type InflationMetric = 'issuance' | 'netInflation';
 
 interface InflationChartProps {
   title: string;
@@ -49,7 +49,6 @@ interface ChartDataPoint {
   issuance: number;
   burned: number;
   netInflation: number;
-  totalSupply: number;
   supplyAtRangeStart: number;
 }
 
@@ -259,7 +258,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
 
     // Only exclude incomplete aggregate window for netInflation metric
-    // Issuance and totalSupply are purely mathematical and don't need this
+    // Issuance is purely mathematical and doesn't need this
     if (metric === 'netInflation') {
       const nowSeconds = Math.floor(Date.now() / 1000);
       const isQueryingToNow = toTime >= nowSeconds - 60; // Within 1 minute of now
@@ -288,8 +287,6 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         }
       }
 
-      const totalSupply = weiToPol(calculateSupplyAt(bucketEnd, rates[rates.length - 1]));
-
       data.push({
         timestamp: t,
         bucketStart: t,
@@ -297,7 +294,6 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         issuance: issuancePol,
         burned,
         netInflation: issuancePol - burned,
-        totalSupply,
         supplyAtRangeStart,
       });
     }
@@ -324,13 +320,8 @@ export function InflationChart({ title, metric }: InflationChartProps) {
         { key: 'burned', label: 'Burned', enabled: false, color: colors[4], priceScaleId: 'right' },
       ];
     }
-    if (metric === 'issuance') {
-      return [
-        { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1], priceScaleId: 'right' },
-      ];
-    }
     return [
-      { key: 'totalSupply', label: 'Total Supply', enabled: true, color: colors[2], priceScaleId: 'right' },
+      { key: 'issuance', label: 'Issuance', enabled: true, color: colors[1], priceScaleId: 'right' },
     ];
   }, [metric]);
 
@@ -435,12 +426,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
 
         let seriesData: LineData<UTCTimestamp>[];
 
-        if (opt.key === 'totalSupply') {
-          seriesData = chartData.map((d) => ({
-            time: d.timestamp as UTCTimestamp,
-            value: d.totalSupply,
-          }));
-        } else if (opt.key === 'annualizedIssuancePercent') {
+        if (opt.key === 'annualizedIssuancePercent') {
           // Calculate annualized issuance percentage
           seriesData = chartData.map((d) => {
             if (d.supplyAtRangeStart === 0) return { time: d.timestamp as UTCTimestamp, value: 0 };
@@ -558,7 +544,7 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       </div>
 
       {/* Period totals - Show both absolute (POL) and relative (%) values */}
-      {periodTotals && metric !== 'totalSupply' && (
+      {periodTotals && (
         <div className="mb-4 text-sm">
           <div className="grid grid-cols-2 gap-4 mb-2">
             <div>
