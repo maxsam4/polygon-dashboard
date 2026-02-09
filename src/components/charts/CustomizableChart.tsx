@@ -28,6 +28,7 @@ import {
   formatTimeLabel as formatTimeLabelUtil,
   formatTooltipTime as formatTooltipTimeUtil,
 } from '@/lib/dateUtils';
+import { cachedFetch } from '@/lib/fetchCache';
 
 // Available data series options
 const DATA_OPTIONS = [
@@ -210,10 +211,9 @@ export function CustomizableChart({
     setTimeRangeBounds({ from: fromTime, to: toTime });
 
     try {
-      const response = await fetch(
+      const json = await cachedFetch<{ data?: ChartDataPoint[]; pagination?: { total: number; limit: number } }>(
         `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
-      const json = await response.json();
       setData(json.data || []);
       // Check if we received all the data or hit the limit
       if (json.pagination) {

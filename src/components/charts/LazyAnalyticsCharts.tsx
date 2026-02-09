@@ -13,13 +13,13 @@ function ChartSkeleton() {
   );
 }
 
-export const LazySharedFullChart = dynamic(
-  () => import('./SharedFullChart').then((mod) => mod.SharedFullChart),
+export const LazyFullChart = dynamic(
+  () => import('./FullChart').then((mod) => mod.FullChart),
   { loading: () => <ChartSkeleton />, ssr: false }
 );
 
-export const LazySharedCustomizableChart = dynamic(
-  () => import('./SharedCustomizableChart').then((mod) => mod.SharedCustomizableChart),
+export const LazyCustomizableChart = dynamic(
+  () => import('./CustomizableChart').then((mod) => mod.CustomizableChart),
   { loading: () => <ChartSkeleton />, ssr: false }
 );
 

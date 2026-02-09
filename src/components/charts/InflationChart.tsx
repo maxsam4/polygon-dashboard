@@ -33,8 +33,7 @@ import {
   shouldShowDates,
   formatTimeLabel as formatTimeLabelUtil,
 } from '@/lib/dateUtils';
-import { useOptionalSharedChartData } from '@/contexts/ChartDataContext';
-import { ChartDataPoint as SharedChartDataPoint } from '@/lib/types';
+import { cachedFetch } from '@/lib/fetchCache';
 
 type InflationMetric = 'issuance' | 'netInflation' | 'totalSupply';
 
@@ -105,18 +104,8 @@ export function InflationChart({ title, metric }: InflationChartProps) {
   const seriesRefs = useRef<Map<string, ISeriesApi<SeriesType>>>(new Map());
   const { theme } = useTheme();
 
-  // Try to use shared chart data context if available
-  const sharedContext = useOptionalSharedChartData();
-  const useSharedData = sharedContext !== null;
-
-  // Use shared context values if available, otherwise use local state
-  const [localTimeRange, setLocalTimeRange] = useState('1D');
-  const [localBucketSize, setLocalBucketSize] = useState('15m');
-
-  const timeRange = useSharedData ? sharedContext.timeRange : localTimeRange;
-  const setTimeRangeState = useSharedData ? sharedContext.setTimeRange : setLocalTimeRange;
-  const bucketSize = useSharedData ? sharedContext.bucketSize : localBucketSize;
-  const setBucketSizeState = useSharedData ? sharedContext.setBucketSize : setLocalBucketSize;
+  const [timeRange, setTimeRangeState] = useState('1D');
+  const [bucketSize, setBucketSizeState] = useState('15m');
 
   const [rates, setRates] = useState<InflationRateParams[]>([]);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -127,98 +116,60 @@ export function InflationChart({ title, metric }: InflationChartProps) {
 
   const now = new Date();
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-  const [localCustomStartTime, setLocalCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
-  const [localCustomEndTime, setLocalCustomEndTime] = useState(formatDateTimeLocal(now));
-  const [localAppliedCustomRange, setLocalAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
-
-  const customStartTime = useSharedData ? sharedContext.customStartTime : localCustomStartTime;
-  const setCustomStartTime = useSharedData ? sharedContext.setCustomStartTime : setLocalCustomStartTime;
-  const customEndTime = useSharedData ? sharedContext.customEndTime : localCustomEndTime;
-  const setCustomEndTime = useSharedData ? sharedContext.setCustomEndTime : setLocalCustomEndTime;
-  const appliedCustomRange = useSharedData ? sharedContext.appliedCustomRange : localAppliedCustomRange;
-  const applyCustomRangeShared = useSharedData ? sharedContext.applyCustomRange : null;
+  const [customStartTime, setCustomStartTime] = useState(formatDateTimeLocal(oneHourAgo));
+  const [customEndTime, setCustomEndTime] = useState(formatDateTimeLocal(now));
+  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: number; end: number } | null>(null);
 
   // Calculate available bucket sizes based on time range
   const availableBuckets = useMemo(() => {
-    if (useSharedData) return sharedContext.availableBuckets;
     const seconds = getTimeRangeSeconds(timeRange, appliedCustomRange);
     return getAvailableBuckets(seconds);
-  }, [useSharedData, sharedContext?.availableBuckets, timeRange, appliedCustomRange]);
+  }, [timeRange, appliedCustomRange]);
 
-  // Auto-adjust bucket size when it becomes invalid for the current time range (only for local state)
+  // Auto-adjust bucket size when it becomes invalid for the current time range
   useEffect(() => {
-    if (useSharedData) return; // Shared context handles this
     if (availableBuckets.length > 0 && !availableBuckets.includes(bucketSize)) {
       const recommended = TIME_RANGE_BUCKETS[timeRange];
       const newBucket = availableBuckets.find(b => b === recommended) ?? availableBuckets[0];
       setBucketSizeState(newBucket);
     }
-  }, [useSharedData, availableBuckets, bucketSize, timeRange, setBucketSizeState]);
+  }, [availableBuckets, bucketSize, timeRange, setBucketSizeState]);
 
   const handleTimeRangeChange = (range: string) => {
     setTimeRangeState(range);
-    if (!useSharedData && range !== 'Custom') {
+    if (range !== 'Custom') {
       setBucketSizeState(getRecommendedBucket(range));
-      setLocalAppliedCustomRange(null);
+      setAppliedCustomRange(null);
     }
     timeRangeRef.current = range;
   };
 
   const handleApplyCustomRange = () => {
-    if (applyCustomRangeShared) {
-      applyCustomRangeShared();
-    } else {
-      const start = Math.floor(new Date(customStartTime).getTime() / 1000);
-      const end = Math.floor(new Date(customEndTime).getTime() / 1000);
-      if (start < end) {
-        setLocalAppliedCustomRange({ start, end });
-      }
+    const start = Math.floor(new Date(customStartTime).getTime() / 1000);
+    const end = Math.floor(new Date(customEndTime).getTime() / 1000);
+    if (start < end) {
+      setAppliedCustomRange({ start, end });
     }
   };
 
-  // Use shared inflation rates when available, otherwise fetch independently
+  // Fetch inflation rates once on mount
   useEffect(() => {
-    if (useSharedData && sharedContext && sharedContext.inflationRates.length > 0) {
-      setRates(sharedContext.inflationRates);
-      return;
-    }
-
-    // Fall back to independent fetch when not using shared context
-    if (!useSharedData) {
-      async function fetchRates() {
-        try {
-          const response = await fetch('/api/inflation-rates');
-          const json = await response.json();
-          if (json.rates) {
-            const prepared = prepareRatesForCalculation(json.rates);
-            setRates(prepared);
-          }
-        } catch (error) {
-          console.error('Failed to fetch inflation rates:', error);
+    async function fetchRates() {
+      try {
+        const json = await cachedFetch<{ rates?: InflationRateParams[] }>('/api/inflation-rates');
+        if (json.rates) {
+          const prepared = prepareRatesForCalculation(json.rates);
+          setRates(prepared);
         }
+      } catch (error) {
+        console.error('Failed to fetch inflation rates:', error);
       }
-      fetchRates();
     }
-  }, [useSharedData, sharedContext]);
+    fetchRates();
+  }, []);
 
-  // Use shared chart data for burn data when available
-  useEffect(() => {
-    if (useSharedData && sharedContext && sharedContext.chartData.length > 0) {
-      // Use shared context data for burn calculation
-      const burnMap = new Map<number, number>();
-      for (const d of sharedContext.chartData as SharedChartDataPoint[]) {
-        // totalBaseFeeSum is in gwei, convert to POL
-        burnMap.set(d.timestamp, d.totalBaseFeeSum / GWEI_PER_POL);
-      }
-      setBurnData(burnMap);
-      setIsDataComplete(sharedContext.isDataComplete);
-    }
-  }, [useSharedData, sharedContext]);
-
-  // Fetch burn data from existing chart-data API (only when not using shared context)
+  // Fetch burn data from chart-data API
   const fetchBurnData = useCallback(async () => {
-    if (useSharedData) return; // Use shared context data instead
-
     // Guard: Don't fetch if Custom is selected but not yet applied
     if (timeRange === 'Custom' && !appliedCustomRange) {
       return; // Keep existing data visible while user enters dates
@@ -252,10 +203,9 @@ export function InflationChart({ title, metric }: InflationChartProps) {
     }
 
     try {
-      const response = await fetch(
+      const json = await cachedFetch<{ data?: Array<{ timestamp: number; totalBaseFeeSum: number }>; pagination?: { total: number; limit: number } }>(
         `/api/chart-data?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
-      const json = await response.json();
 
       const burnMap = new Map<number, number>();
       if (json.data) {
@@ -275,13 +225,11 @@ export function InflationChart({ title, metric }: InflationChartProps) {
       console.error('Failed to fetch burn data:', error);
       setIsDataComplete(true);
     }
-  }, [useSharedData, timeRange, bucketSize, appliedCustomRange]);
+  }, [timeRange, bucketSize, appliedCustomRange]);
 
   useEffect(() => {
-    if (!useSharedData) {
-      fetchBurnData();
-    }
-  }, [useSharedData, fetchBurnData]);
+    fetchBurnData();
+  }, [fetchBurnData]);
 
   // Calculate chart data when rates or burn data change
   useEffect(() => {

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { TIME_RANGE_SECONDS } from '@/lib/constants';
 import { getApiEndpointForMetric, ChartMetric } from '@/lib/chartSeriesConfig';
 import { ChartDataPoint, MilestoneChartDataPoint } from '@/lib/types';
+import { cachedFetch } from '@/lib/fetchCache';
 
 export type ChartData = ChartDataPoint | MilestoneChartDataPoint;
 
@@ -83,10 +84,9 @@ export function useChartData({
 
     try {
       const endpoint = getApiEndpointForMetric(metric);
-      const response = await fetch(
+      const json = await cachedFetch<{ data?: ChartData[]; pagination?: { total: number; limit: number } }>(
         `${endpoint}?fromTime=${fromTime}&toTime=${toTime}&bucketSize=${bucketSize}&limit=10000`
       );
-      const json = await response.json();
       setData(json.data || []);
       // Check if we received all the data or hit the limit
       if (json.pagination) {
