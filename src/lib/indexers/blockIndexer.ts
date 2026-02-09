@@ -183,9 +183,10 @@ export class BlockIndexer {
           console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts${modeLabel}`);
         }
 
-        // Adaptive sleep: faster if behind, slower if caught up
-        const sleepMs = gap > 10 ? 100 : this.pollMs;
-        await sleep(sleepMs);
+        // Only sleep when fully caught up (no new blocks available)
+        if (gap <= 0) {
+          await sleep(this.pollMs);
+        }
       } catch (error) {
         if (!this.running) break; // Clean abort exit
         const errorMsg = error instanceof Error ? error.message : String(error);
