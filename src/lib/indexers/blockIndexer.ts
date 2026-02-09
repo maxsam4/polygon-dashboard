@@ -28,10 +28,13 @@ export class BlockIndexer {
   private abortController: AbortController | null = null;
   private pollMs: number;
   private batchSize: number;
+  private nearRealtimeThresholdMs: number;
+  private lastBlockTimestamp: Date | null = null;
 
   constructor() {
     this.pollMs = parseInt(process.env.INDEXER_POLL_MS || '1000', 10);
     this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
+    this.nearRealtimeThresholdMs = parseInt(process.env.INDEXER_NEAR_REALTIME_THRESHOLD_MS || String(5 * 60 * 1000), 10);
   }
 
   /**
@@ -46,7 +49,7 @@ export class BlockIndexer {
     updateWorkerState(WORKER_NAME, 'running');
 
     console.log(`[${WORKER_NAME}] Starting block indexer`);
-    console.log(`[${WORKER_NAME}] Poll interval: ${this.pollMs}ms, Batch size: ${this.batchSize}`);
+    console.log(`[${WORKER_NAME}] Poll interval: ${this.pollMs}ms, Batch size: ${this.batchSize}, Near-realtime threshold: ${this.nearRealtimeThresholdMs}ms`);
 
     // Load cursor from DB
     this.cursor = await getIndexerState(SERVICE_NAME);
@@ -101,8 +104,11 @@ export class BlockIndexer {
         const gap = Number(chainTip - this.cursor!.blockNumber);
 
         if (gap > 0) {
-          // Determine how many blocks to fetch
-          const fetchCount = Math.min(gap, this.batchSize);
+          // Determine how many blocks to fetch (single-block mode when near real-time)
+          const isNearRealtime = this.lastBlockTimestamp !== null
+            && (Date.now() - this.lastBlockTimestamp.getTime()) < this.nearRealtimeThresholdMs;
+          const effectiveBatchSize = isNearRealtime ? 1 : this.batchSize;
+          const fetchCount = Math.min(gap, effectiveBatchSize);
           const startBlock = this.cursor!.blockNumber + 1n;
           const endBlock = startBlock + BigInt(fetchCount) - 1n;
 
@@ -162,8 +168,12 @@ export class BlockIndexer {
             console.error(`[${WORKER_NAME}] Anomaly detection error:`, err);
           });
 
+          // Track last block timestamp for near-realtime detection
+          this.lastBlockTimestamp = blockData[blockData.length - 1].timestamp;
+
           updateWorkerRun(WORKER_NAME, blocks.length);
-          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts`);
+          const modeLabel = isNearRealtime ? ' [realtime]' : '';
+          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts${modeLabel}`);
         }
 
         // Adaptive sleep: faster if behind, slower if caught up
