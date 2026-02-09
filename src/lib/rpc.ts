@@ -280,7 +280,7 @@ export class RpcClient {
           method: 'eth_getBlockReceipts',
           params: [numberToHex(blockNumber)],
         });
-        if (!result || !Array.isArray(result)) {
+        if (!result || !Array.isArray(result) || result.length === 0) {
           throw new ReceiptsNotAvailableError(blockNumber);
         }
         return (result as RawReceipt[]).map(parseReceipt);
