@@ -64,6 +64,7 @@ export class BlockIndexer {
         const block = await rpc.getBlock(highestBlock);
         await initializeIndexerState(SERVICE_NAME, highestBlock, block.hash);
         this.cursor = { blockNumber: highestBlock, hash: block.hash };
+        this.lastBlockTimestamp = new Date(Number(block.timestamp) * 1000);
         console.log(`[${WORKER_NAME}] Initialized from highest DB block #${highestBlock}`);
       } else {
         // DB is empty, start from chain tip
@@ -73,10 +74,15 @@ export class BlockIndexer {
 
         await initializeIndexerState(SERVICE_NAME, latestBlock, block.hash);
         this.cursor = { blockNumber: latestBlock, hash: block.hash };
+        this.lastBlockTimestamp = new Date(Number(block.timestamp) * 1000);
         console.log(`[${WORKER_NAME}] Initialized cursor at chain tip block #${latestBlock}`);
       }
     } else {
       console.log(`[${WORKER_NAME}] Resumed from block #${this.cursor.blockNumber}`);
+      const dbBlock = await getBlockByNumber(this.cursor.blockNumber);
+      if (dbBlock) {
+        this.lastBlockTimestamp = dbBlock.timestamp;
+      }
     }
 
     // Start main loop
@@ -132,6 +138,7 @@ export class BlockIndexer {
           if (reorgAt !== null) {
             console.log(`[${WORKER_NAME}] Reorg detected at block #${reorgAt}`);
             this.cursor = await handleReorg(reorgAt, SERVICE_NAME);
+            this.lastBlockTimestamp = null; // Reset to use batch mode during catch-up
             continue; // Restart loop after reorg handling
           }
 
