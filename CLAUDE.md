@@ -86,11 +86,11 @@ Avoid special characters (`%`, `$`, `!`) in passwords - they can break Docker Co
 
 ### Indexers
 
-- `BlockIndexer` - Cursor-based forward indexer (gap-free, reorg-aware)
-- `BlockBackfiller` - Backwards indexer to target block
+- `BlockIndexer` - Cursor-based forward indexer (gap-free, reorg-aware, inline receipt enrichment)
+- `BlockBackfiller` - Backwards indexer to target block (inline receipt enrichment)
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes directly to `block_finality`
 - `MilestoneBackfiller` - Backwards indexer to target sequence_id, populates finality
-- `PriorityFeeBackfiller` - Async priority fee calculator via receipts
+- `HistoricalPriorityFeeBackfiller` - Fills priority fee data for legacy blocks inserted before inline enrichment
 
 ### Live-Stream Service
 
@@ -189,7 +189,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - **RPC circuit breaker**: Endpoints are skipped for 30s after 5 consecutive failures, with exponential backoff on retries
 - **SSE proxy reconnection**: Upstream live-stream disconnects trigger automatic reconnection with exponential backoff (max 5 retries)
 - **Worker startup**: Uses `Promise.allSettled` - partial failures are logged, remaining workers continue running
-- **PriorityFeeBackfiller queue**: Bounded to 500 entries; overflow is dropped and caught by HistoricalPriorityFeeBackfiller
+- **Inline receipt enrichment**: BlockIndexer and BlockBackfiller fetch receipts before insert for complete data; failures are caught by HistoricalPriorityFeeBackfiller
 - **Admin login rate limiting**: 5 attempts per IP per minute (in-memory)
 - **App health check**: Docker healthcheck on `/api/status` enables automatic container restart
 

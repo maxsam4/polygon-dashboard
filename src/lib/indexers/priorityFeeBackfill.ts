@@ -1,7 +1,6 @@
-import { getRpcClient, TransactionReceipt, ReceiptsNotAvailableError } from '../rpc';
+import { getRpcClient, TransactionReceipt } from '../rpc';
 import { updateBlockPriorityFeesBatch } from '../queries/blocks';
 import { query } from '../db';
-import { pushBlockUpdate } from '../liveStreamClient';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
 import { getTableStats } from '../queries/stats';
 import { sleep } from '../utils';
@@ -11,205 +10,6 @@ interface PendingBlock {
   blockNumber: bigint;
   timestamp: Date;
   baseFeeGwei: number;
-  retryCount?: number;  // Track retry attempts
-}
-
-const MAX_RETRIES = 5;  // Max retry attempts before giving up
-const MAX_QUEUE_SIZE = 500; // Drop oldest entries when queue exceeds this
-
-/**
- * Queue for backfilling priority fee data after blocks are indexed.
- * This allows the block indexer to insert blocks quickly without waiting
- * for receipt data, then fill in the priority fee metrics asynchronously.
- *
- * Queue is bounded to MAX_QUEUE_SIZE entries. When full, oldest entries
- * are dropped (the HistoricalPriorityFeeBackfiller will catch them later).
- */
-export class PriorityFeeBackfiller {
-  private queue: PendingBlock[] = [];
-  private processing = false;
-  private batchSize: number;
-  private running = false;
-
-  constructor(batchSize: number = 3) {
-    this.batchSize = batchSize;
-  }
-
-  /**
-   * Start the backfiller processing loop.
-   */
-  start(): void {
-    this.running = true;
-    console.log('[PriorityFeeBackfiller] Starting priority fee backfiller');
-    this.processLoop().catch(error => {
-      console.error('[PriorityFeeBackfiller] Fatal error in process loop:', error);
-    });
-  }
-
-  /**
-   * Stop the backfiller.
-   */
-  stop(): void {
-    this.running = false;
-  }
-
-  /**
-   * Add a block to the backfill queue.
-   */
-  enqueue(block: PendingBlock): void {
-    this.queue.push(block);
-    this.trimQueue();
-  }
-
-  /**
-   * Add multiple blocks to the backfill queue.
-   */
-  enqueueBatch(blocks: PendingBlock[]): void {
-    this.queue.push(...blocks);
-    this.trimQueue();
-  }
-
-  /**
-   * Drop oldest entries when queue exceeds MAX_QUEUE_SIZE.
-   * Dropped blocks will be picked up by HistoricalPriorityFeeBackfiller.
-   */
-  private trimQueue(): void {
-    if (this.queue.length > MAX_QUEUE_SIZE) {
-      const dropped = this.queue.length - MAX_QUEUE_SIZE;
-      this.queue.splice(0, dropped);
-      console.warn(`[PriorityFeeBackfiller] Queue overflow: dropped ${dropped} oldest entries (will be caught by historical backfiller)`);
-    }
-  }
-
-  /**
-   * Get queue status.
-   */
-  getStatus(): { queueLength: number; processing: boolean } {
-    return {
-      queueLength: this.queue.length,
-      processing: this.processing,
-    };
-  }
-
-  /**
-   * Main processing loop.
-   */
-  private async processLoop(): Promise<void> {
-    while (this.running) {
-      if (this.queue.length === 0) {
-        // Wait a bit before checking again
-        await sleep(100);
-        continue;
-      }
-
-      this.processing = true;
-
-      try {
-        // Get a batch of blocks to process
-        const batch = this.queue.splice(0, this.batchSize);
-        await this.processBatch(batch);
-      } catch (error) {
-        console.error('[PriorityFeeBackfiller] Error processing batch:', error);
-        // Don't re-queue failed blocks - they can be fixed by a separate process
-      }
-
-      this.processing = false;
-    }
-  }
-
-  /**
-   * Process a batch of blocks.
-   */
-  private async processBatch(blocks: PendingBlock[]): Promise<void> {
-    const rpc = getRpcClient();
-    const blockNumbers = blocks.map(b => b.blockNumber);
-
-    // Fetch receipts for all blocks in parallel
-    const receiptsMap = await rpc.getBlocksReceipts(blockNumbers);
-
-    // Calculate metrics and prepare updates
-    const updates: Array<{
-      block: PendingBlock;
-      metrics: ReturnType<typeof calculatePriorityFeeMetrics>;
-      receiptsCount: number;
-    }> = [];
-
-    // Track blocks that failed to get receipts for retry
-    const blocksToRetry: PendingBlock[] = [];
-
-    for (const block of blocks) {
-      let receipts: TransactionReceipt[] | undefined = receiptsMap.get(block.blockNumber);
-
-      // If receipts not in map, they weren't available on ANY endpoint
-      // Wait briefly and retry once more (all endpoints will be tried again)
-      if (!receipts) {
-        await sleep(500);
-        try {
-          receipts = await rpc.getBlockReceipts(block.blockNumber);
-        } catch (error) {
-          if (error instanceof ReceiptsNotAvailableError) {
-            // Still not available on any endpoint - re-queue for later
-            const retryCount = (block.retryCount || 0) + 1;
-            if (retryCount < MAX_RETRIES) {
-              blocksToRetry.push({ ...block, retryCount });
-              console.warn(`[PriorityFeeBackfiller] Block #${block.blockNumber} receipts not ready on any endpoint, retry ${retryCount}/${MAX_RETRIES}`);
-            } else {
-              console.error(`[PriorityFeeBackfiller] Block #${block.blockNumber} dropped after ${MAX_RETRIES} retries - will be picked up by getBlocksMissingPriorityFees()`);
-            }
-            continue;
-          }
-          throw error; // Re-throw other errors
-        }
-      }
-
-      // Empty receipts array means block has no transactions - skip
-      if (receipts.length === 0) {
-        continue;
-      }
-
-      const metrics = calculatePriorityFeeMetrics(receipts, block.baseFeeGwei);
-
-      if (metrics.avgPriorityFeeGwei !== null && metrics.totalPriorityFeeGwei !== null) {
-        updates.push({ block, metrics, receiptsCount: receipts.length });
-      }
-    }
-
-    // Re-queue blocks that failed to get receipts
-    if (blocksToRetry.length > 0) {
-      this.queue.push(...blocksToRetry);
-      console.log(`[PriorityFeeBackfiller] Re-queued ${blocksToRetry.length} blocks for retry (receipts not ready)`);
-    }
-
-    // Execute batch DB update (single query instead of N parallel queries)
-    await updateBlockPriorityFeesBatch(
-      updates.map(({ block, metrics }) => ({
-        blockNumber: block.blockNumber,
-        timestamp: block.timestamp,
-        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei!,
-        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
-        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei!,
-      }))
-    );
-
-    // Push updates to live-stream service (fire-and-forget)
-    for (const { block, metrics, receiptsCount } of updates) {
-      pushBlockUpdate({
-        blockNumber: Number(block.blockNumber),
-        txCount: receiptsCount,
-        minPriorityFeeGwei: metrics.minPriorityFeeGwei,
-        maxPriorityFeeGwei: metrics.maxPriorityFeeGwei,
-        avgPriorityFeeGwei: metrics.avgPriorityFeeGwei!,
-        medianPriorityFeeGwei: metrics.medianPriorityFeeGwei,
-        totalPriorityFeeGwei: metrics.totalPriorityFeeGwei!,
-      }).catch(() => {});
-    }
-
-    if (updates.length > 0) {
-      console.log(`[PriorityFeeBackfiller] Updated ${updates.length}/${blocks.length} blocks`);
-    }
-  }
 }
 
 /**
@@ -288,58 +88,13 @@ export function calculatePriorityFeeMetrics(
   };
 }
 
-/**
- * Find blocks that are missing priority fee data and need backfilling.
- */
-export async function getBlocksMissingPriorityFees(
-  limit: number = 1000
-): Promise<PendingBlock[]> {
-  // Only check recent blocks (last 24 hours) to avoid scanning compressed chunks
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-  const rows = await query<{
-    block_number: string;
-    timestamp: Date;
-    base_fee_gwei: number;
-  }>(
-    `SELECT block_number, timestamp, base_fee_gwei
-     FROM blocks
-     WHERE timestamp >= $1
-       AND (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
-       AND tx_count > 0
-     ORDER BY block_number DESC
-     LIMIT $2`,
-    [oneDayAgo, limit]
-  );
-
-  return rows.map(row => ({
-    blockNumber: BigInt(row.block_number),
-    timestamp: row.timestamp,
-    baseFeeGwei: row.base_fee_gwei,
-  }));
-}
-
-// Singleton instance
-let backfillerInstance: PriorityFeeBackfiller | null = null;
-
-/**
- * Get the singleton PriorityFeeBackfiller instance.
- */
-export function getPriorityFeeBackfiller(): PriorityFeeBackfiller {
-  if (!backfillerInstance) {
-    const batchSize = parseInt(process.env.PRIORITY_FEE_BATCH_SIZE || '3', 10);
-    backfillerInstance = new PriorityFeeBackfiller(batchSize);
-  }
-  return backfillerInstance;
-}
-
 const HISTORICAL_SERVICE_NAME = 'historical_priority_fee_backfiller';
 
 /**
- * Historical Priority Fee Backfiller - fills priority fee data for all blocks.
+ * Historical Priority Fee Backfiller - fills priority fee data for legacy blocks.
  *
- * Runs at lower priority than the real-time backfiller, processing historical
- * blocks in batches. Uses cursor-based pagination to track progress.
+ * Processes historical blocks that were inserted before inline receipt enrichment
+ * was added. Uses cursor-based pagination to track progress.
  */
 export class HistoricalPriorityFeeBackfiller {
   private cursor: bigint | null = null; // Current block being processed (works downward)
@@ -460,6 +215,7 @@ export class HistoricalPriorityFeeBackfiller {
       `SELECT block_number, timestamp, base_fee_gwei
        FROM blocks
        WHERE block_number >= $1 AND block_number <= $2
+         AND (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
          AND tx_count > 0
        ORDER BY block_number DESC
        LIMIT $3`,

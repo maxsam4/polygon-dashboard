@@ -4,7 +4,7 @@ import { calculateBlockMetrics } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState, IndexerCursor } from './indexerState';
 import { handleReorg, getBlockByNumber } from './reorgHandler';
-import { getPriorityFeeBackfiller } from './priorityFeeBackfill';
+import { enrichBlocksWithReceipts } from './receiptEnricher';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep, bigintRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
@@ -20,18 +20,17 @@ const WORKER_NAME = 'BlockIndexer';
  * - Cursor-based: Tracks last processed block and hash for reliable resumption
  * - Gap-free: Validates parent hash continuity to ensure no gaps
  * - Reorg-aware: Detects and handles chain reorganizations
- * - Async priority fees: Queues blocks for priority fee backfill after insert
+ * - Inline receipt enrichment: Fetches receipts before insert for complete data
  */
 export class BlockIndexer {
   private cursor: IndexerCursor | null = null;
   private running = false;
   private pollMs: number;
   private batchSize: number;
-  private priorityFeeBackfiller = getPriorityFeeBackfiller();
 
   constructor() {
     this.pollMs = parseInt(process.env.INDEXER_POLL_MS || '1000', 10);
-    this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '100', 10);
+    this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
   }
 
   /**
@@ -75,9 +74,6 @@ export class BlockIndexer {
       console.log(`[${WORKER_NAME}] Resumed from block #${this.cursor.blockNumber}`);
     }
 
-    // Start priority fee backfiller
-    this.priorityFeeBackfiller.start();
-
     // Start main loop
     this.runLoop();
   }
@@ -87,7 +83,6 @@ export class BlockIndexer {
    */
   stop(): void {
     this.running = false;
-    this.priorityFeeBackfiller.stop();
     updateWorkerState(WORKER_NAME, 'stopped');
     console.log(`[${WORKER_NAME}] Stopped`);
   }
@@ -131,8 +126,16 @@ export class BlockIndexer {
             continue; // Restart loop after reorg handling
           }
 
-          // Convert and insert blocks
+          // Convert blocks
           const blockData = await this.convertBlocks(blocks);
+
+          // Enrich with receipt-based priority fees before insert
+          const { enrichedCount, failedBlockNumbers } = await enrichBlocksWithReceipts(blockData, { pushToLiveStream: true });
+          if (failedBlockNumbers.length > 0) {
+            console.warn(`[${WORKER_NAME}] Receipt fetch failed for ${failedBlockNumbers.length} blocks: ${failedBlockNumbers.join(', ')} (admin backfill API available at /api/admin/backfill-priority-fees)`);
+          }
+
+          // Insert complete blocks
           await insertBlocksBatch(blockData);
 
           // Update cursor
@@ -142,15 +145,6 @@ export class BlockIndexer {
 
           // Update table stats for API queries
           await updateTableStats('blocks', startBlock, lastBlock.number, blocks.length);
-
-          // Queue priority fee backfill
-          this.priorityFeeBackfiller.enqueueBatch(
-            blockData.map(b => ({
-              blockNumber: b.blockNumber,
-              timestamp: b.timestamp,
-              baseFeeGwei: b.baseFeeGwei,
-            }))
-          );
 
           // Check blocks for anomalies (non-blocking)
           checkBlocksForAnomalies(blockData.map(b => ({
@@ -166,7 +160,7 @@ export class BlockIndexer {
           });
 
           updateWorkerRun(WORKER_NAME, blocks.length);
-          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number})`);
+          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts`);
         }
 
         // Adaptive sleep: faster if behind, slower if caught up
