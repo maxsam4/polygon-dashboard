@@ -26,15 +26,11 @@ export class BlockIndexer {
   private cursor: IndexerCursor | null = null;
   private running = false;
   private abortController: AbortController | null = null;
-  private pollMs: number;
   private batchSize: number;
-  private nearRealtimeThresholdMs: number;
   private lastBlockTimestamp: Date | null = null;
 
   constructor() {
-    this.pollMs = parseInt(process.env.INDEXER_POLL_MS || '500', 10);
     this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
-    this.nearRealtimeThresholdMs = parseInt(process.env.INDEXER_NEAR_REALTIME_THRESHOLD_MS || String(5 * 60 * 1000), 10);
   }
 
   /**
@@ -49,7 +45,7 @@ export class BlockIndexer {
     updateWorkerState(WORKER_NAME, 'running');
 
     console.log(`[${WORKER_NAME}] Starting block indexer`);
-    console.log(`[${WORKER_NAME}] Poll interval: ${this.pollMs}ms, Batch size: ${this.batchSize}, Near-realtime threshold: ${this.nearRealtimeThresholdMs}ms`);
+    console.log(`[${WORKER_NAME}] Batch size: ${this.batchSize}`);
 
     // Load cursor from DB
     this.cursor = await getIndexerState(SERVICE_NAME);
@@ -110,10 +106,11 @@ export class BlockIndexer {
         const gap = Number(chainTip - this.cursor!.blockNumber);
 
         if (gap > 0) {
-          // Determine how many blocks to fetch (single-block mode when near real-time)
-          const isNearRealtime = this.lastBlockTimestamp !== null
-            && (Date.now() - this.lastBlockTimestamp.getTime()) < this.nearRealtimeThresholdMs;
-          const effectiveBatchSize = isNearRealtime ? 1 : this.batchSize;
+          // Batch size based on how far behind we are
+          const blockAge = this.lastBlockTimestamp !== null
+            ? Date.now() - this.lastBlockTimestamp.getTime()
+            : Infinity;
+          const effectiveBatchSize = blockAge >= 60_000 ? this.batchSize : 1;
           const fetchCount = Math.min(gap, effectiveBatchSize);
           const startBlock = this.cursor!.blockNumber + 1n;
           const endBlock = startBlock + BigInt(fetchCount) - 1n;
@@ -129,7 +126,7 @@ export class BlockIndexer {
 
           if (blocks.length === 0) {
             console.warn(`[${WORKER_NAME}] No blocks returned for range ${startBlock}-${endBlock}`);
-            await sleep(this.pollMs);
+            await sleep(1000);
             continue;
           }
 
@@ -179,20 +176,22 @@ export class BlockIndexer {
           this.lastBlockTimestamp = blockData[blockData.length - 1].timestamp;
 
           updateWorkerRun(WORKER_NAME, blocks.length);
-          const modeLabel = isNearRealtime ? ' [realtime]' : '';
-          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts${modeLabel}`);
+          console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts${blockAge < 60_000 ? ' [realtime]' : ''}`);
         }
 
-        // Only sleep when fully caught up (no new blocks available)
-        if (gap <= 0) {
-          await sleep(this.pollMs);
+        // Sleep 1s only when fully caught up (<4s behind)
+        const blockAge = this.lastBlockTimestamp !== null
+          ? Date.now() - this.lastBlockTimestamp.getTime()
+          : Infinity;
+        if (blockAge < 4000) {
+          await sleep(1000);
         }
       } catch (error) {
         if (!this.running) break; // Clean abort exit
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[${WORKER_NAME}] Error:`, errorMsg);
         updateWorkerError(WORKER_NAME, errorMsg);
-        await sleep(this.pollMs);
+        await sleep(1000);
       }
     }
   }
