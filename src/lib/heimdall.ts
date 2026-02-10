@@ -11,6 +11,8 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   delayMs: 500,  // 500ms between retry rounds
 };
 
+const FETCH_TIMEOUT_MS = 10_000; // 10s timeout per Heimdall request
+
 interface HeimdallMilestoneResponse {
   milestone: {
     milestone_id: string;
@@ -63,7 +65,7 @@ export class HeimdallClient {
       for (let attempt = 0; attempt < this.urls.length; attempt++) {
         try {
           const url = `${this.baseUrl}${path}`;
-          const response = await fetch(url);
+          const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
@@ -112,7 +114,7 @@ export class HeimdallClient {
         try {
           const baseUrl = this.urls[(endpointIndex + retry) % this.urls.length];
           const url = `${baseUrl}/milestones/${seqId}`;
-          const response = await fetch(url);
+          const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }

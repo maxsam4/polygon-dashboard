@@ -57,8 +57,8 @@ describe('HeimdallClient', () => {
 
       const result = await client.getLatestMilestone();
 
-      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/count');
-      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/latest');
+      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/count', expect.objectContaining({ signal: expect.anything() }));
+      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/latest', expect.objectContaining({ signal: expect.anything() }));
       expect(result.sequenceId).toBe(100000);
       expect(result.milestoneId).toBe(50000100n);
       expect(result.startBlock).toBe(50000001n);
@@ -87,7 +87,7 @@ describe('HeimdallClient', () => {
 
       const result = await client.getMilestone(99000);
 
-      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/99000');
+      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/99000', expect.objectContaining({ signal: expect.anything() }));
       expect(result.sequenceId).toBe(99000);
     });
 
@@ -221,7 +221,7 @@ describe('HeimdallClient', () => {
 
       const result = await client.getMilestoneCount();
 
-      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/count');
+      expect(mockFetch).toHaveBeenCalledWith('https://heimdall.test/milestones/count', expect.objectContaining({ signal: expect.anything() }));
       expect(result).toBe(100000);
     });
   });
