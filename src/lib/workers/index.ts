@@ -10,7 +10,7 @@ import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
 import { MilestoneIndexer, getMilestoneIndexer } from '../indexers/milestoneIndexer';
 import { BlockBackfiller, getBlockBackfiller } from '../indexers/blockBackfiller';
 import { MilestoneBackfiller, getMilestoneBackfiller } from '../indexers/milestoneBackfiller';
-import { HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller } from '../indexers/priorityFeeBackfill';
+import { HistoricalPriorityFeeBackfiller, getHistoricalPriorityFeeBackfiller, PriorityFeeRecalculator, getPriorityFeeRecalculator } from '../indexers/priorityFeeBackfill';
 
 export { getAllWorkerStatuses };
 export type { WorkerStatus };
@@ -23,6 +23,7 @@ const globalState = globalThis as typeof globalThis & {
   __blockBackfiller?: BlockBackfiller;
   __milestoneBackfiller?: MilestoneBackfiller;
   __historicalPriorityFeeBackfiller?: HistoricalPriorityFeeBackfiller;
+  __priorityFeeRecalculator?: PriorityFeeRecalculator;
 };
 
 export function areWorkersRunning(): boolean {
@@ -45,6 +46,7 @@ export async function startWorkers(): Promise<void> {
   globalState.__milestoneIndexer = getMilestoneIndexer();
   globalState.__milestoneBackfiller = getMilestoneBackfiller();
   globalState.__historicalPriorityFeeBackfiller = getHistoricalPriorityFeeBackfiller();
+  globalState.__priorityFeeRecalculator = getPriorityFeeRecalculator();
 
   const workers = [
     { name: 'BlockIndexer', start: () => globalState.__blockIndexer!.start() },
@@ -52,6 +54,7 @@ export async function startWorkers(): Promise<void> {
     { name: 'MilestoneIndexer', start: () => globalState.__milestoneIndexer!.start() },
     { name: 'MilestoneBackfiller', start: () => globalState.__milestoneBackfiller!.start() },
     { name: 'HistoricalPriorityFeeBackfiller', start: () => globalState.__historicalPriorityFeeBackfiller!.start() },
+    { name: 'PriorityFeeRecalculator', start: () => globalState.__priorityFeeRecalculator!.start() },
   ];
 
   const results = await Promise.allSettled(workers.map(w => w.start()));
@@ -84,6 +87,7 @@ export function stopWorkers(): void {
   globalState.__blockBackfiller?.stop();
   globalState.__milestoneBackfiller?.stop();
   globalState.__historicalPriorityFeeBackfiller?.stop();
+  globalState.__priorityFeeRecalculator?.stop();
 
   globalState.__workersStarted = false;
   console.log('[Workers] All indexers stopped');
