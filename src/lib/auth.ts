@@ -11,23 +11,15 @@ interface SessionPayload extends JWTPayload {
   exp: number;
 }
 
-// Auto-generate session secret on server startup using Web Crypto API (Edge-compatible)
-// Sessions will be invalidated on server restart, which is acceptable for admin
-let generatedSecret: string | null = null;
-
-function getGeneratedSecret(): string {
-  if (!generatedSecret) {
-    // Use Web Crypto API for Edge Runtime compatibility
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    generatedSecret = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
-    console.log('[Auth] Generated new session secret (sessions will expire on restart)');
-  }
-  return generatedSecret;
-}
-
-function getSecretKey(): Uint8Array {
-  return new TextEncoder().encode(getGeneratedSecret());
+// Derive session signing key deterministically from admin password via SHA-256.
+// This ensures Edge Runtime (middleware) and Node.js Runtime (API routes)
+// produce the same key since both read the same env var.
+// SHA-256 is one-way: the admin password cannot be recovered from the key.
+async function getSecretKey(): Promise<Uint8Array> {
+  const adminPassword = process.env.ADMIN_PASSWORD || process.env.ADD_RATE_PASSWORD || '';
+  const data = new TextEncoder().encode(`polygon-dashboard-session:${adminPassword}`);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return new Uint8Array(hash);
 }
 
 /**
@@ -53,7 +45,7 @@ export async function createSession(): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
     .setExpirationTime(expiresAt)
-    .sign(getSecretKey());
+    .sign(await getSecretKey());
 
   return token;
 }
@@ -63,7 +55,7 @@ export async function createSession(): Promise<string> {
  */
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecretKey());
+    const { payload } = await jwtVerify(token, await getSecretKey());
     if (payload.admin === true) {
       return payload as SessionPayload;
     }
