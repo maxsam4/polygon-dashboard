@@ -8,6 +8,7 @@ import {
   getLatestBlock,
   getLatestMilestone,
   getPriorityFeeBackfillerProgress,
+  getPriorityFeeRecalculatorProgress,
 } from '@/lib/queries/aggregates';
 
 export const dynamic = 'force-dynamic';
@@ -62,11 +63,12 @@ export async function GET() {
     const { blockAggregates, milestoneAggregates, inflation } = aggregates;
 
     // Fetch real-time data (fast queries, not cached)
-    const [latestBlock, latestMilestone, priorityFeeBackfillProgress] =
+    const [latestBlock, latestMilestone, priorityFeeBackfillProgress, priorityFeeRecalcProgress] =
       await Promise.all([
         getLatestBlock(),
         getLatestMilestone(),
         getPriorityFeeBackfillerProgress(),
+        getPriorityFeeRecalculatorProgress(),
       ]);
 
     // Get individual worker statuses
@@ -129,6 +131,14 @@ export async function GET() {
         processedBlocks: priorityFeeBackfillProgress.processedBlocks,
         totalBlocks: priorityFeeBackfillProgress.totalBlocks,
         isComplete: priorityFeeBackfillProgress.isComplete,
+      } : null,
+      priorityFeeRecalc: priorityFeeRecalcProgress ? {
+        cursor: priorityFeeRecalcProgress.cursor,
+        startBlock: priorityFeeRecalcProgress.startBlock,
+        targetBlock: priorityFeeRecalcProgress.targetBlock,
+        processedBlocks: priorityFeeRecalcProgress.processedBlocks,
+        totalBlocks: priorityFeeRecalcProgress.totalBlocks,
+        isComplete: priorityFeeRecalcProgress.isComplete,
       } : null,
     };
 

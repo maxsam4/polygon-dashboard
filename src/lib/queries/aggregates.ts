@@ -155,3 +155,33 @@ export async function getPriorityFeeBackfillerProgress() {
     isComplete: cursor <= minBlock,
   };
 }
+
+const RECALC_START_BLOCK = 56215884n;
+
+/**
+ * Get priority fee recalculator progress.
+ * The recalculator fixes blocks with wrong non-NULL priority fees,
+ * working backward from RECALC_START_BLOCK to BACKFILL_TO_BLOCK.
+ */
+export async function getPriorityFeeRecalculatorProgress() {
+  const state = await getIndexerState('priority_fee_recalculator');
+
+  if (!state) {
+    return null;
+  }
+
+  const cursor = state.blockNumber;
+  const targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '500000');
+
+  const totalBlocks = RECALC_START_BLOCK - targetBlock;
+  const processedBlocks = RECALC_START_BLOCK - cursor;
+
+  return {
+    cursor: cursor.toString(),
+    startBlock: RECALC_START_BLOCK.toString(),
+    targetBlock: targetBlock.toString(),
+    processedBlocks: processedBlocks.toString(),
+    totalBlocks: totalBlocks.toString(),
+    isComplete: cursor <= targetBlock,
+  };
+}
