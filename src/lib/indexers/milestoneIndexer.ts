@@ -135,30 +135,39 @@ export class MilestoneIndexer {
     milestones: Milestone[],
     requestedIds: number[]
   ): Promise<number> {
-    // Build set of received sequence_ids
-    const receivedIds = new Set(milestones.map(m => m.sequenceId));
+    // Sort received milestones by sequence_id and filter to those after cursor
+    const sortedReceived = milestones
+      .filter(m => m.sequenceId > this.cursor!)
+      .sort((a, b) => a.sequenceId - b.sequenceId);
 
-    // Check for gaps in the requested range - find first missing ID
-    for (const id of requestedIds) {
-      if (!receivedIds.has(id)) {
-        console.warn(`[${WORKER_NAME}] Gap detected: sequence_id ${id} not returned by API, stopping at cursor ${this.cursor}`);
-        // Stop processing - don't advance cursor past the gap
-        return 0;
-      }
+    // Build consecutive sequence starting from cursor+1
+    // If we requested 100-110 and 105 failed to fetch, we process 100-104
+    const processable: Milestone[] = [];
+    let expected = this.cursor! + 1;
+    for (const m of sortedReceived) {
+      if (m.sequenceId !== expected) break;
+      processable.push(m);
+      expected++;
     }
 
-    // Sort by sequence_id to process in order
-    milestones.sort((a, b) => a.sequenceId - b.sequenceId);
+    if (processable.length === 0 && requestedIds.length > 0) {
+      console.warn(`[${WORKER_NAME}] No consecutive milestones from cursor ${this.cursor} (requested ${requestedIds[0]}-${requestedIds[requestedIds.length - 1]}, received ${milestones.length})`);
+      return 0;
+    }
+
+    if (processable.length < requestedIds.length) {
+      const firstMissing = this.cursor! + processable.length + 1;
+      console.warn(`[${WORKER_NAME}] Gap at sequence_id ${firstMissing}, processing ${processable.length}/${requestedIds.length} milestones up to gap`);
+    }
 
     let processed = 0;
-    for (const milestone of milestones) {
+    for (const milestone of processable) {
       // Check predecessor exists (cache first, then DB)
       const predecessorId = milestone.sequenceId - 1;
       const predecessorExists = await this.checkPredecessorExists(predecessorId);
 
       if (!predecessorExists) {
         console.warn(`[${WORKER_NAME}] Predecessor ${predecessorId} missing for sequence_id ${milestone.sequenceId}, stopping`);
-        // Stop processing - don't advance cursor past the gap
         break;
       }
 
