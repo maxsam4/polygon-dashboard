@@ -345,6 +345,7 @@ export default function AlertsPage() {
                         <th className="px-4 py-3 text-left font-medium">Threshold</th>
                         <th className="px-4 py-3 text-left font-medium">Severity</th>
                         <th className="px-4 py-3 text-left font-medium">Blocks</th>
+                        <th className="px-4 py-3 text-left font-medium"># Blocks</th>
                         <th className="px-4 py-3 text-left font-medium">Status</th>
                       </tr>
                     </thead>
@@ -387,7 +388,7 @@ export default function AlertsPage() {
                             {anomaly.startBlockNumber ? (
                               anomaly.startBlockNumber === anomaly.endBlockNumber ? (
                                 <Link
-                                  href={`/blocks?block=${anomaly.startBlockNumber}`}
+                                  href={`/blocks/${anomaly.startBlockNumber}`}
                                   className="text-accent hover:underline"
                                 >
                                   #{anomaly.startBlockNumber}
@@ -395,14 +396,14 @@ export default function AlertsPage() {
                               ) : (
                                 <span>
                                   <Link
-                                    href={`/blocks?block=${anomaly.startBlockNumber}`}
+                                    href={`/blocks/${anomaly.startBlockNumber}`}
                                     className="text-accent hover:underline"
                                   >
                                     #{anomaly.startBlockNumber}
                                   </Link>
                                   <span className="text-muted"> - </span>
                                   <Link
-                                    href={`/blocks?block=${anomaly.endBlockNumber}`}
+                                    href={`/blocks/${anomaly.endBlockNumber}`}
                                     className="text-accent hover:underline"
                                   >
                                     #{anomaly.endBlockNumber}
@@ -412,6 +413,13 @@ export default function AlertsPage() {
                             ) : (
                               <span className="text-muted">-</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-muted">
+                            {anomaly.startBlockNumber ? (
+                              anomaly.startBlockNumber === anomaly.endBlockNumber
+                                ? '1'
+                                : String(BigInt(anomaly.endBlockNumber!) - BigInt(anomaly.startBlockNumber) + 1n)
+                            ) : '-'}
                           </td>
                           <td className="px-4 py-3">
                             {anomaly.acknowledged ? (
