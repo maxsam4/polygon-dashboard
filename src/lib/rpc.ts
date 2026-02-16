@@ -280,8 +280,16 @@ export class RpcClient {
           method: 'eth_getBlockReceipts',
           params: [numberToHex(blockNumber)],
         });
-        if (!result || !Array.isArray(result) || result.length === 0) {
+        if (!result || !Array.isArray(result)) {
           throw new ReceiptsNotAvailableError(blockNumber);
+        }
+        if (result.length === 0) {
+          // Verify the block actually has 0 transactions before accepting empty receipts
+          const block = await client.getBlock({ blockNumber });
+          if (block.transactions.length > 0) {
+            throw new ReceiptsNotAvailableError(blockNumber);
+          }
+          return [];
         }
         return (result as RawReceipt[]).map(parseReceipt);
       }, signal);
