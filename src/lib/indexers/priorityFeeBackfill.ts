@@ -207,6 +207,12 @@ export class HistoricalPriorityFeeBackfiller {
     const rangeStart = this.cursor - BigInt(this.batchSize * 10);
     const rangeEnd = this.cursor;
 
+    // Estimate timestamps for chunk pruning (Polygon genesis: 2020-06-01)
+    // Use 1s/block for low bound and 3s/block for high bound to cover early varied block times
+    const POLYGON_GENESIS_UNIX = 1590969600;
+    const tsLow = new Date((POLYGON_GENESIS_UNIX + Number(rangeStart) * 1) * 1000);
+    const tsHigh = new Date((POLYGON_GENESIS_UNIX + Number(rangeEnd) * 3) * 1000);
+
     const rows = await query<{
       block_number: string;
       timestamp: Date;
@@ -214,12 +220,13 @@ export class HistoricalPriorityFeeBackfiller {
     }>(
       `SELECT block_number, timestamp, base_fee_gwei
        FROM blocks
-       WHERE block_number >= $1 AND block_number <= $2
+       WHERE timestamp >= $4 AND timestamp <= $5
+         AND block_number >= $1 AND block_number <= $2
          AND (avg_priority_fee_gwei IS NULL OR total_priority_fee_gwei IS NULL)
          AND tx_count > 0
        ORDER BY block_number DESC
        LIMIT $3`,
-      [rangeStart.toString(), rangeEnd.toString(), this.batchSize]
+      [rangeStart.toString(), rangeEnd.toString(), this.batchSize, tsLow, tsHigh]
     );
 
     return rows.map(row => ({
@@ -375,9 +382,9 @@ export class PriorityFeeRecalculator {
         // Process the batch
         await this.processBatch(blocks);
 
-        // Update cursor to lowest processed block
+        // Update cursor past lowest processed block to avoid re-processing
         const lowestBlock = blocks.reduce((min, b) => b.blockNumber < min ? b.blockNumber : min, blocks[0].blockNumber);
-        this.cursor = lowestBlock;
+        this.cursor = lowestBlock - 1n;
         await updateIndexerState(RECALC_SERVICE_NAME, this.cursor, '0x0');
 
         await sleep(this.delayMs);
@@ -394,6 +401,12 @@ export class PriorityFeeRecalculator {
     const rangeStart = this.cursor - BigInt(this.batchSize * 10);
     const rangeEnd = this.cursor;
 
+    // Estimate timestamps for chunk pruning (Polygon genesis: 2020-06-01)
+    // Use 1s/block for low bound and 3s/block for high bound to cover early varied block times
+    const POLYGON_GENESIS_UNIX = 1590969600;
+    const tsLow = new Date((POLYGON_GENESIS_UNIX + Number(rangeStart) * 1) * 1000);
+    const tsHigh = new Date((POLYGON_GENESIS_UNIX + Number(rangeEnd) * 3) * 1000);
+
     const rows = await query<{
       block_number: string;
       timestamp: Date;
@@ -401,11 +414,12 @@ export class PriorityFeeRecalculator {
     }>(
       `SELECT block_number, timestamp, base_fee_gwei
        FROM blocks
-       WHERE block_number >= $1 AND block_number <= $2
+       WHERE timestamp >= $4 AND timestamp <= $5
+         AND block_number >= $1 AND block_number <= $2
          AND tx_count > 0
        ORDER BY block_number DESC
        LIMIT $3`,
-      [rangeStart.toString(), rangeEnd.toString(), this.batchSize]
+      [rangeStart.toString(), rangeEnd.toString(), this.batchSize, tsLow, tsHigh]
     );
 
     return rows.map(row => ({
