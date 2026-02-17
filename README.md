@@ -48,7 +48,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 │  - Analytics    │  - /chart-data  │   - BlockBackfiller (reverse fill)       │
 │  - Blocks       │  - /milestones  │   - MilestoneIndexer (direct finality)   │
 │  - Milestones   │  - /export      │   - MilestoneBackfiller (reverse fill)   │
-│  - Export       │  - /workers     │   - HistoricalPriorityFeeBackfiller      │
+│  - Export       │  - /workers     │                                          │
 │                 │  - /stream (SSE)│                                          │
 └────────┬────────┴────────┬────────┴───────────┬──────────────────────────────┘
          │                 │                    │
@@ -82,7 +82,6 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - `BlockBackfiller` - Backwards indexer from lowest block to target, inline receipt enrichment
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes finality directly
 - `MilestoneBackfiller` - Backwards indexer from lowest sequence_id to target
-- `HistoricalPriorityFeeBackfiller` - Fills priority fee data for legacy blocks inserted before inline enrichment
 
 ### Database Tables
 

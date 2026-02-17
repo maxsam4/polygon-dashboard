@@ -1,6 +1,5 @@
 import { queryOne } from '../db';
 import { getTableStats } from './stats';
-import { getIndexerState } from '../indexers/indexerState';
 
 /**
  * Get block aggregate statistics using cached table_stats.
@@ -124,64 +123,3 @@ export async function getLatestMilestone() {
   `);
 }
 
-/**
- * Get historical priority fee backfiller progress.
- * The backfiller works backward from max block to min block.
- */
-export async function getPriorityFeeBackfillerProgress() {
-  const state = await getIndexerState('historical_priority_fee_backfiller');
-  const blockStats = await getTableStats('blocks');
-
-  if (!state || !blockStats || blockStats.minValue === null || blockStats.maxValue === null) {
-    return null;
-  }
-
-  const cursor = state.blockNumber;
-  const minBlock = blockStats.minValue;
-  const maxBlock = blockStats.maxValue;
-
-  // Backfiller works backward: starts at maxBlock, ends at minBlock
-  // cursor represents the current position (next block to process)
-  // When cursor <= minBlock, backfill is complete
-  const totalBlocks = maxBlock - minBlock;
-  const processedBlocks = maxBlock - cursor;
-
-  return {
-    cursor: cursor.toString(),
-    minBlock: minBlock.toString(),
-    maxBlock: maxBlock.toString(),
-    processedBlocks: processedBlocks.toString(),
-    totalBlocks: totalBlocks.toString(),
-    isComplete: cursor <= minBlock,
-  };
-}
-
-const RECALC_START_BLOCK = 56215884n;
-
-/**
- * Get priority fee recalculator progress.
- * The recalculator fixes blocks with wrong non-NULL priority fees,
- * working backward from RECALC_START_BLOCK to BACKFILL_TO_BLOCK.
- */
-export async function getPriorityFeeRecalculatorProgress() {
-  const state = await getIndexerState('priority_fee_recalculator');
-
-  if (!state) {
-    return null;
-  }
-
-  const cursor = state.blockNumber;
-  const targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '500000');
-
-  const totalBlocks = RECALC_START_BLOCK - targetBlock;
-  const processedBlocks = RECALC_START_BLOCK - cursor;
-
-  return {
-    cursor: cursor.toString(),
-    startBlock: RECALC_START_BLOCK.toString(),
-    targetBlock: targetBlock.toString(),
-    processedBlocks: processedBlocks.toString(),
-    totalBlocks: totalBlocks.toString(),
-    isComplete: cursor <= targetBlock,
-  };
-}

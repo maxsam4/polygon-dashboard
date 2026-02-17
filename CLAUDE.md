@@ -90,11 +90,6 @@ Avoid special characters (`%`, `$`, `!`) in passwords - they can break Docker Co
 - `BlockBackfiller` - Backwards indexer to target block (inline receipt enrichment)
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes directly to `block_finality`
 - `MilestoneBackfiller` - Backwards indexer to target sequence_id, populates finality
-- `HistoricalPriorityFeeBackfiller` - Fills priority fee data for legacy blocks inserted before inline enrichment
-- **Admin scan endpoint** (`/api/admin/backfill-priority-fees/scan`) - Bulk gap-filling for blocks the cursor has passed:
-  - `GET ?days=7` — count missing blocks (timestamp-filtered, fast on 82M+ rows)
-  - `POST { days?, limit?, batchSize? }` — find and fill missing blocks, returns `{ processed, updated, skipped, remaining, elapsed }`
-
 ### Live-Stream Service
 
 Standalone service in `/services/live-stream`:

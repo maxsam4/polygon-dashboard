@@ -69,22 +69,6 @@ interface StatusData {
     blockTarget: number;
     milestoneTarget: number;
   };
-  priorityFeeBackfill?: {
-    cursor: string;
-    minBlock: string;
-    maxBlock: string;
-    processedBlocks: string;
-    totalBlocks: string;
-    isComplete: boolean;
-  } | null;
-  priorityFeeRecalc?: {
-    cursor: string;
-    startBlock: string;
-    targetBlock: string;
-    processedBlocks: string;
-    totalBlocks: string;
-    isComplete: boolean;
-  } | null;
 }
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -146,8 +130,6 @@ export default function AdminPage() {
   const [speeds, setSpeeds] = useState<SpeedStats>({
     backfillerSpeed: null,
     milestoneBackfillerSpeed: null,
-    priorityFeeBackfillerSpeed: null,
-    priorityFeeRecalcSpeed: null,
   });
   const historyRef = useRef<HistoricalData[]>([]);
 
@@ -177,8 +159,6 @@ export default function AdminPage() {
         totalBlocks: data.blocks.total,
         minMilestoneSeq: data.milestones.minSeq,
         totalMilestones: data.milestones.total,
-        priorityFeeCursor: data.priorityFeeBackfill?.cursor ?? null,
-        priorityFeeRecalcCursor: data.priorityFeeRecalc?.cursor ?? null,
       };
 
       const newHistory = [...historyRef.current, historyEntry].slice(-MAX_HISTORY);
@@ -481,80 +461,6 @@ export default function AdminPage() {
                   );
                 })()}
 
-                {/* Priority Fee Backfiller (NULL gaps) */}
-                {status.priorityFeeBackfill && (
-                  <div className="py-2 border-b border-accent/10">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted">Priority Fee Backfill</span>
-                      <span className={`font-mono ${status.priorityFeeBackfill.isComplete ? 'text-success' : 'text-warning'}`}>
-                        {status.priorityFeeBackfill.isComplete
-                          ? 'Complete'
-                          : formatSpeed(
-                              speeds.priorityFeeBackfillerSpeed,
-                              'blk',
-                              false,
-                              historyRef.current.length >= 2
-                            )
-                        }
-                      </span>
-                    </div>
-                    {!status.priorityFeeBackfill.isComplete && (
-                      <>
-                        <div className="text-muted text-xs mt-1">
-                          {formatNumber(status.priorityFeeBackfill.processedBlocks)} / {formatNumber(status.priorityFeeBackfill.totalBlocks)} blocks
-                          ({((parseInt(status.priorityFeeBackfill.processedBlocks) / parseInt(status.priorityFeeBackfill.totalBlocks)) * 100).toFixed(2)}%)
-                        </div>
-                        {speeds.priorityFeeBackfillerSpeed && (
-                          <div className="text-muted text-xs mt-1">
-                            ETA: {formatEta(
-                              parseInt(status.priorityFeeBackfill.cursor) - parseInt(status.priorityFeeBackfill.minBlock),
-                              speeds.priorityFeeBackfillerSpeed
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Priority Fee Recalculator (wrong non-NULL values) */}
-                {status.priorityFeeRecalc && (
-                  <div className="py-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted">Priority Fee Recalc</span>
-                      <span className={`font-mono ${status.priorityFeeRecalc.isComplete ? 'text-success' : 'text-accent-secondary'}`}>
-                        {status.priorityFeeRecalc.isComplete
-                          ? 'Complete'
-                          : formatSpeed(
-                              speeds.priorityFeeRecalcSpeed,
-                              'blk',
-                              false,
-                              historyRef.current.length >= 2
-                            )
-                        }
-                      </span>
-                    </div>
-                    {!status.priorityFeeRecalc.isComplete && (
-                      <>
-                        <div className="text-muted text-xs mt-1">
-                          {formatNumber(status.priorityFeeRecalc.processedBlocks)} / {formatNumber(status.priorityFeeRecalc.totalBlocks)} blocks
-                          ({((parseInt(status.priorityFeeRecalc.processedBlocks) / parseInt(status.priorityFeeRecalc.totalBlocks)) * 100).toFixed(2)}%)
-                        </div>
-                        <div className="text-muted text-xs mt-1">
-                          Cursor: block {formatNumber(status.priorityFeeRecalc.cursor)} → {formatNumber(status.priorityFeeRecalc.targetBlock)}
-                        </div>
-                        {speeds.priorityFeeRecalcSpeed && (
-                          <div className="text-muted text-xs mt-1">
-                            ETA: {formatEta(
-                              parseInt(status.priorityFeeRecalc.cursor) - parseInt(status.priorityFeeRecalc.targetBlock),
-                              speeds.priorityFeeRecalcSpeed
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
             </Card>
 

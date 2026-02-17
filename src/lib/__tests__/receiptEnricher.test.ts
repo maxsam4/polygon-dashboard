@@ -7,19 +7,18 @@ jest.mock('../liveStreamClient', () => ({
   pushBlockUpdates: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../indexers/priorityFeeBackfill', () => ({
-  calculatePriorityFeeMetrics: jest.fn(),
-}));
-
 import { enrichBlocksWithReceipts, applyReceiptsToBlocks } from '../indexers/receiptEnricher';
 import { getRpcClient, TransactionReceipt } from '../rpc';
 import { pushBlockUpdates } from '../liveStreamClient';
-import { calculatePriorityFeeMetrics } from '../indexers/priorityFeeBackfill';
 import { Block } from '../types';
 
 const mockGetRpcClient = getRpcClient as jest.MockedFunction<typeof getRpcClient>;
 const mockPushBlockUpdates = pushBlockUpdates as jest.MockedFunction<typeof pushBlockUpdates>;
-const mockCalculatePriorityFeeMetrics = calculatePriorityFeeMetrics as jest.MockedFunction<typeof calculatePriorityFeeMetrics>;
+
+// With baseFeeGwei=25 and effectiveGasPrice=30 Gwei, priority fee = 5 Gwei
+// totalPriorityFee = 5 Gwei * 21000 gas = 105000 Gwei
+const EXPECTED_PRIORITY_FEE = 5;
+const EXPECTED_TOTAL = 105000;
 
 function makeBlock(overrides: Partial<Block> = {}): Block {
   return {
@@ -73,23 +72,16 @@ describe('enrichBlocksWithReceipts', () => {
     const mockReceipts = [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n }];
 
     mockRpc.getBlocksReceiptsReliably.mockResolvedValue(new Map([[100n, mockReceipts]]));
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
 
     const result = await enrichBlocksWithReceipts(blocks, { signal });
 
     expect(result.enrichedCount).toBe(1);
     // Verify in-place mutation
-    expect(blocks[0].avgPriorityFeeGwei).toBe(1.5);
-    expect(blocks[0].totalPriorityFeeGwei).toBe(50);
-    expect(blocks[0].minPriorityFeeGwei).toBe(0.5);
-    expect(blocks[0].maxPriorityFeeGwei).toBe(3);
-    expect(blocks[0].medianPriorityFeeGwei).toBe(1);
+    expect(blocks[0].avgPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].totalPriorityFeeGwei).toBe(EXPECTED_TOTAL);
+    expect(blocks[0].minPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].maxPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].medianPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
   });
 
   it('handles mixed blocks with and without transactions', async () => {
@@ -105,13 +97,6 @@ describe('enrichBlocksWithReceipts', () => {
         [102n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n }]],
       ])
     );
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
 
     const result = await enrichBlocksWithReceipts(blocks, { signal });
 
@@ -125,13 +110,6 @@ describe('enrichBlocksWithReceipts', () => {
     const mockReceipts = [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n }];
 
     mockRpc.getBlocksReceiptsReliably.mockResolvedValue(new Map([[100n, mockReceipts]]));
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
 
     await enrichBlocksWithReceipts(blocks, { pushToLiveStream: true, signal });
 
@@ -139,11 +117,11 @@ describe('enrichBlocksWithReceipts', () => {
       {
         blockNumber: 100,
         txCount: 5,
-        minPriorityFeeGwei: 0.5,
-        maxPriorityFeeGwei: 3,
-        avgPriorityFeeGwei: 1.5,
-        medianPriorityFeeGwei: 1,
-        totalPriorityFeeGwei: 50,
+        minPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        maxPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        avgPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        medianPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        totalPriorityFeeGwei: EXPECTED_TOTAL,
       },
     ]);
   });
@@ -153,13 +131,6 @@ describe('enrichBlocksWithReceipts', () => {
     const mockReceipts = [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n }];
 
     mockRpc.getBlocksReceiptsReliably.mockResolvedValue(new Map([[100n, mockReceipts]]));
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
 
     await enrichBlocksWithReceipts(blocks, { signal });
 
@@ -200,22 +171,14 @@ describe('applyReceiptsToBlocks', () => {
       [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
     ]);
 
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
-
     const result = applyReceiptsToBlocks(blocks, receiptsMap);
 
     expect(result.enrichedCount).toBe(1);
-    expect(blocks[0].avgPriorityFeeGwei).toBe(1.5);
-    expect(blocks[0].totalPriorityFeeGwei).toBe(50);
-    expect(blocks[0].minPriorityFeeGwei).toBe(0.5);
-    expect(blocks[0].maxPriorityFeeGwei).toBe(3);
-    expect(blocks[0].medianPriorityFeeGwei).toBe(1);
+    expect(blocks[0].avgPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].totalPriorityFeeGwei).toBe(EXPECTED_TOTAL);
+    expect(blocks[0].minPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].maxPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
+    expect(blocks[0].medianPriorityFeeGwei).toBe(EXPECTED_PRIORITY_FEE);
   });
 
   it('skips blocks with 0 transactions', () => {
@@ -230,19 +193,9 @@ describe('applyReceiptsToBlocks', () => {
       [102n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
     ]);
 
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
-
     const result = applyReceiptsToBlocks(blocks, receiptsMap);
 
     expect(result.enrichedCount).toBe(2);
-    // Only called for blocks with txCount > 0 and non-empty receipts
-    expect(mockCalculatePriorityFeeMetrics).toHaveBeenCalledTimes(2);
   });
 
   it('returns 0 enriched for all-empty-tx blocks', () => {
@@ -252,7 +205,6 @@ describe('applyReceiptsToBlocks', () => {
     const result = applyReceiptsToBlocks(blocks, receiptsMap);
 
     expect(result.enrichedCount).toBe(0);
-    expect(mockCalculatePriorityFeeMetrics).not.toHaveBeenCalled();
   });
 
   it('pushes to live stream when option is set', () => {
@@ -261,25 +213,17 @@ describe('applyReceiptsToBlocks', () => {
       [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
     ]);
 
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
-
     applyReceiptsToBlocks(blocks, receiptsMap, { pushToLiveStream: true });
 
     expect(mockPushBlockUpdates).toHaveBeenCalledWith([
       {
         blockNumber: 100,
         txCount: 5,
-        minPriorityFeeGwei: 0.5,
-        maxPriorityFeeGwei: 3,
-        avgPriorityFeeGwei: 1.5,
-        medianPriorityFeeGwei: 1,
-        totalPriorityFeeGwei: 50,
+        minPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        maxPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        avgPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        medianPriorityFeeGwei: EXPECTED_PRIORITY_FEE,
+        totalPriorityFeeGwei: EXPECTED_TOTAL,
       },
     ]);
   });
@@ -289,14 +233,6 @@ describe('applyReceiptsToBlocks', () => {
     const receiptsMap = new Map<bigint, TransactionReceipt[]>([
       [100n, [{ effectiveGasPrice: 30000000000n, gasUsed: 21000n } as TransactionReceipt]],
     ]);
-
-    mockCalculatePriorityFeeMetrics.mockReturnValue({
-      minPriorityFeeGwei: 0.5,
-      maxPriorityFeeGwei: 3,
-      avgPriorityFeeGwei: 1.5,
-      medianPriorityFeeGwei: 1,
-      totalPriorityFeeGwei: 50,
-    });
 
     applyReceiptsToBlocks(blocks, receiptsMap);
 
@@ -310,6 +246,5 @@ describe('applyReceiptsToBlocks', () => {
     const result = applyReceiptsToBlocks(blocks, receiptsMap);
 
     expect(result.enrichedCount).toBe(0);
-    expect(mockCalculatePriorityFeeMetrics).not.toHaveBeenCalled();
   });
 });

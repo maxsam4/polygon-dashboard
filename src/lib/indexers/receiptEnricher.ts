@@ -1,7 +1,83 @@
 import { getRpcClient, TransactionReceipt } from '../rpc';
 import { Block } from '../types';
-import { calculatePriorityFeeMetrics } from './priorityFeeBackfill';
 import { pushBlockUpdates } from '../liveStreamClient';
+import { GWEI } from '../constants';
+
+/**
+ * Calculate priority fee metrics from transaction receipts.
+ * Uses effectiveGasPrice from receipts for accurate priority fee calculation.
+ */
+export function calculatePriorityFeeMetrics(
+  receipts: TransactionReceipt[],
+  baseFeeGwei: number
+): {
+  minPriorityFeeGwei: number;
+  maxPriorityFeeGwei: number;
+  avgPriorityFeeGwei: number | null;
+  medianPriorityFeeGwei: number;
+  totalPriorityFeeGwei: number | null;
+} {
+  if (receipts.length === 0) {
+    return {
+      minPriorityFeeGwei: 0,
+      maxPriorityFeeGwei: 0,
+      avgPriorityFeeGwei: null,
+      medianPriorityFeeGwei: 0,
+      totalPriorityFeeGwei: null,
+    };
+  }
+
+  const baseFeeWei = BigInt(Math.floor(baseFeeGwei * Number(GWEI)));
+  let totalPriorityFee = 0n;
+  let totalGasUsed = 0n;
+  let minPriorityFee = BigInt(Number.MAX_SAFE_INTEGER);
+  let maxPriorityFee = 0n;
+  const priorityFees: bigint[] = [];
+
+  for (const receipt of receipts) {
+    const effectiveGasPrice = receipt.effectiveGasPrice;
+    const gasUsed = receipt.gasUsed;
+
+    // Priority fee = effectiveGasPrice - baseFee
+    const priorityFeePerGas = effectiveGasPrice > baseFeeWei
+      ? effectiveGasPrice - baseFeeWei
+      : 0n;
+
+    priorityFees.push(priorityFeePerGas);
+    if (priorityFeePerGas < minPriorityFee) minPriorityFee = priorityFeePerGas;
+    if (priorityFeePerGas > maxPriorityFee) maxPriorityFee = priorityFeePerGas;
+
+    totalPriorityFee += priorityFeePerGas * gasUsed;
+    totalGasUsed += gasUsed;
+  }
+
+  // Handle edge case of no receipts
+  if (priorityFees.length === 0) {
+    minPriorityFee = 0n;
+  }
+
+  // Calculate median
+  priorityFees.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const mid = Math.floor(priorityFees.length / 2);
+  const medianPriorityFee = priorityFees.length % 2 === 0
+    ? (priorityFees[mid - 1] + priorityFees[mid]) / 2n
+    : priorityFees[mid];
+
+  const totalPriorityFeeGwei = Number(totalPriorityFee) / Number(GWEI);
+
+  // Average priority fee per gas unit
+  const avgPriorityFeeGwei = totalGasUsed > 0n
+    ? Number(totalPriorityFee / totalGasUsed) / Number(GWEI)
+    : 0;
+
+  return {
+    minPriorityFeeGwei: Number(minPriorityFee) / Number(GWEI),
+    maxPriorityFeeGwei: Number(maxPriorityFee) / Number(GWEI),
+    avgPriorityFeeGwei,
+    medianPriorityFeeGwei: Number(medianPriorityFee) / Number(GWEI),
+    totalPriorityFeeGwei,
+  };
+}
 
 interface EnrichResult {
   enrichedCount: number;
