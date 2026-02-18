@@ -4,12 +4,11 @@ jest.mock('jose', () => ({
   SignJWT: jest.fn().mockImplementation(() => ({
     setProtectedHeader: jest.fn().mockReturnThis(),
     setIssuedAt: jest.fn().mockReturnThis(),
-    setExpirationTime: jest.fn().mockReturnThis(),
     sign: jest.fn().mockResolvedValue('mock.jwt.token'),
   })),
   jwtVerify: jest.fn().mockImplementation(async (token: string) => {
     if (token === 'mock.jwt.token' || token === 'valid-token') {
-      return { payload: { admin: true, iat: 1234567890, exp: 1234657890 } };
+      return { payload: { admin: true, iat: 1234567890 } };
     }
     throw new Error('Invalid token');
   }),
@@ -78,7 +77,6 @@ describe('createSession and verifySession', () => {
     expect(payload).not.toBeNull();
     expect(payload?.admin).toBe(true);
     expect(typeof payload?.iat).toBe('number');
-    expect(typeof payload?.exp).toBe('number');
   });
 
   it('verifySession returns null for invalid token', async () => {

@@ -107,8 +107,8 @@ Standalone service in `/services/live-stream`:
 Password-protected admin panel at `/admin` with JWT session authentication:
 
 - **Login**: `/admin/login` - password form, creates session cookie
-- **Session**: JWT token stored in HttpOnly cookie, 24-hour expiry
-- **Secret**: Auto-generated on server start (sessions invalidate on restart)
+- **Session**: JWT token stored in HttpOnly cookie, no expiry (persists until logout or password change)
+- **Secret**: Derived from admin password (sessions invalidate when password changes)
 - **Password**: Set `ADMIN_PASSWORD` env var (falls back to `ADD_RATE_PASSWORD`)
 - **Middleware**: `src/middleware.ts` protects `/admin/*` and `/alerts` routes
 - **Nav**: Admin and Alerts links only visible when authenticated

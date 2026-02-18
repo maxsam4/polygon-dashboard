@@ -3,12 +3,10 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 
 const SESSION_COOKIE_NAME = 'admin_session';
-const SESSION_DURATION_HOURS = 24;
 
 interface SessionPayload extends JWTPayload {
   admin: boolean;
   iat: number;
-  exp: number;
 }
 
 // Derive session signing key deterministically from admin password via SHA-256.
@@ -39,12 +37,10 @@ export function verifyPassword(password: string): boolean {
  */
 export async function createSession(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + SESSION_DURATION_HOURS * 60 * 60;
 
   const token = await new SignJWT({ admin: true })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
-    .setExpirationTime(expiresAt)
     .sign(await getSecretKey());
 
   return token;
@@ -94,8 +90,7 @@ export async function getSessionFromRequest(request: NextRequest): Promise<Sessi
  * Returns the Set-Cookie header value.
  */
 export function getSessionCookieHeader(token: string): string {
-  const maxAge = SESSION_DURATION_HOURS * 60 * 60;
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict`;
 }
 
 /**
