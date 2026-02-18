@@ -95,18 +95,18 @@ function checkThreshold(
   }
 ): { severity: AnomalySeverity; threshold: number; direction: 'high' | 'low' } | null {
   // Check critical thresholds first (they take precedence)
-  if (thresholds.criticalHigh !== null && value > thresholds.criticalHigh) {
+  if (thresholds.criticalHigh !== null && value >= thresholds.criticalHigh) {
     return { severity: 'critical', threshold: thresholds.criticalHigh, direction: 'high' };
   }
-  if (thresholds.criticalLow !== null && value < thresholds.criticalLow) {
+  if (thresholds.criticalLow !== null && value <= thresholds.criticalLow) {
     return { severity: 'critical', threshold: thresholds.criticalLow, direction: 'low' };
   }
 
   // Then check warning thresholds
-  if (thresholds.warningHigh !== null && value > thresholds.warningHigh) {
+  if (thresholds.warningHigh !== null && value >= thresholds.warningHigh) {
     return { severity: 'warning', threshold: thresholds.warningHigh, direction: 'high' };
   }
-  if (thresholds.warningLow !== null && value < thresholds.warningLow) {
+  if (thresholds.warningLow !== null && value <= thresholds.warningLow) {
     return { severity: 'warning', threshold: thresholds.warningLow, direction: 'low' };
   }
 
