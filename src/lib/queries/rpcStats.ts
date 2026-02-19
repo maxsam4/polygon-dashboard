@@ -82,7 +82,7 @@ export async function getEndpointStats(from: Date, to: Date): Promise<EndpointSt
     FROM rpc_call_stats
     WHERE timestamp >= $1 AND timestamp <= $2
     GROUP BY endpoint
-    ORDER BY total_calls DESC`,
+    ORDER BY COUNT(*) DESC`,
     [from, to],
   );
 
@@ -114,7 +114,7 @@ export async function getMethodStats(from: Date, to: Date): Promise<MethodStat[]
     FROM rpc_call_stats
     WHERE timestamp >= $1 AND timestamp <= $2
     GROUP BY method
-    ORDER BY total_calls DESC`,
+    ORDER BY COUNT(*) DESC`,
     [from, to],
   );
 

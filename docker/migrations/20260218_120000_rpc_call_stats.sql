@@ -15,5 +15,11 @@ SELECT create_hypertable('rpc_call_stats', 'timestamp',
 CREATE INDEX IF NOT EXISTS idx_rpc_stats_endpoint_ts
   ON rpc_call_stats (endpoint, timestamp DESC);
 
+ALTER TABLE rpc_call_stats SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'endpoint,method',
+  timescaledb.compress_orderby = 'timestamp DESC'
+);
+
 SELECT add_compression_policy('rpc_call_stats', INTERVAL '7 days', if_not_exists => true);
 SELECT add_retention_policy('rpc_call_stats', INTERVAL '30 days', if_not_exists => true);

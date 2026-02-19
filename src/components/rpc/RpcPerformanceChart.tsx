@@ -99,9 +99,10 @@ export function RpcPerformanceChart({ data, valueKey, title }: RpcPerformanceCha
     };
     window.addEventListener('resize', handleResize);
 
+    const seriesMap = seriesMapRef.current;
     return () => {
       window.removeEventListener('resize', handleResize);
-      seriesMapRef.current.clear();
+      seriesMap.clear();
       chart.remove();
       chartRef.current = null;
     };
