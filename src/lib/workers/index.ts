@@ -4,6 +4,7 @@ import '../httpAgent';
 import { getAllWorkerStatuses } from './workerStatus';
 import type { WorkerStatus } from './workerStatus';
 import { waitForMigrations } from '../waitForMigrations';
+import { startStatsFlush, stopStatsFlush } from '../rpcStats';
 
 // Indexers
 import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
@@ -67,6 +68,7 @@ export async function startWorkers(): Promise<void> {
     console.warn(`[Workers] ${failed.length}/${workers.length} workers failed to start, continuing with remaining`);
   }
 
+  startStatsFlush();
   globalState.__workersStarted = true;
   console.log(`[Workers] ${workers.length - failed.length}/${workers.length} indexers started successfully`);
 }
@@ -74,6 +76,7 @@ export async function startWorkers(): Promise<void> {
 export function stopWorkers(): void {
   console.log('[Workers] Stopping indexers...');
 
+  stopStatsFlush();
   globalState.__blockIndexer?.stop();
   globalState.__milestoneIndexer?.stop();
   globalState.__blockBackfiller?.stop();

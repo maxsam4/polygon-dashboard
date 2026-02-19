@@ -25,6 +25,7 @@ export function Nav() {
     ...(isAuthenticated ? [
       { href: '/alerts', label: 'Alerts', hasBadge: true },
       { href: '/admin/rpc', label: 'RPC Status' },
+      { href: '/admin/rpc-stats', label: 'RPC Stats' },
       { href: '/admin', label: 'Admin' },
     ] : []),
   ];

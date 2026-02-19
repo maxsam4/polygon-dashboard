@@ -144,6 +144,21 @@ Detects anomalies in key metrics and stores them for alerting:
   - Acknowledged alerts shown with reduced opacity and "ack" status badge
   - Filter by status: All / Unacknowledged / Acknowledged
 
+### RPC Performance Tracking
+
+Records every RPC call attempt for visibility into endpoint performance:
+
+- **Per-call timeout**: 2s (`RPC_RETRY_CONFIG.CALL_TIMEOUT_MS`) via `Promise.race` — slow endpoints fail fast and retry on others
+- **Transport timeout**: 10s backstop (prevents zombie connections)
+- **Stats recording**: In-memory buffer with batch INSERT flush every 5s (`src/lib/rpcStats.ts`)
+- **Table**: `rpc_call_stats` hypertable — timestamp, endpoint (hostname only), method, success, is_timeout, response_time_ms, error_message
+  - Compressed after 7 days, retained for 30 days
+  - ~1.7M rows/day at ~20 calls/sec
+- **Query module**: `src/lib/queries/rpcStats.ts` — endpoint stats, method stats, time-series with percentiles
+- **API**: `GET /api/admin/rpc-stats` — auth required, `?view=summary` or `?view=timeseries&bucket=5m`, max 7-day range
+- **UI**: `/admin/rpc-stats` — summary cards, endpoint/method tables, p95 response time and success rate charts
+- **Nav**: "RPC Stats" link visible when authenticated
+
 ## Testing
 
 ```bash
@@ -166,11 +181,13 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/lib/chartSeriesConfig.ts` - Chart series configurations and metric definitions
 - `src/lib/utils.ts` - General utilities (sleep, formatPol)
 - `src/lib/anomalyDetector.ts` - Anomaly detection logic for block metrics
+- `src/lib/rpcStats.ts` - RPC call stats recording with in-memory buffer and periodic flush
 
 ### Hooks
 
 - `src/hooks/useChartData.ts` - Chart data fetching with time range handling
 - `src/hooks/useAdminAuth.ts` - Admin authentication state for Nav component
+- `src/hooks/useRpcStats.ts` - RPC performance stats fetching with polling
 
 ### Components
 
@@ -179,11 +196,14 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/components/charts/ChartControls.tsx` - Time range and bucket size controls
 - `src/components/AlertsBadge.tsx` - Nav badge showing recent alert count
 - `src/components/ThresholdEditor.tsx` - Admin component for editing anomaly thresholds
+- `src/components/rpc/RpcStatsTable.tsx` - Endpoint and method stats tables
+- `src/components/rpc/RpcPerformanceChart.tsx` - Time-series performance charts
 
 ## Reliability
 
 - **DB statement_timeout**: 30s max per query prevents runaway queries from exhausting the connection pool
-- **RPC request timeout**: 30s per HTTP transport call prevents hanging on unresponsive endpoints
+- **RPC per-call timeout**: 2s per call via Promise.race ensures fast failover to alternate endpoints
+- **RPC transport timeout**: 10s per HTTP transport call as backstop against zombie connections
 - **RPC circuit breaker**: Endpoints are skipped for 30s after 5 consecutive failures, with exponential backoff on retries
 - **SSE proxy reconnection**: Upstream live-stream disconnects trigger automatic reconnection with exponential backoff (max 5 retries)
 - **Worker startup**: Uses `Promise.allSettled` - partial failures are logged, remaining workers continue running

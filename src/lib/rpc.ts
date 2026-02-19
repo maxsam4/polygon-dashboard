@@ -2,6 +2,7 @@ import { createPublicClient, http, webSocket, PublicClient, TransactionReceipt, 
 import { polygon } from 'viem/chains';
 import { sleep, abortableSleep } from './utils';
 import { RPC_RETRY_CONFIG } from './constants';
+import { recordRpcCall } from './rpcStats';
 
 // Re-export Block type for convenience
 export type { Block as ViemBlock } from 'viem';
@@ -98,6 +99,13 @@ export class RpcExhaustedError extends Error {
   }
 }
 
+export class RpcTimeoutError extends Error {
+  constructor(public timeoutMs: number) {
+    super(`RPC call timed out after ${timeoutMs}ms`);
+    this.name = 'RpcTimeoutError';
+  }
+}
+
 export class ReceiptsNotAvailableError extends Error {
   constructor(public blockNumber: bigint) {
     super(`Receipts not available for block ${blockNumber}`);
@@ -105,11 +113,25 @@ export class ReceiptsNotAvailableError extends Error {
   }
 }
 
+// Stat record emitted after each RPC attempt
+export interface RpcStatRecord {
+  timestamp: Date;
+  endpoint: string;
+  method: string;
+  success: boolean;
+  isTimeout: boolean;
+  responseTimeMs: number;
+  errorMessage?: string;
+}
+
+export type RpcStatListener = (stat: RpcStatRecord) => void;
+
 export class RpcClient {
   private urls: string[];
   private clients: PublicClient[];
   private retryConfig: RetryConfig;
   private circuitBreakers: CircuitBreakerState[];
+  private statListener: RpcStatListener | null = null;
 
   constructor(urls: string[], retryConfig = DEFAULT_RETRY_CONFIG) {
     if (urls.length === 0) {
@@ -120,7 +142,7 @@ export class RpcClient {
     this.clients = urls.map((url) =>
       createPublicClient({
         chain: polygon,
-        transport: http(url, { timeout: 60_000 }),
+        transport: http(url, { timeout: 10_000 }), // backstop — per-call timeout fires first
       })
     );
     this.circuitBreakers = urls.map(() => ({ consecutiveFailures: 0, openUntil: 0 }));
@@ -128,6 +150,31 @@ export class RpcClient {
 
   get endpointCount(): number {
     return this.urls.length;
+  }
+
+  set onStat(listener: RpcStatListener | null) {
+    this.statListener = listener;
+  }
+
+  getEndpointHostname(index: number): string {
+    try {
+      return new URL(this.urls[index]).hostname;
+    } catch {
+      return this.urls[index];
+    }
+  }
+
+  private emitRpcStat(endpointIndex: number, method: string | undefined, success: boolean, isTimeout: boolean, responseTimeMs: number, errorMessage?: string): void {
+    if (!this.statListener) return;
+    this.statListener({
+      timestamp: new Date(),
+      endpoint: this.getEndpointHostname(endpointIndex),
+      method: method ?? 'unknown',
+      success,
+      isTimeout,
+      responseTimeMs,
+      errorMessage,
+    });
   }
 
   private getClientByIndex(index: number): PublicClient {
@@ -160,9 +207,20 @@ export class RpcClient {
     );
   }
 
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new RpcTimeoutError(timeoutMs)), timeoutMs);
+      promise.then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        (error) => { clearTimeout(timer); reject(error); },
+      );
+    });
+  }
+
   // Shared retry-with-fallback logic used by both call() and callParallel()
-  private async retryWithFallback<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
+  private async retryWithFallback<T>(fn: (client: PublicClient) => Promise<T>, methodName?: string): Promise<T> {
     let lastError: Error | undefined;
+    const timeoutMs = RPC_RETRY_CONFIG.CALL_TIMEOUT_MS;
 
     for (let endpointIndex = 0; endpointIndex < this.urls.length; endpointIndex++) {
       // Skip endpoints with open circuit breaker
@@ -173,13 +231,18 @@ export class RpcClient {
       const client = this.getClientByIndex(endpointIndex);
 
       for (let retry = 0; retry <= this.retryConfig.maxRetries; retry++) {
+        const startTime = Date.now();
         try {
-          const result = await fn(client);
+          const result = await this.withTimeout(fn(client), timeoutMs);
           this.recordSuccess(endpointIndex);
+          this.emitRpcStat(endpointIndex, methodName, true, false, Date.now() - startTime);
           return result;
         } catch (error) {
+          const elapsed = Date.now() - startTime;
+          const isTimeout = error instanceof RpcTimeoutError;
           lastError = error instanceof Error ? error : new Error(String(error));
           this.recordFailure(endpointIndex);
+          this.emitRpcStat(endpointIndex, methodName, false, isTimeout, elapsed, lastError.message);
           console.warn(`RPC ${this.urls[endpointIndex]} failed (attempt ${retry + 1}/${this.retryConfig.maxRetries + 1}): ${lastError.message}`);
           if (retry < this.retryConfig.maxRetries) {
             await sleep(this.getBackoffDelay(retry));
@@ -200,16 +263,16 @@ export class RpcClient {
   }
 
   // Primary-first strategy: try first endpoint with retries, then fall back to others
-  async call<T>(fn: (client: PublicClient) => Promise<T>): Promise<T> {
-    return this.retryWithFallback(fn);
+  async call<T>(fn: (client: PublicClient) => Promise<T>, methodName?: string): Promise<T> {
+    return this.retryWithFallback(fn, methodName);
   }
 
   // Execute multiple calls in parallel using primary-first strategy
   // Returns array with null for failed requests (preserves indices)
-  async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[]): Promise<(T | null)[]> {
+  async callParallel<T>(fns: ((client: PublicClient) => Promise<T>)[], methodName?: string): Promise<(T | null)[]> {
     const errors: Error[] = [];
 
-    const promises = fns.map(fn => this.retryWithFallback(fn));
+    const promises = fns.map(fn => this.retryWithFallback(fn, methodName));
 
     const settled = await Promise.allSettled(promises);
     const results: (T | null)[] = [];
@@ -232,8 +295,9 @@ export class RpcClient {
 
   // Indefinite round-robin retry: cycles through endpoints until success or abort.
   // After a full cycle with all endpoints skipped/failed, waits ROUND_ROBIN_CYCLE_DELAY_MS.
-  private async retryRoundRobin<T>(fn: (client: PublicClient) => Promise<T>, signal: AbortSignal): Promise<T> {
+  private async retryRoundRobin<T>(fn: (client: PublicClient) => Promise<T>, signal: AbortSignal, methodName?: string): Promise<T> {
     let lastError: Error | undefined;
+    const timeoutMs = RPC_RETRY_CONFIG.CALL_TIMEOUT_MS;
 
     while (!signal.aborted) {
       let anyAttempted = false;
@@ -245,14 +309,19 @@ export class RpcClient {
 
         anyAttempted = true;
         const client = this.getClientByIndex(i);
+        const startTime = Date.now();
 
         try {
-          const result = await fn(client);
+          const result = await this.withTimeout(fn(client), timeoutMs);
           this.recordSuccess(i);
+          this.emitRpcStat(i, methodName, true, false, Date.now() - startTime);
           return result;
         } catch (error) {
+          const elapsed = Date.now() - startTime;
+          const isTimeout = error instanceof RpcTimeoutError;
           lastError = error instanceof Error ? error : new Error(String(error));
           this.recordFailure(i);
+          this.emitRpcStat(i, methodName, false, isTimeout, elapsed, lastError.message);
           console.warn(`RPC round-robin ${this.urls[i]} failed: ${lastError.message}`);
         }
       }
@@ -292,7 +361,7 @@ export class RpcClient {
           return [];
         }
         return (result as RawReceipt[]).map(parseReceipt);
-      }, signal);
+      }, signal, 'eth_getBlockReceipts');
 
       results.set(blockNumber, receipts);
     });
@@ -302,18 +371,20 @@ export class RpcClient {
   }
 
   async getLatestBlockNumber(): Promise<bigint> {
-    return this.call((client) => client.getBlockNumber());
+    return this.call((client) => client.getBlockNumber(), 'eth_blockNumber');
   }
 
   async getBlock(blockNumber: bigint) {
     return this.call((client) =>
-      client.getBlock({ blockNumber, includeTransactions: false })
+      client.getBlock({ blockNumber, includeTransactions: false }),
+      'eth_getBlockByNumber'
     );
   }
 
   async getBlockWithTransactions(blockNumber: bigint) {
     return this.call((client) =>
-      client.getBlock({ blockNumber, includeTransactions: true })
+      client.getBlock({ blockNumber, includeTransactions: true }),
+      'eth_getBlockByNumber'
     );
   }
 
@@ -325,7 +396,7 @@ export class RpcClient {
       client.getBlock({ blockNumber, includeTransactions: true })
     );
 
-    const blocks = await this.callParallel(fns);
+    const blocks = await this.callParallel(fns, 'eth_getBlockByNumber');
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -345,7 +416,7 @@ export class RpcClient {
       client.getBlock({ blockNumber, includeTransactions: false })
     );
 
-    const blocks = await this.callParallel(fns);
+    const blocks = await this.callParallel(fns, 'eth_getBlockByNumber');
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -371,7 +442,7 @@ export class RpcClient {
         throw new ReceiptsNotAvailableError(blockNumber);
       }
       return (result as RawReceipt[]).map(parseReceipt);
-    });
+    }, 'eth_getBlockReceipts');
   }
 
   // Fetch transaction receipts for multiple blocks in parallel
@@ -392,7 +463,7 @@ export class RpcClient {
       return (result as RawReceipt[]).map(parseReceipt);
     });
 
-    const receipts = await this.callParallel(fns);
+    const receipts = await this.callParallel(fns, 'eth_getBlockReceipts');
 
     for (let i = 0; i < receipts.length; i++) {
       const receipt = receipts[i];
@@ -414,6 +485,7 @@ export function getRpcClient(): RpcClient {
       throw new Error('POLYGON_RPC_URLS environment variable is required');
     }
     rpcClient = new RpcClient(urls);
+    rpcClient.onStat = recordRpcCall;
   }
   return rpcClient;
 }
