@@ -60,9 +60,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Return updated badge count (unacknowledged anomalies in last hour)
+    // Return updated badge count (all unacknowledged anomalies)
     const badgeCount = await getAnomalyCount({
-      from: new Date(Date.now() - 60 * 60 * 1000),
       excludeAcknowledged: true,
     });
 

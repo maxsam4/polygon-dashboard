@@ -177,15 +177,20 @@ export async function getAnomalyCount(options: {
   excludeAcknowledged?: boolean;
 }): Promise<{ total: number; critical: number; warning: number }> {
   const {
-    from = new Date(Date.now() - 60 * 60 * 1000), // Default: 1 hour ago
+    from,
     to = new Date(),
     severity,
     excludeAcknowledged = true, // Exclude acknowledged by default for badge
   } = options;
 
-  let whereClause = 'WHERE a.timestamp >= $1 AND a.timestamp <= $2';
-  const params: (Date | string)[] = [from, to];
-  let paramIndex = 3;
+  let whereClause = 'WHERE a.timestamp <= $1';
+  const params: (Date | string)[] = [to];
+  let paramIndex = 2;
+
+  if (from) {
+    whereClause += ` AND a.timestamp >= $${paramIndex++}`;
+    params.push(from);
+  }
 
   if (excludeAcknowledged) {
     whereClause += ` AND (a.acknowledged = FALSE OR a.acknowledged IS NULL)`;

@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
     const countOnly = searchParams.get('countOnly') === 'true';
 
     // Parse dates
-    const from = fromParam ? new Date(fromParam) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const from = fromParam ? new Date(fromParam) : undefined;
     const to = toParam ? new Date(toParam) : new Date();
 
     // Validate dates
-    if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    if ((from && isNaN(from.getTime())) || isNaN(to.getTime())) {
       return NextResponse.json(
         { error: 'Invalid date format' },
         { status: 400 }
@@ -49,6 +49,9 @@ export async function GET(request: NextRequest) {
       const counts = await getAnomalyCount({ from, to, severity });
       return NextResponse.json(counts);
     }
+
+    // For non-count queries, default to 24 hours if no from provided
+    const queryFrom = from ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Parse acknowledged filter
     const acknowledgedParam = searchParams.get('acknowledged');
@@ -74,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch anomalies
     const { anomalies, total } = await getAnomalies({
-      from,
+      from: queryFrom,
       to,
       metricType,
       severity,
@@ -84,7 +87,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Also get counts for the stats header (include acknowledged alerts in total stats)
-    const counts = await getAnomalyCount({ from, to, excludeAcknowledged: false });
+    const counts = await getAnomalyCount({ from: queryFrom, to, excludeAcknowledged: false });
 
     // Serialize anomalies (convert BigInt to string)
     const serializedAnomalies = anomalies.map(a => ({

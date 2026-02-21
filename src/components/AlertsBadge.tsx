@@ -16,9 +16,7 @@ export function AlertsBadge() {
 
     const fetchCounts = async () => {
       try {
-        // Fetch count for the last 1 hour
-        const from = new Date(Date.now() - 60 * 60 * 1000);
-        const res = await fetch(`/api/anomalies?from=${from.toISOString()}&countOnly=true`);
+        const res = await fetch(`/api/anomalies?countOnly=true`);
         if (!res.ok || !mounted) return;
         const data = await res.json();
         if (mounted) setCounts(data);
@@ -47,7 +45,7 @@ export function AlertsBadge() {
   return (
     <span
       className={`${bgColor} ${textColor} text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center`}
-      title={`${counts.critical} critical, ${counts.warning} warnings in last hour`}
+      title={`${counts.critical} critical, ${counts.warning} warnings unacknowledged`}
     >
       {counts.total > 99 ? '99+' : counts.total}
     </span>
