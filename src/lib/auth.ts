@@ -90,7 +90,7 @@ export async function getSessionFromRequest(request: NextRequest): Promise<Sessi
  * Returns the Set-Cookie header value.
  */
 export function getSessionCookieHeader(token: string): string {
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict`;
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`;
 }
 
 /**
