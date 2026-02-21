@@ -68,7 +68,8 @@ export function calculateBlockMetrics(
       }
 
       priorityFees.push(priorityFee);
-      if (priorityFee < minPriorityFee) minPriorityFee = priorityFee;
+      // Skip zero-fee system transactions (e.g. Polygon state sync) for min calculation
+      if (priorityFee > 0n && priorityFee < minPriorityFee) minPriorityFee = priorityFee;
       if (priorityFee > maxPriorityFee) maxPriorityFee = priorityFee;
 
       // Only use gasUsed from receipts - NEVER fall back to gas limit
@@ -83,6 +84,11 @@ export function calculateBlockMetrics(
     // Only have transaction hashes, not full transactions
     minPriorityFee = 0n;
     hasAllGasUsed = false;
+  }
+
+  // If no non-zero priority fees found, fall back to 0
+  if (minPriorityFee === BigInt(Number.MAX_SAFE_INTEGER)) {
+    minPriorityFee = 0n;
   }
 
   // Only calculate avgPriorityFee if we have gasUsed for all transactions

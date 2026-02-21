@@ -44,15 +44,16 @@ export function calculatePriorityFeeMetrics(
       : 0n;
 
     priorityFees.push(priorityFeePerGas);
-    if (priorityFeePerGas < minPriorityFee) minPriorityFee = priorityFeePerGas;
+    // Skip zero-fee system transactions (e.g. Polygon state sync) for min calculation
+    if (priorityFeePerGas > 0n && priorityFeePerGas < minPriorityFee) minPriorityFee = priorityFeePerGas;
     if (priorityFeePerGas > maxPriorityFee) maxPriorityFee = priorityFeePerGas;
 
     totalPriorityFee += priorityFeePerGas * gasUsed;
     totalGasUsed += gasUsed;
   }
 
-  // Handle edge case of no receipts
-  if (priorityFees.length === 0) {
+  // If no non-zero priority fees found, fall back to 0
+  if (minPriorityFee === BigInt(Number.MAX_SAFE_INTEGER)) {
     minPriorityFee = 0n;
   }
 

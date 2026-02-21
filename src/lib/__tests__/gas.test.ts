@@ -109,7 +109,8 @@ describe('calculateBlockMetrics', () => {
 
       const metrics = calculateBlockMetrics(block);
 
-      expect(metrics.minPriorityFeeGwei).toBe(0);
+      // Tx with null priority fee (system tx) is excluded from min calculation
+      expect(metrics.minPriorityFeeGwei).toBe(10);
       expect(metrics.maxPriorityFeeGwei).toBe(10);
     });
   });
