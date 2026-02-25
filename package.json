@@ -21,6 +21,9 @@
     "undici": "^7.20.0",
     "viem": "^2.44.0"
   },
+  "browserslist": [
+    "defaults and fully supports es6-module"
+  ],
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
