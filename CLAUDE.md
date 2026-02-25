@@ -110,7 +110,7 @@ Password-protected admin panel at `/admin` with JWT session authentication:
 - **Session**: JWT token stored in HttpOnly cookie, no expiry (persists until logout or password change)
 - **Secret**: Derived from admin password (sessions invalidate when password changes)
 - **Password**: Set `ADMIN_PASSWORD` env var (falls back to `ADD_RATE_PASSWORD`)
-- **Middleware**: `src/middleware.ts` protects `/admin/*` and `/alerts` routes
+- **Middleware**: `src/middleware.ts` protects `/admin/*` routes
 - **Nav**: Admin and Alerts links only visible when authenticated
 
 ### Anomaly Detection
@@ -138,8 +138,8 @@ Detects anomalies in key metrics and stores them for alerting:
 - **API**:
   - `GET /api/anomalies` - filtering, pagination, count-only mode (requires auth)
   - `POST /api/anomalies/acknowledge` - acknowledge alerts by id(s) or all in time range
-- **UI**: `/alerts` page with stats, filters, sortable table, and acknowledgement controls
-- **Acknowledgement**: Alerts can be acknowledged to remove them from the nav badge count
+- **UI**: `/alerts` page (publicly accessible) with stats, filters, sortable table, and acknowledgement controls
+- **Acknowledgement**: Alerts can be acknowledged to remove them from the nav badge count (requires admin auth)
   - Select individual alerts or use "Acknowledge All" for bulk operations
   - Acknowledged alerts shown with reduced opacity and "ack" status badge
   - Filter by status: All / Unacknowledged / Acknowledged

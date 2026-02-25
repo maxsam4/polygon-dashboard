@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAnomalies, getAnomalyCount } from '@/lib/queries/anomalies';
 import { AnomalySeverity } from '@/lib/constants';
-import { getSessionFromCookies } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    // Require authentication
-    const session = await getSessionFromCookies();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
     const searchParams = request.nextUrl.searchParams;
 
     // Parse query parameters

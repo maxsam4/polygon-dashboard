@@ -7,9 +7,8 @@ export async function middleware(request: NextRequest) {
 
   // Check if this is a protected route
   const isAdminRoute = pathname.startsWith('/admin');
-  const isAlertsRoute = pathname === '/alerts';
 
-  if (!isAdminRoute && !isAlertsRoute) {
+  if (!isAdminRoute) {
     return NextResponse.next();
   }
 
@@ -23,7 +22,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check authentication for /admin/* and /alerts routes
+  // Check authentication for /admin/* routes
   const session = await getSessionFromRequest(request);
   if (!session) {
     // Redirect to login page
@@ -35,5 +34,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/alerts'],
+  matcher: ['/admin/:path*'],
 };

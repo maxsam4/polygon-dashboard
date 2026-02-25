@@ -3,6 +3,7 @@
 import { Nav } from '@/components/Nav';
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useAdminAuth } from '@/hooks/useAdminAuth';
 
 interface AnomalyData {
   id: number;
@@ -84,6 +85,7 @@ function StatCard({ label, value, subLabel, variant }: { label: string; value: n
 }
 
 export default function AlertsPage() {
+  const { isAuthenticated } = useAdminAuth();
   const [anomalies, setAnomalies] = useState<AnomalyData[]>([]);
   const [stats, setStats] = useState<AnomalyStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -311,7 +313,7 @@ export default function AlertsPage() {
             </div>
 
             {/* Acknowledge Actions */}
-            {unacknowledgedCount > 0 && (
+            {isAuthenticated && unacknowledgedCount > 0 && (
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={handleAcknowledgeAll}
@@ -429,7 +431,7 @@ export default function AlertsPage() {
                               >
                                 Acknowledged
                               </span>
-                            ) : (
+                            ) : isAuthenticated ? (
                               <button
                                 onClick={() => handleAcknowledge([anomaly.id])}
                                 disabled={acknowledging}
@@ -437,6 +439,8 @@ export default function AlertsPage() {
                               >
                                 Acknowledge
                               </button>
+                            ) : (
+                              <span className="text-muted text-xs">Unacknowledged</span>
                             )}
                           </td>
                         </tr>
