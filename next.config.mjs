@@ -64,6 +64,33 @@ const nextConfig = {
           },
         ],
       },
+      // Favicons
+      {
+        source: '/favicon.ico',
+        headers: [
+          {
+            key: 'CDN-Cache-Control',
+            value: 'public, max-age=2592000',
+          },
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2592000',
+          },
+        ],
+      },
+      {
+        source: '/icon.svg',
+        headers: [
+          {
+            key: 'CDN-Cache-Control',
+            value: 'public, max-age=2592000',
+          },
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=2592000',
+          },
+        ],
+      },
       // Static assets — immutable, long cache
       {
         source: '/_next/static/:path*',
