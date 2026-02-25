@@ -37,6 +37,31 @@ services:
       # External APIs
       LIVE_STREAM_URL: ${LIVE_STREAM_URL:-}
       ETH_RPC_URLS: ${ETH_RPC_URLS:-}
+      # Backfill targets (read-only, for status page display)
+      BACKFILL_TO_BLOCK: ${BACKFILL_TO_BLOCK:-}
+      MILESTONE_BACKFILL_TO_SEQUENCE: ${MILESTONE_BACKFILL_TO_SEQUENCE:-}
+      PORT: 3000
+    ports:
+      - "${APP_PORT}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  indexer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.indexer
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      POLYGON_RPC_URLS: ${POLYGON_RPC_URLS}
+      HEIMDALL_API_URLS: ${HEIMDALL_API_URLS}
+      LIVE_STREAM_URL: ${LIVE_STREAM_URL:-}
       # Block indexer
       INDEXER_POLL_MS: ${INDEXER_POLL_MS:-}
       INDEXER_BATCH_SIZE: ${INDEXER_BATCH_SIZE:-}
@@ -54,11 +79,9 @@ services:
       # Priority fee backfiller
       HISTORICAL_PRIORITY_FEE_BATCH_SIZE: ${HISTORICAL_PRIORITY_FEE_BATCH_SIZE:-}
       HISTORICAL_PRIORITY_FEE_DELAY_MS: ${HISTORICAL_PRIORITY_FEE_DELAY_MS:-}
-      PORT: 3000
-    ports:
-      - "${APP_PORT}:3000"
+      PORT: 3003
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/status"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3003/health"]
       interval: 10s
       timeout: 5s
       retries: 3

@@ -45,6 +45,9 @@ prompts.txt
 # worktrees
 .worktrees/
 
+# indexer build output
+/dist-indexer
+
 # services subdirectories
 services/**/node_modules
 services/**/dist

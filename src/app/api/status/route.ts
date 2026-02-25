@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { unstable_cache } from 'next/cache';
-import { areWorkersRunning, getAllWorkerStatuses } from '@/lib/workers';
+import { getWorkerStatusesFromDb } from '@/lib/queries/workerStatus';
 import { getInflationRateCount, getLatestInflationRate } from '@/lib/queries/inflation';
 import {
   getBlockAggregates,
@@ -67,18 +67,24 @@ export async function GET() {
         getLatestMilestone(),
       ]);
 
-    // Get individual worker statuses
-    const workerStatuses = getAllWorkerStatuses().map(ws => ({
-      name: ws.name,
+    // Get worker statuses from DB (written by the indexer container)
+    const dbStatuses = await getWorkerStatusesFromDb().catch(() => []);
+    const now = Date.now();
+    const STALE_THRESHOLD_MS = 30_000; // 30s — indexer flushes every 5s
+    const workersRunning = dbStatuses.length > 0 &&
+      dbStatuses.some(s => now - new Date(s.updated_at).getTime() < STALE_THRESHOLD_MS);
+
+    const workerStatuses = dbStatuses.map(ws => ({
+      name: ws.worker_name,
       state: ws.state,
-      lastRunAt: ws.lastRunAt?.toISOString() ?? null,
-      lastErrorAt: ws.lastErrorAt?.toISOString() ?? null,
-      lastError: ws.lastError,
-      itemsProcessed: ws.itemsProcessed,
+      lastRunAt: ws.last_run_at?.toISOString() ?? null,
+      lastErrorAt: ws.last_error_at?.toISOString() ?? null,
+      lastError: ws.last_error,
+      itemsProcessed: Number(ws.items_processed),
     }));
 
     const response = {
-      workersRunning: areWorkersRunning(),
+      workersRunning,
       workerStatuses,
       timestamp: new Date().toISOString(),
       blocks: {

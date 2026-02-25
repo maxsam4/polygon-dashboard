@@ -1,4 +1,8 @@
 // Worker status tracking for health monitoring
+// In-memory Map is the source of truth for the indexer process.
+// Periodic DB flush writes snapshots to worker_status so the Next.js app can read them.
+
+import { query } from '../db';
 
 export type WorkerState = 'running' | 'idle' | 'error' | 'stopped';
 
@@ -74,4 +78,59 @@ export function getAllWorkerStatuses(): WorkerStatus[] {
 
 export function getWorkerStatus(name: string): WorkerStatus | undefined {
   return getStatusMap().get(name);
+}
+
+// --- DB flush (same pattern as rpcStats.ts) ---
+
+const STATUS_FLUSH_INTERVAL_MS = 5000;
+let statusFlushTimer: ReturnType<typeof setInterval> | null = null;
+
+async function flushAllToDb(): Promise<void> {
+  const statuses = getAllWorkerStatuses();
+  if (statuses.length === 0) return;
+
+  const values: unknown[] = [];
+  const rows: string[] = [];
+
+  for (let i = 0; i < statuses.length; i++) {
+    const s = statuses[i];
+    const o = i * 6;
+    rows.push(`($${o+1}, $${o+2}, $${o+3}, $${o+4}, $${o+5}, $${o+6}, NOW())`);
+    values.push(s.name, s.state, s.lastRunAt, s.lastErrorAt, s.lastError, s.itemsProcessed);
+  }
+
+  try {
+    await query(
+      `INSERT INTO worker_status (worker_name, state, last_run_at, last_error_at, last_error, items_processed, updated_at)
+       VALUES ${rows.join(', ')}
+       ON CONFLICT (worker_name) DO UPDATE SET
+         state = EXCLUDED.state,
+         last_run_at = EXCLUDED.last_run_at,
+         last_error_at = EXCLUDED.last_error_at,
+         last_error = EXCLUDED.last_error,
+         items_processed = EXCLUDED.items_processed,
+         updated_at = NOW()`,
+      values,
+    );
+  } catch (error) {
+    console.warn('[WorkerStatus] Failed to flush to DB:', error instanceof Error ? error.message : error);
+  }
+}
+
+export function startStatusFlush(): void {
+  if (statusFlushTimer) return;
+  statusFlushTimer = setInterval(flushAllToDb, STATUS_FLUSH_INTERVAL_MS);
+  // Initial flush so status appears immediately
+  flushAllToDb().catch(() => {});
+  console.log('[WorkerStatus] Started periodic DB flush (every 5s)');
+}
+
+export function stopStatusFlush(): void {
+  if (statusFlushTimer) {
+    clearInterval(statusFlushTimer);
+    statusFlushTimer = null;
+  }
+  // Final flush
+  flushAllToDb().catch(() => {});
+  console.log('[WorkerStatus] Stopped periodic DB flush');
 }

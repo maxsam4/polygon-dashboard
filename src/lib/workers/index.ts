@@ -1,7 +1,7 @@
 // Initialize HTTP agent with connection pooling before any fetch calls
 import '../httpAgent';
 
-import { getAllWorkerStatuses } from './workerStatus';
+import { getAllWorkerStatuses, startStatusFlush, stopStatusFlush } from './workerStatus';
 import type { WorkerStatus } from './workerStatus';
 import { waitForMigrations } from '../waitForMigrations';
 import { startStatsFlush, stopStatsFlush } from '../rpcStats';
@@ -69,6 +69,7 @@ export async function startWorkers(): Promise<void> {
   }
 
   startStatsFlush();
+  startStatusFlush();
   globalState.__workersStarted = true;
   console.log(`[Workers] ${workers.length - failed.length}/${workers.length} indexers started successfully`);
 }
@@ -77,6 +78,7 @@ export function stopWorkers(): void {
   console.log('[Workers] Stopping indexers...');
 
   stopStatsFlush();
+  stopStatusFlush();
   globalState.__blockIndexer?.stop();
   globalState.__milestoneIndexer?.stop();
   globalState.__blockBackfiller?.stop();
@@ -85,14 +87,3 @@ export function stopWorkers(): void {
   globalState.__workersStarted = false;
   console.log('[Workers] All indexers stopped');
 }
-
-// Handle graceful shutdown
-process.on('SIGINT', () => {
-  stopWorkers();
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  stopWorkers();
-  process.exit(0);
-});

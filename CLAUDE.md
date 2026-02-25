@@ -42,8 +42,11 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%patter
 ## Development
 
 ```bash
-docker compose up -d --build    # Rebuild
-docker compose logs -f app      # Check logs
+docker compose up -d --build          # Rebuild all (app + indexer)
+docker compose up -d --build app      # Rebuild app only
+docker compose up -d --build indexer  # Rebuild indexer only
+docker compose logs -f app            # Check app logs
+docker compose logs -f indexer        # Check indexer logs
 docker compose exec db psql -U polygon -d polygon_dashboard  # DB shell
 ```
 
@@ -67,9 +70,10 @@ Migrations aren't auto-mounted in Docker. Execute via stdin:
 docker compose exec -T db psql -U polygon -d polygon_dashboard < docker/migrations/FILENAME.sql
 ```
 
-After code changes, rebuild the container to test new API routes:
+After code changes, rebuild the relevant container:
 ```bash
-docker compose up -d --build app
+docker compose up -d --build app      # API/frontend changes
+docker compose up -d --build indexer  # Indexer/worker changes
 ```
 
 ## Docker Environment Variables
@@ -84,12 +88,21 @@ Avoid special characters (`%`, `$`, `!`) in passwords - they can break Docker Co
 
 ## Architecture
 
+### Two-Container Architecture
+
+The app runs as two Docker containers sharing the same database:
+- **`app`** — Next.js server (HTTP, SSR, API routes). Reads worker status from `worker_status` DB table.
+- **`indexer`** — Standalone Node.js process (`src/lib/workers/main.ts`). Runs all indexers, flushes status to DB every 5s, exposes `/health` on port 3003.
+
+Both build from the same repo. The indexer compiles `src/lib/` with `tsconfig.indexer.json` (CommonJS) into `dist-indexer/`.
+
 ### Indexers
 
 - `BlockIndexer` - Cursor-based forward indexer (gap-free, reorg-aware, inline receipt enrichment)
 - `BlockBackfiller` - Backwards indexer to target block (inline receipt enrichment)
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes directly to `block_finality`
 - `MilestoneBackfiller` - Backwards indexer to target sequence_id, populates finality
+
 ### Live-Stream Service
 
 Standalone service in `/services/live-stream`:
@@ -210,6 +223,8 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - **Inline receipt enrichment**: Indefinite round-robin RPC retry ensures blocks are only inserted with complete data (all-or-nothing). Each block's receipts retry across all endpoints until success or abort.
 - **Admin login rate limiting**: 5 attempts per IP per minute (in-memory)
 - **App health check**: Docker healthcheck on `/api/status` enables automatic container restart
+- **Indexer health check**: Docker healthcheck on `:3003/health` enables automatic container restart
+- **Worker status DB flush**: In-memory status flushed to `worker_status` table every 5s for cross-container visibility
 
 ## Key Patterns
 

@@ -1,0 +1,31 @@
+# docker/Dockerfile.indexer
+# Standalone indexer container — compiles src/lib/ with CommonJS and runs workers/main.js
+
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.indexer.json ./
+COPY src/lib/ ./src/lib/
+RUN npx tsc -p tsconfig.indexer.json
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 indexer
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist-indexer ./dist-indexer
+
+USER indexer
+EXPOSE 3003
+ENV PORT=3003
+
+CMD ["node", "dist-indexer/lib/workers/main.js"]
