@@ -78,11 +78,13 @@ export function stopWorkers(): void {
   console.log('[Workers] Stopping indexers...');
 
   stopStatsFlush();
-  stopStatusFlush();
+  // Stop workers first so they update their state to 'stopped'
   globalState.__blockIndexer?.stop();
   globalState.__milestoneIndexer?.stop();
   globalState.__blockBackfiller?.stop();
   globalState.__milestoneBackfiller?.stop();
+  // Flush status after workers are stopped so 'stopped' state is persisted
+  stopStatusFlush();
 
   globalState.__workersStarted = false;
   console.log('[Workers] All indexers stopped');
