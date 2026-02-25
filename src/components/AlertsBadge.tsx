@@ -34,7 +34,7 @@ export function AlertsBadge() {
   }, []);
 
   if (!counts || counts.total === 0) {
-    return null;
+    return <span className="text-xs font-bold px-1.5 py-0.5 min-w-[1.25rem] invisible" aria-hidden="true">0</span>;
   }
 
   // Determine badge color based on highest severity
