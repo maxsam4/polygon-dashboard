@@ -140,7 +140,7 @@ export const POL_EMISSION_MANAGER_PROXY = '0xbC9f74b3b14f460a6c47dCdDFd17411cBc7
 // Inflation calculation constants
 export const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 export const POL_DECIMALS = 18;
-export const WEI_PER_POL = 10n ** 18n;
+export const WEI_PER_POL = 1000000000000000000n;
 
 // Anomaly detection thresholds (calibrated from February 2026 statistics)
 // These are fallback values; actual thresholds are stored in metric_thresholds table

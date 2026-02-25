@@ -21,12 +21,6 @@
     "undici": "^7.20.0",
     "viem": "^2.44.0"
   },
-  "browserslist": [
-    "last 2 Chrome versions",
-    "last 2 Firefox versions",
-    "last 2 Safari versions",
-    "last 2 Edge versions"
-  ],
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^20",
