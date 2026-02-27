@@ -161,7 +161,7 @@ Detects anomalies in key metrics and stores them for alerting:
 
 Records every RPC call attempt for visibility into endpoint performance:
 
-- **Per-call timeout**: 2s (`RPC_RETRY_CONFIG.CALL_TIMEOUT_MS`) via `Promise.race` — slow endpoints fail fast and retry on others
+- **Per-call timeout**: 1.5s (`RPC_RETRY_CONFIG.CALL_TIMEOUT_MS`) via `Promise.race` — slow endpoints fail fast and retry on others
 - **Transport timeout**: 10s backstop (prevents zombie connections)
 - **Stats recording**: In-memory buffer with batch INSERT flush every 5s (`src/lib/rpcStats.ts`)
 - **Table**: `rpc_call_stats` hypertable — timestamp, endpoint (hostname only), method, success, is_timeout, response_time_ms, error_message
@@ -215,7 +215,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 ## Reliability
 
 - **DB statement_timeout**: 30s max per query prevents runaway queries from exhausting the connection pool
-- **RPC per-call timeout**: 2s per call via Promise.race ensures fast failover to alternate endpoints
+- **RPC per-call timeout**: 1.5s per call via Promise.race ensures fast failover to alternate endpoints
 - **RPC transport timeout**: 10s per HTTP transport call as backstop against zombie connections
 - **RPC circuit breaker**: Endpoints are skipped for 30s after 5 consecutive failures, with exponential backoff on retries
 - **SSE proxy reconnection**: Upstream live-stream disconnects trigger automatic reconnection with exponential backoff (max 5 retries)

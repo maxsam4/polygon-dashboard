@@ -18,7 +18,7 @@ export const RPC_RETRY_CONFIG = {
   RECONNECT_DELAY_MS: 1000,
   RECONNECT_INTERVAL_MS: 10000,
   ROUND_ROBIN_CYCLE_DELAY_MS: 500, // delay after cycling all endpoints once
-  CALL_TIMEOUT_MS: 2000, // per-call timeout — fail fast, retry on other endpoints
+  CALL_TIMEOUT_MS: 1500, // per-call timeout — fail fast, retry on other endpoints
 } as const;
 
 // Status page thresholds
