@@ -184,11 +184,12 @@ export class BlockIndexer {
           console.log(`[${WORKER_NAME}] Indexed ${blocks.length} blocks (${startBlock}-${lastBlock.number}), ${enrichedCount} enriched with receipts${blockAge < 60_000 ? ' [realtime]' : ''}`);
         }
 
-        // Sleep 1s only when fully caught up (<4s behind)
+        // When caught up (no gap or near-realtime), sleep to avoid busy-spinning.
+        // During catch-up (gap > 0 and blocks are old), skip sleep for max throughput.
         const blockAge = this.lastBlockTimestamp !== null
           ? Date.now() - this.lastBlockTimestamp.getTime()
           : Infinity;
-        if (blockAge < 4000) {
+        if (gap <= 0 || blockAge < 4000) {
           await sleep(1000);
         }
       } catch (error) {
