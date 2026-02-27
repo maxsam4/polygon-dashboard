@@ -34,6 +34,7 @@ export async function pushBlockUpdate(payload: BlockUpdatePayload): Promise<bool
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {

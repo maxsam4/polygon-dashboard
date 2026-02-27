@@ -45,6 +45,9 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('unhandledRejection', (reason) => {
+  console.error('[Indexer] Unhandled rejection:', reason);
+});
 
 main().catch((err) => {
   console.error('[Indexer] Fatal error:', err);

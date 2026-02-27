@@ -82,7 +82,10 @@ export class BlockIndexer {
     }
 
     // Start main loop
-    this.runLoop();
+    this.runLoop().catch(err => {
+      console.error(`[${WORKER_NAME}] runLoop exited with error:`, err);
+      updateWorkerError(WORKER_NAME, err instanceof Error ? err.message : String(err));
+    });
   }
 
   /**

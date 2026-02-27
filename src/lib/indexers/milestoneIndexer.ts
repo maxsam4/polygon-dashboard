@@ -76,8 +76,11 @@ export class MilestoneIndexer {
       this.sequenceCache.add(this.cursor);
     }
 
-    // Start main loop
-    this.runLoop();
+    // Start main loop (catch to prevent unhandled rejection if loop somehow throws past try/catch)
+    this.runLoop().catch(err => {
+      console.error(`[${WORKER_NAME}] runLoop exited with error:`, err);
+      updateWorkerError(WORKER_NAME, err instanceof Error ? err.message : String(err));
+    });
   }
 
   /**
