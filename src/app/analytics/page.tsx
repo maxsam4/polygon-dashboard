@@ -50,10 +50,6 @@ export default function AnalyticsPage() {
           <LazyFullChart title="Total Fee per Block (POL)" metric="totalFee" />
           <LazyFullChart title="Cumulative Base Fee per Block (POL)" metric="totalBaseFee" showCumulative />
           <LazyFullChart title="Cumulative Priority Fee per Block (POL)" metric="totalPriorityFee" showCumulative />
-        </div>
-
-        {/* Full-width cumulative total fee */}
-        <div className="grid grid-cols-1 gap-6 mb-6">
           <LazyFullChart title="Cumulative Total Fee per Block (POL)" metric="totalFee" showCumulative />
         </div>
       </main>
