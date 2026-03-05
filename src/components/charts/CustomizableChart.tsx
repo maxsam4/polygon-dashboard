@@ -33,24 +33,27 @@ import { cachedFetch } from '@/lib/fetchCache';
 // Available data series options
 const DATA_OPTIONS = [
   { value: 'baseFee', label: 'Base Fee (gwei)' },
-  { value: 'medianPriorityFee', label: 'Median Priority Fee (gwei)' },
-  { value: 'totalGasPrice', label: 'Total Gas Price (gwei)' },
+  { value: 'totalBaseFee', label: 'Base Fee per Block (POL)' },
   { value: 'blockLimit', label: 'Block Limit (M gas)' },
   { value: 'blockLimitUtilization', label: 'Block Utilization (%)' },
-  { value: 'mgas', label: 'MGAS/s' },
-  { value: 'tps', label: 'TPS' },
-  { value: 'totalBaseFee', label: 'Base Fee per Block (POL)' },
-  { value: 'totalPriorityFee', label: 'Priority Fee per Block (POL)' },
-  { value: 'totalFee', label: 'Total Fee per Block (POL)' },
+  { value: 'blockTimeAvg', label: 'Bor Block Time Avg (s)' },
+  { value: 'blockTimeMax', label: 'Bor Block Time Max (s)' },
+  { value: 'blockTimeMin', label: 'Bor Block Time Min (s)' },
   { value: 'cumulativeBaseFee', label: 'Cumulative Base Fee (POL)' },
   { value: 'cumulativePriorityFee', label: 'Cumulative Priority Fee (POL)' },
   { value: 'cumulativeTotalFee', label: 'Cumulative Total Fee (POL)' },
   { value: 'finalityAvg', label: 'Finality Time Avg (s)' },
-  { value: 'finalityMin', label: 'Finality Time Min (s)' },
   { value: 'finalityMax', label: 'Finality Time Max (s)' },
-  { value: 'blockTimeAvg', label: 'Bor Block Time Avg (s)' },
-  { value: 'blockTimeMin', label: 'Bor Block Time Min (s)' },
-  { value: 'blockTimeMax', label: 'Bor Block Time Max (s)' },
+  { value: 'finalityMin', label: 'Finality Time Min (s)' },
+  { value: 'gasTargetPct', label: 'Gas Target (%)' },
+  { value: 'maxPriorityFee', label: 'Max Priority Fee (gwei)' },
+  { value: 'medianPriorityFee', label: 'Median Priority Fee (gwei)' },
+  { value: 'mgas', label: 'MGAS/s' },
+  { value: 'minPriorityFee', label: 'Min Priority Fee (gwei)' },
+  { value: 'totalPriorityFee', label: 'Priority Fee per Block (POL)' },
+  { value: 'tps', label: 'TPS' },
+  { value: 'totalFee', label: 'Total Fee per Block (POL)' },
+  { value: 'totalGasPrice', label: 'Total Gas Price (gwei)' },
 ] as const;
 
 type DataOptionValue = (typeof DATA_OPTIONS)[number]['value'];
@@ -70,6 +73,10 @@ function getSeriesValue(d: ChartDataPoint, series: DataOptionValue, cumulativeBa
   switch (series) {
     case 'baseFee':
       return d.baseFee.avg;
+    case 'minPriorityFee':
+      return d.priorityFee.min;
+    case 'maxPriorityFee':
+      return d.priorityFee.max;
     case 'medianPriorityFee':
       return d.priorityFee.median;
     case 'totalGasPrice':
@@ -106,6 +113,8 @@ function getSeriesValue(d: ChartDataPoint, series: DataOptionValue, cumulativeBa
       return d.blockTimeMin ?? 0;
     case 'blockTimeMax':
       return d.blockTimeMax ?? 0;
+    case 'gasTargetPct':
+      return d.gasTargetPctAvg ?? 0;
     default:
       return 0;
   }
