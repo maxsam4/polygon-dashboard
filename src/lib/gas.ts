@@ -138,6 +138,48 @@ export function calculateBlockMetrics(
   };
 }
 
+/**
+ * Derive the gas target percentage from consecutive blocks' baseFee changes.
+ *
+ * Formula: R = (baseFee[N] - baseFee[N-1]) / baseFee[N-1] * BFCD
+ *          gasTarget = gasUsed[N-1] / (R + 1)
+ *          gasTargetPct = gasTarget / gasLimit[N-1] * 100
+ *
+ * Returns null when derivation is indeterminate (caller should carry forward).
+ */
+export function deriveGasTargetPct(
+  currentBaseFeeGwei: number,
+  parentBaseFeeGwei: number,
+  parentGasUsed: bigint,
+  parentGasLimit: bigint,
+  bfcd: number
+): number | null {
+  // Parent baseFee must be positive for ratio calculation
+  if (parentBaseFeeGwei <= 0) return null;
+
+  // When parent gasUsed is 0, baseFee always drops by baseFee/BFCD regardless of target
+  if (parentGasUsed === 0n) return null;
+
+  // R = rate of change * BFCD
+  const R = ((currentBaseFeeGwei - parentBaseFeeGwei) / parentBaseFeeGwei) * bfcd;
+
+  // Numerical instability guard
+  const denominator = R + 1;
+  if (Math.abs(denominator) < 1e-9) return null;
+
+  const gasTarget = Number(parentGasUsed) / denominator;
+  const parentGasLimitNum = Number(parentGasLimit);
+
+  if (parentGasLimitNum <= 0) return null;
+
+  const pct = (gasTarget / parentGasLimitNum) * 100;
+
+  // Sanity check: gas target percentage should be between 1% and 100%
+  if (pct < 1 || pct > 100) return null;
+
+  return pct;
+}
+
 export function formatGwei(gwei: number): string {
   if (gwei < 0.01) return gwei.toFixed(4);
   if (gwei < 1) return gwei.toFixed(3);

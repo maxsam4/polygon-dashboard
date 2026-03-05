@@ -27,6 +27,7 @@ export const sampleBlock: Block = {
   finalizedAt: null,
   milestoneId: null,
   timeToFinalitySec: null,
+  gasTargetPct: 65,
 };
 
 export const sampleBlockRow: BlockRow = {
@@ -51,6 +52,7 @@ export const sampleBlockRow: BlockRow = {
   finalized_at: null,
   milestone_id: null,
   time_to_finality_sec: null,
+  gas_target_pct: 65,
 };
 
 export const sampleFinalizedBlock: Block = {

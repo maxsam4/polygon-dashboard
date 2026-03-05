@@ -1,12 +1,14 @@
 import { getRpcClient } from '../rpc';
 import { insertBlocksBatch, getLowestBlockNumber } from '../queries/blocks';
-import { calculateBlockMetrics } from '../gas';
+import { calculateBlockMetrics, deriveGasTargetPct } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState } from './indexerState';
 import { applyReceiptsToBlocks } from './receiptEnricher';
 import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError } from '../workers/workerStatus';
 import { sleep } from '../utils';
 import { updateTableStats } from '../queries/stats';
+import { Eip1559Param, getBfcdForBlock, getDefaultGasTargetPct, KNOWN_EIP1559_PARAMS } from '../eip1559Params';
+import { getAllEip1559Params } from '../queries/eip1559Params';
 
 const SERVICE_NAME = 'block_backfiller';
 const WORKER_NAME = 'BlockBackfiller';
@@ -26,6 +28,7 @@ export class BlockBackfiller {
   private abortController: AbortController | null = null;
   private batchSize: number;
   private delayMs: number;
+  private eip1559Params: Eip1559Param[] = [];
 
   constructor() {
     this.targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '50000000');
@@ -70,6 +73,9 @@ export class BlockBackfiller {
         await this.waitForBlocks();
       }
     }
+
+    // Load EIP-1559 params for gas target derivation
+    await this.loadEip1559Params();
 
     // Check if already complete
     if (this.cursor !== null && this.cursor <= this.targetBlock) {
@@ -148,10 +154,11 @@ export class BlockBackfiller {
           continue;
         }
 
-        // Separate the extra block (for timestamp) from blocks to insert
-        const prevBlockTimestamp = fetchStart < startBlock && allBlocks[0].number === fetchStart
-          ? allBlocks[0].timestamp
+        // Separate the extra block (for timestamp + gas target derivation) from blocks to insert
+        const extraBlock = fetchStart < startBlock && allBlocks[0].number === fetchStart
+          ? allBlocks[0]
           : undefined;
+        const prevBlockTimestamp = extraBlock?.timestamp;
         const blocks = allBlocks.filter(b => b.number >= startBlock);
 
         if (blocks.length === 0) {
@@ -161,7 +168,7 @@ export class BlockBackfiller {
         }
 
         // Convert blocks
-        const blockData = await this.convertBlocks(blocks, prevBlockTimestamp);
+        const blockData = await this.convertBlocks(blocks, prevBlockTimestamp, extraBlock);
 
         // Apply pre-fetched receipts to compute priority fee metrics
         const { enrichedCount } = applyReceiptsToBlocks(blockData, receiptsMap);
@@ -201,9 +208,34 @@ export class BlockBackfiller {
   }
 
   /**
+   * Load EIP-1559 params from DB, falling back to hardcoded values.
+   */
+  private async loadEip1559Params(): Promise<void> {
+    try {
+      const dbParams = await getAllEip1559Params();
+      if (dbParams.length > 0) {
+        this.eip1559Params = dbParams.map(p => ({
+          blockNumber: p.blockNumber,
+          baseFeeChangeDenominator: p.baseFeeChangeDenominator,
+        }));
+        console.log(`[${WORKER_NAME}] Loaded ${dbParams.length} EIP-1559 params from DB`);
+        return;
+      }
+    } catch {
+      // DB may not have the table yet
+    }
+    this.eip1559Params = KNOWN_EIP1559_PARAMS.map(p => ({
+      blockNumber: p.blockNumber,
+      baseFeeChangeDenominator: p.baseFeeChangeDenominator,
+    }));
+    console.log(`[${WORKER_NAME}] Using ${this.eip1559Params.length} hardcoded EIP-1559 params`);
+  }
+
+  /**
    * Convert viem blocks to our Block type.
    * @param blocks - Array of blocks to convert
    * @param prevBlockTimestamp - Timestamp of the block before the first block (for block_time calculation)
+   * @param extraBlock - The extra block fetched before the batch (for gas target derivation of first block)
    */
   private async convertBlocks(
     blocks: Array<{
@@ -221,9 +253,16 @@ export class BlockBackfiller {
         gas: bigint;
       }>;
     }>,
-    prevBlockTimestamp?: bigint
+    prevBlockTimestamp?: bigint,
+    extraBlock?: {
+      number: bigint;
+      gasUsed: bigint;
+      gasLimit: bigint;
+      baseFeePerGas: bigint | null | undefined;
+    }
   ): Promise<Block[]> {
     const result: Block[] = [];
+    let lastGasTargetPct: number | null = null;
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -239,6 +278,38 @@ export class BlockBackfiller {
         },
         previousTimestamp
       );
+
+      // Derive gas target percentage using parent block data
+      let gasTargetPct: number | null = null;
+      if (i > 0) {
+        const parent = blocks[i - 1];
+        const bfcd = getBfcdForBlock(parent.number, this.eip1559Params);
+        if (bfcd !== null) {
+          const parentBaseFee = Number(parent.baseFeePerGas ?? 0n) / 1e9;
+          gasTargetPct = deriveGasTargetPct(
+            metrics.baseFeeGwei, parentBaseFee, parent.gasUsed, parent.gasLimit, bfcd
+          );
+        }
+      } else if (extraBlock) {
+        // First block in batch - use the extra block as parent
+        const bfcd = getBfcdForBlock(extraBlock.number, this.eip1559Params);
+        if (bfcd !== null) {
+          const parentBaseFee = Number(extraBlock.baseFeePerGas ?? 0n) / 1e9;
+          gasTargetPct = deriveGasTargetPct(
+            metrics.baseFeeGwei, parentBaseFee, extraBlock.gasUsed, extraBlock.gasLimit, bfcd
+          );
+        }
+      }
+
+      // Carry-forward logic
+      if (gasTargetPct !== null) {
+        lastGasTargetPct = gasTargetPct;
+      } else if (lastGasTargetPct !== null) {
+        gasTargetPct = lastGasTargetPct;
+      } else {
+        gasTargetPct = getDefaultGasTargetPct(block.number);
+        lastGasTargetPct = gasTargetPct;
+      }
 
       result.push({
         blockNumber: block.number,
@@ -262,6 +333,7 @@ export class BlockBackfiller {
         finalizedAt: null,
         milestoneId: null,
         timeToFinalitySec: null,
+        gasTargetPct,
       });
     }
 

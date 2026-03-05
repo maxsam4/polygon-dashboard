@@ -422,6 +422,11 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             time: d.timestamp as UTCTimestamp,
             value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
           }));
+        } else if (metric === 'gasTarget') {
+          seriesData = blockData.map((d) => ({
+            time: d.timestamp as UTCTimestamp,
+            value: d.gasTargetPctAvg ?? 65,
+          }));
         } else if (metric === 'borBlockTime') {
           seriesData = data
             .filter((d) => d.blockTimeAvg !== null)

@@ -1,6 +1,6 @@
 import { getRpcClient } from '../rpc';
 import { insertBlocksBatch, getHighestBlockNumberFromDb } from '../queries/blocks';
-import { calculateBlockMetrics } from '../gas';
+import { calculateBlockMetrics, deriveGasTargetPct } from '../gas';
 import { Block } from '../types';
 import { getIndexerState, updateIndexerState, initializeIndexerState, IndexerCursor } from './indexerState';
 import { handleReorg, getBlockByNumber } from './reorgHandler';
@@ -9,6 +9,8 @@ import { initWorkerStatus, updateWorkerState, updateWorkerRun, updateWorkerError
 import { sleep, bigintRange } from '../utils';
 import { updateTableStats } from '../queries/stats';
 import { checkBlocksForAnomalies } from '../anomalyDetector';
+import { Eip1559Param, getBfcdForBlock, getDefaultGasTargetPct, KNOWN_EIP1559_PARAMS } from '../eip1559Params';
+import { getAllEip1559Params } from '../queries/eip1559Params';
 
 const SERVICE_NAME = 'block_indexer';
 const WORKER_NAME = 'BlockIndexer';
@@ -28,6 +30,8 @@ export class BlockIndexer {
   private abortController: AbortController | null = null;
   private batchSize: number;
   private lastBlockTimestamp: Date | null = null;
+  private eip1559Params: Eip1559Param[] = [];
+  private lastGasTargetPct: number | null = null;
 
   constructor() {
     this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
@@ -80,6 +84,9 @@ export class BlockIndexer {
         this.lastBlockTimestamp = dbBlock.timestamp;
       }
     }
+
+    // Load EIP-1559 params for gas target derivation
+    await this.loadEip1559Params();
 
     // Start main loop
     this.runLoop().catch(err => {
@@ -203,6 +210,30 @@ export class BlockIndexer {
   }
 
   /**
+   * Load EIP-1559 params from DB, falling back to hardcoded values.
+   */
+  private async loadEip1559Params(): Promise<void> {
+    try {
+      const dbParams = await getAllEip1559Params();
+      if (dbParams.length > 0) {
+        this.eip1559Params = dbParams.map(p => ({
+          blockNumber: p.blockNumber,
+          baseFeeChangeDenominator: p.baseFeeChangeDenominator,
+        }));
+        console.log(`[${WORKER_NAME}] Loaded ${dbParams.length} EIP-1559 params from DB`);
+        return;
+      }
+    } catch {
+      // DB may not have the table yet
+    }
+    this.eip1559Params = KNOWN_EIP1559_PARAMS.map(p => ({
+      blockNumber: p.blockNumber,
+      baseFeeChangeDenominator: p.baseFeeChangeDenominator,
+    }));
+    console.log(`[${WORKER_NAME}] Using ${this.eip1559Params.length} hardcoded EIP-1559 params`);
+  }
+
+  /**
    * Detect reorg by validating parent hash chain.
    * Returns the block number where reorg was detected, or null if chain is valid.
    */
@@ -246,12 +277,18 @@ export class BlockIndexer {
   ): Promise<Block[]> {
     const result: Block[] = [];
     let previousTimestamp: bigint | undefined;
+    let parentBaseFeeGwei: number | undefined;
+    let parentGasUsed: bigint | undefined;
+    let parentGasLimit: bigint | undefined;
 
-    // Get the previous block's timestamp for the first block in the batch
+    // Get the previous block's data for the first block in the batch
     if (blocks.length > 0) {
       const prevBlock = await getBlockByNumber(blocks[0].number - 1n);
       if (prevBlock) {
         previousTimestamp = BigInt(Math.floor(prevBlock.timestamp.getTime() / 1000));
+        parentBaseFeeGwei = prevBlock.baseFeeGwei;
+        parentGasUsed = prevBlock.gasUsed;
+        parentGasLimit = prevBlock.gasLimit;
       }
     }
 
@@ -265,6 +302,28 @@ export class BlockIndexer {
         },
         previousTimestamp
       );
+
+      // Derive gas target percentage
+      let gasTargetPct: number | null = null;
+      if (parentBaseFeeGwei !== undefined && parentGasUsed !== undefined && parentGasLimit !== undefined) {
+        const parentBlockNumber = block.number - 1n;
+        const bfcd = getBfcdForBlock(parentBlockNumber, this.eip1559Params);
+        if (bfcd !== null) {
+          gasTargetPct = deriveGasTargetPct(
+            metrics.baseFeeGwei, parentBaseFeeGwei, parentGasUsed, parentGasLimit, bfcd
+          );
+        }
+      }
+
+      // Carry-forward logic
+      if (gasTargetPct !== null) {
+        this.lastGasTargetPct = gasTargetPct;
+      } else if (this.lastGasTargetPct !== null) {
+        gasTargetPct = this.lastGasTargetPct;
+      } else {
+        gasTargetPct = getDefaultGasTargetPct(block.number);
+        this.lastGasTargetPct = gasTargetPct;
+      }
 
       result.push({
         blockNumber: block.number,
@@ -288,9 +347,14 @@ export class BlockIndexer {
         finalizedAt: null,
         milestoneId: null,
         timeToFinalitySec: null,
+        gasTargetPct,
       });
 
+      // Track parent data for next block
       previousTimestamp = block.timestamp;
+      parentBaseFeeGwei = metrics.baseFeeGwei;
+      parentGasUsed = block.gasUsed;
+      parentGasLimit = block.gasLimit;
     }
 
     return result;

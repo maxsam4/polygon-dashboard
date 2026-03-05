@@ -26,6 +26,7 @@ function rowToBlock(row: BlockRow): Block {
     finalizedAt: row.finalized_at,
     milestoneId: row.milestone_id ? BigInt(row.milestone_id) : null,
     timeToFinalitySec: row.time_to_finality_sec,
+    gasTargetPct: row.gas_target_pct,
   };
 }
 
@@ -201,8 +202,8 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
       total_base_fee_gwei, total_priority_fee_gwei,
       tx_count, block_time_sec, mgas_per_sec, tps,
-      finalized, finalized_at, milestone_id, time_to_finality_sec
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      finalized, finalized_at, milestone_id, time_to_finality_sec, gas_target_pct
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
     ON CONFLICT (timestamp, block_number) DO UPDATE SET
       block_hash = EXCLUDED.block_hash,
       parent_hash = EXCLUDED.parent_hash,
@@ -234,6 +235,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
         WHEN blocks.block_time_sec IS NULL OR blocks.block_time_sec > ${BLOCK_TIME_SUSPECT_THRESHOLD_SEC} THEN EXCLUDED.tps
         ELSE blocks.tps
       END,
+      gas_target_pct = COALESCE(EXCLUDED.gas_target_pct, blocks.gas_target_pct),
       updated_at = NOW()
     WHERE blocks.finalized = FALSE`,
     [
@@ -258,6 +260,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       block.finalizedAt,
       block.milestoneId?.toString() ?? null,
       block.timeToFinalitySec,
+      block.gasTargetPct,
     ]
   );
 }
@@ -275,7 +278,7 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
   // Simple batch insert - finality is reconciled after insert from block_finality table
   const values: string[] = [];
   const params: unknown[] = [];
-  const PARAMS_PER_BLOCK = 21;
+  const PARAMS_PER_BLOCK = 22;
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
@@ -307,7 +310,8 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
       block.finalized,
       block.finalizedAt,
       block.milestoneId?.toString() ?? null,
-      block.timeToFinalitySec
+      block.timeToFinalitySec,
+      block.gasTargetPct
     );
   }
 
@@ -318,7 +322,7 @@ export async function insertBlocksBatch(blocks: Omit<Block, 'createdAt' | 'updat
       min_priority_fee_gwei, max_priority_fee_gwei, avg_priority_fee_gwei, median_priority_fee_gwei,
       total_base_fee_gwei, total_priority_fee_gwei,
       tx_count, block_time_sec, mgas_per_sec, tps,
-      finalized, finalized_at, milestone_id, time_to_finality_sec
+      finalized, finalized_at, milestone_id, time_to_finality_sec, gas_target_pct
     ) VALUES ${values.join(', ')}
     ON CONFLICT (timestamp, block_number) DO NOTHING`,
     params

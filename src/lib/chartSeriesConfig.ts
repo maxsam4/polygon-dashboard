@@ -16,7 +16,8 @@ export type ChartMetric =
   | 'totalFee'
   | 'blockLimit'
   | 'blockLimitUtilization'
-  | 'borBlockTime';
+  | 'borBlockTime'
+  | 'gasTarget';
 
 export interface SeriesOption {
   key: string;
@@ -85,6 +86,11 @@ export function getSeriesOptionsForMetric(
         { key: 'avg', label: 'Avg', enabled: true, color: colors[0] },
         { key: 'min', label: 'Min', enabled: false, color: colors[1] },
         { key: 'max', label: 'Max', enabled: false, color: colors[2] },
+      ];
+
+    case 'gasTarget':
+      return [
+        { key: 'value', label: 'Gas Target %', enabled: true, color: colors[0] },
       ];
 
     case 'finality':

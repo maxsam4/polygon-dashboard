@@ -43,6 +43,7 @@ function makeBlock(overrides: Partial<Block> = {}): Block {
     finalizedAt: null,
     milestoneId: null,
     timeToFinalitySec: null,
+    gasTargetPct: 65,
     ...overrides,
   };
 }

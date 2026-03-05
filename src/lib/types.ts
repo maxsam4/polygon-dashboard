@@ -20,6 +20,7 @@ export interface Block {
   finalizedAt: Date | null;
   milestoneId: bigint | null;
   timeToFinalitySec: number | null;
+  gasTargetPct: number | null;
 }
 
 export interface Milestone {
@@ -59,6 +60,7 @@ export interface BlockRow {
   finalized_at: Date | null;
   milestone_id: string | null;
   time_to_finality_sec: number | null;
+  gas_target_pct: number | null;
 }
 
 /**
@@ -83,6 +85,7 @@ export interface BlockDataUI {
   totalPriorityFeeGwei?: number | null;  // null = pending (receipt data not yet fetched)
   finalized: boolean;
   timeToFinalitySec: number | null;
+  gasTargetPct?: number | null;
 }
 
 export interface ChartDataPoint {
@@ -104,6 +107,7 @@ export interface ChartDataPoint {
   blockTimeAvg: number | null;
   blockTimeMin: number | null;
   blockTimeMax: number | null;
+  gasTargetPctAvg: number | null;
 }
 
 // Inflation rate data from database

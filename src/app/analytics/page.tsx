@@ -44,6 +44,7 @@ export default function AnalyticsPage() {
           <LazyFullChart title="TPS" metric="tps" />
           <LazyFullChart title="Block Limit (M gas)" metric="blockLimit" />
           <LazyFullChart title="Block Utilization (%)" metric="blockLimitUtilization" />
+          <LazyFullChart title="Gas Target (%)" metric="gasTarget" />
           <LazyFullChart title="Total Base Fee per Block (POL)" metric="totalBaseFee" />
           <LazyFullChart title="Total Priority Fee per Block (POL)" metric="totalPriorityFee" />
           <LazyFullChart title="Total Fee per Block (POL)" metric="totalFee" />

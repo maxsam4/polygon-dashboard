@@ -142,6 +142,22 @@ export default function AdminPage() {
     message: string;
   } | null>(null);
 
+  // EIP-1559 params state
+  const [eip1559Params, setEip1559Params] = useState<Array<{
+    id: number;
+    blockNumber: string;
+    baseFeeChangeDenominator: number;
+    description: string | null;
+  }>>([]);
+  const [bfcdBlockInput, setBfcdBlockInput] = useState('');
+  const [bfcdValueInput, setBfcdValueInput] = useState('');
+  const [bfcdDescInput, setBfcdDescInput] = useState('');
+  const [isAddingBfcd, setIsAddingBfcd] = useState(false);
+  const [bfcdResult, setBfcdResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
   // Logout state
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -232,6 +248,61 @@ export default function AdminPage() {
       });
     } finally {
       setIsScanningBlock(false);
+    }
+  };
+
+  const fetchEip1559Params = async () => {
+    try {
+      const res = await fetch('/api/admin/eip1559-params');
+      if (res.ok) {
+        const data = await res.json();
+        setEip1559Params(data.params);
+      }
+    } catch {
+      // Ignore - params card will show empty
+    }
+  };
+
+  useEffect(() => {
+    fetchEip1559Params();
+  }, []);
+
+  const handleAddBfcd = async () => {
+    if (!bfcdBlockInput || isNaN(Number(bfcdBlockInput))) {
+      setBfcdResult({ success: false, message: 'Please enter a valid block number' });
+      return;
+    }
+    if (!bfcdValueInput || isNaN(Number(bfcdValueInput)) || Number(bfcdValueInput) <= 0) {
+      setBfcdResult({ success: false, message: 'Please enter a valid denominator (positive integer)' });
+      return;
+    }
+
+    setIsAddingBfcd(true);
+    setBfcdResult(null);
+    try {
+      const res = await fetch('/api/admin/eip1559-params', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blockNumber: bfcdBlockInput,
+          baseFeeChangeDenominator: bfcdValueInput,
+          description: bfcdDescInput || undefined,
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setBfcdResult({ success: true, message: 'Parameter added successfully!' });
+        setBfcdBlockInput('');
+        setBfcdValueInput('');
+        setBfcdDescInput('');
+        fetchEip1559Params();
+      } else {
+        setBfcdResult({ success: false, message: result.error || 'Failed to add parameter' });
+      }
+    } catch {
+      setBfcdResult({ success: false, message: 'Failed to add parameter' });
+    } finally {
+      setIsAddingBfcd(false);
     }
   };
 
@@ -526,6 +597,66 @@ export default function AdminPage() {
                     <li>Latest (block 22884776): 28569152196770890</li>
                   </ul>
                 </div>
+              </div>
+            </Card>
+
+            {/* EIP-1559 Parameters */}
+            <Card title="EIP-1559 Parameters (BFCD)">
+              <div className="space-y-1 mb-4">
+                {eip1559Params.length === 0 ? (
+                  <div className="text-muted text-sm">No parameters loaded</div>
+                ) : (
+                  eip1559Params.map((p) => (
+                    <div key={p.id} className="flex justify-between py-1 border-b border-accent/10 last:border-0">
+                      <span className="text-muted text-sm">Block {Number(p.blockNumber).toLocaleString()}</span>
+                      <span className="text-foreground text-sm">
+                        BFCD = {p.baseFeeChangeDenominator}
+                        {p.description && <span className="text-muted ml-2">({p.description})</span>}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-accent/10">
+                <label className="block text-muted text-sm mb-2">
+                  Add New BFCD Value
+                </label>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={bfcdBlockInput}
+                    onChange={(e) => setBfcdBlockInput(e.target.value)}
+                    placeholder="Block number"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-accent/20 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+                  />
+                  <input
+                    type="text"
+                    value={bfcdValueInput}
+                    onChange={(e) => setBfcdValueInput(e.target.value)}
+                    placeholder="BaseFeeChangeDenominator (e.g., 64)"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-accent/20 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+                  />
+                  <input
+                    type="text"
+                    value={bfcdDescInput}
+                    onChange={(e) => setBfcdDescInput(e.target.value)}
+                    placeholder="Description (optional)"
+                    className="w-full px-3 py-2 bg-surface dark:bg-surface-elevated text-foreground rounded-lg border border-accent/20 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+                  />
+                  <button
+                    onClick={handleAddBfcd}
+                    disabled={isAddingBfcd}
+                    className="w-full px-4 py-2 btn-gradient-active rounded-lg transition-all disabled:opacity-50"
+                  >
+                    {isAddingBfcd ? 'Adding...' : 'Add Parameter'}
+                  </button>
+                </div>
+                {bfcdResult && (
+                  <div className={`mt-2 text-sm ${bfcdResult.success ? 'text-success' : 'text-danger'}`}>
+                    {bfcdResult.message}
+                  </div>
+                )}
               </div>
             </Card>
 

@@ -157,6 +157,19 @@ Detects anomalies in key metrics and stores them for alerting:
   - Acknowledged alerts shown with reduced opacity and "ack" status badge
   - Filter by status: All / Unacknowledged / Acknowledged
 
+### Gas Target Percentage (EIP-1559 Elasticity)
+
+Tracks the effective gas target percentage derived from consecutive blocks' baseFee changes:
+
+- **Column**: `blocks.gas_target_pct` (DOUBLE PRECISION, nullable)
+- **Table**: `eip1559_params` stores BaseFeeChangeDenominator (BFCD) values at hardfork blocks
+- **Derivation**: `R = (baseFee[N] - baseFee[N-1]) / baseFee[N-1] * BFCD; gasTargetPct = gasUsed[N-1] / (R+1) / gasLimit[N-1] * 100`
+- **Carry-forward**: When derivation fails (zero baseFee, zero gasUsed, numerical instability), uses last known value or protocol default (50% pre-Dandeli block 81424000, 65% post-Dandeli)
+- **Modules**: `src/lib/eip1559Params.ts` (BFCD lookup), `src/lib/gas.ts` (`deriveGasTargetPct()`), `src/lib/queries/eip1559Params.ts` (DB queries)
+- **Admin API**: `GET/POST /api/admin/eip1559-params` — view/add BFCD records (auth required)
+- **Admin UI**: "EIP-1559 Parameters (BFCD)" card on `/admin` page
+- **Chart**: "Gas Target (%)" on `/analytics` page using `gasTargetPctAvg` from continuous aggregates
+
 ### RPC Performance Tracking
 
 Records every RPC call attempt for visibility into endpoint performance:
@@ -195,6 +208,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - `src/lib/utils.ts` - General utilities (sleep, formatPol)
 - `src/lib/anomalyDetector.ts` - Anomaly detection logic for block metrics
 - `src/lib/rpcStats.ts` - RPC call stats recording with in-memory buffer and periodic flush
+- `src/lib/eip1559Params.ts` - EIP-1559 BFCD lookup and gas target percentage defaults
 
 ### Hooks
 

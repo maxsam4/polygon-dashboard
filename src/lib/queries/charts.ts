@@ -62,6 +62,7 @@ interface ChartRow {
   block_time_avg: number | null;
   block_time_min: number | null;
   block_time_max: number | null;
+  gas_target_pct_avg: number | null;
 }
 
 /**
@@ -123,6 +124,7 @@ export async function getChartData(
     blockTimeAvg: row.block_time_avg,
     blockTimeMin: row.block_time_min,
     blockTimeMax: row.block_time_max,
+    gasTargetPctAvg: row.gas_target_pct_avg,
   }));
 
   return { data, total };
@@ -183,7 +185,8 @@ async function getChartDataFromSource(
         MAX(time_to_finality_sec) FILTER (WHERE finalized) AS finality_max,
         AVG(block_time_sec) AS block_time_avg,
         MIN(block_time_sec) AS block_time_min,
-        MAX(block_time_sec) AS block_time_max
+        MAX(block_time_sec) AS block_time_max,
+        AVG(gas_target_pct) AS gas_target_pct_avg
       FROM blocks
       WHERE timestamp >= $2 AND timestamp <= $3
       GROUP BY bucket
@@ -230,7 +233,8 @@ async function getChartDataFromSource(
         finality_max,
         block_time_sum::DOUBLE PRECISION / NULLIF(block_count, 0) AS block_time_avg,
         NULL::double precision AS block_time_min,
-        NULL::double precision AS block_time_max
+        NULL::double precision AS block_time_max,
+        gas_target_pct_avg
       FROM ${table}
       WHERE bucket >= $1 AND bucket <= $2
       ORDER BY bucket
@@ -271,7 +275,8 @@ async function getChartDataFromSource(
       MAX(finality_max) AS finality_max,
       SUM(block_time_sum)::DOUBLE PRECISION / NULLIF(SUM(block_count), 0) AS block_time_avg,
       NULL::double precision AS block_time_min,
-      NULL::double precision AS block_time_max
+      NULL::double precision AS block_time_max,
+      SUM(gas_target_pct_avg * block_count) / NULLIF(SUM(block_count), 0) AS gas_target_pct_avg
     FROM ${table}
     WHERE bucket >= $2 AND bucket <= $3
     GROUP BY time_bucket($1::interval, bucket)

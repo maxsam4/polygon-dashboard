@@ -93,6 +93,7 @@ export async function getBlockByNumber(blockNumber: bigint): Promise<Block | nul
     finalizedAt: r.finalized_at,
     milestoneId: r.milestone_id ? BigInt(r.milestone_id) : null,
     timeToFinalitySec: r.time_to_finality_sec,
+    gasTargetPct: r.gas_target_pct,
   };
 }
 
