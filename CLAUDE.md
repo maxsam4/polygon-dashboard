@@ -31,6 +31,8 @@ UPDATE blocks SET x = y WHERE (timestamp, block_number) = ('2026-02-03 09:25:58+
 
 **Timestamp filters must be < 7 days** - Chunks are compressed after 35 days. Queries spanning compressed chunks are slow. Always use timestamp filters within 7 days for hypertable queries (blocks, block_finality).
 
+**Updating compressed chunks** - Use `decompress_chunk()` + UPDATE + `compress_chunk()` in 1-day batches (not 7-day — 43K rows/day × 7 exceeds the 100K decompression limit). May need multiple passes due to partial chunk decompression. See `20260305_120006_backfill_compressed_gas_target_pct.sql` for the pattern.
+
 **Check for stuck queries before retrying** - Failed SSH sessions can leave queries running:
 ```sql
 -- Find stuck queries
@@ -248,6 +250,9 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - Gwei values: DOUBLE PRECISION
 - Chunk interval: 24 hours (~43K rows/chunk) - keeps under TimescaleDB's 100K decompression limit
 - Compression: After 35 days - compressed chunks cannot be efficiently updated
+- **Adding a column to `blocks`** - Update all of: `Block` interface, `BlockRow` interface, `rowToBlock()`, `insertBlock()` params + ON CONFLICT, `insertBlocksBatch()` params + PARAMS_PER_BLOCK, `reorgHandler.ts` block construction, test fixtures (`__tests__/fixtures/blocks.ts`, `receiptEnricher.test.ts`). Optionally: `BlockDataUI`, `ChartDataPoint`, continuous aggregates, chart queries.
+- **lightweight-charts `setVisibleRange`** crashes with "Value is null" when no series has data points. Always guard with a `hasAnyData` check before calling `setVisibleRange()` or `fitContent()`.
+- **Backfiller processes backwards** - `BlockBackfiller` goes ascending within a batch but backwards across batches. Never use class-level carry-forward state (it would propagate newer values into older blocks). Use batch-scoped local variables instead.
 - Magic numbers go in `src/lib/constants.ts`
 - Shared formatting functions go in dedicated utility modules
 - Clean up dead code after you make changes
