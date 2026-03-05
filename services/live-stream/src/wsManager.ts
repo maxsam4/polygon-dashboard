@@ -312,9 +312,7 @@ export class WSManager {
       }
     }
     // Carry-forward: use last known value or protocol default
-    if (gasTargetPct !== null) {
-      this.lastGasTargetPct = gasTargetPct;
-    } else {
+    if (gasTargetPct === null) {
       gasTargetPct = this.lastGasTargetPct ?? (blockNumber < DANDELI_BLOCK ? 50.0 : 65.0);
     }
 
@@ -347,6 +345,13 @@ export class WSManager {
 
     // Add to ring buffer (deduplicates)
     const added = this.ringBuffer.push(block);
+
+    if (added) {
+      // Only update carry-forward state for non-duplicate blocks
+      if (block.gasTargetPct !== null) {
+        this.lastGasTargetPct = block.gasTargetPct;
+      }
+    }
 
     if (added && this.onNewBlock) {
       console.log(`[WS] New block #${blockNumber} from ${url}`);

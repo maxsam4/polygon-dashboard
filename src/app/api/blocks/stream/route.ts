@@ -41,6 +41,7 @@ interface LiveStreamBlockUpdate {
   avgPriorityFeeGwei?: number;
   medianPriorityFeeGwei?: number;
   totalPriorityFeeGwei?: number;
+  gasTargetPct?: number;
   finalized?: boolean;
   finalizedAt?: number;
   milestoneId?: number;
@@ -86,7 +87,7 @@ function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
 const ALLOWED_UPDATE_FIELDS = [
   'txCount', 'tps', 'minPriorityFeeGwei', 'maxPriorityFeeGwei',
   'avgPriorityFeeGwei', 'medianPriorityFeeGwei', 'totalPriorityFeeGwei',
-  'finalized', 'finalizedAt', 'milestoneId', 'timeToFinalitySec'
+  'gasTargetPct', 'finalized', 'finalizedAt', 'milestoneId', 'timeToFinalitySec'
 ] as const;
 
 // Transform block_update partial update to UI format
