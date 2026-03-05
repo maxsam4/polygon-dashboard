@@ -30,7 +30,6 @@ export class BlockBackfiller {
   private batchSize: number;
   private delayMs: number;
   private eip1559Params: Eip1559Param[] = [];
-  private lastGasTargetPct: number | null = null;
   private lastParamReload: number = 0;
 
   constructor() {
@@ -272,6 +271,7 @@ export class BlockBackfiller {
     }
   ): Promise<Block[]> {
     const result: Block[] = [];
+    let lastGasTargetPct: number | null = null;
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -312,12 +312,12 @@ export class BlockBackfiller {
 
       // Carry-forward logic
       if (gasTargetPct !== null) {
-        this.lastGasTargetPct = gasTargetPct;
-      } else if (this.lastGasTargetPct !== null) {
-        gasTargetPct = this.lastGasTargetPct;
+        lastGasTargetPct = gasTargetPct;
+      } else if (lastGasTargetPct !== null) {
+        gasTargetPct = lastGasTargetPct;
       } else {
         gasTargetPct = getDefaultGasTargetPct(block.number);
-        this.lastGasTargetPct = gasTargetPct;
+        lastGasTargetPct = gasTargetPct;
       }
 
       result.push({

@@ -185,12 +185,17 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           else if (opt.key === 'minPriority') value = dataPoint.priorityFee.min;
           else if (opt.key === 'maxPriority') value = dataPoint.priorityFee.max;
           else if (opt.key === 'total') value = dataPoint.total.avg;
+        } else if (metric === 'gasTarget') {
+          value = dataPoint.gasTargetPctAvg;
         }
 
         if (value !== null && value !== undefined) {
+          const suffix = metric === 'borBlockTime' ? 's'
+            : metric === 'gasTarget' ? '%'
+            : ' Gwei';
           values.push({
             label: opt.label,
-            value: value.toFixed(2) + (metric === 'borBlockTime' ? 's' : ' Gwei'),
+            value: value.toFixed(2) + suffix,
             color: opt.color,
           });
         }

@@ -37,13 +37,15 @@ export async function insertEip1559Param(param: {
   blockNumber: bigint;
   baseFeeChangeDenominator: number;
   description?: string;
-}): Promise<void> {
-  await query(
+}): Promise<boolean> {
+  const rows = await query<{ id: number }>(
     `INSERT INTO eip1559_params (block_number, base_fee_change_denominator, description)
      VALUES ($1, $2, $3)
-     ON CONFLICT (block_number) DO NOTHING`,
+     ON CONFLICT (block_number) DO NOTHING
+     RETURNING id`,
     [param.blockNumber.toString(), param.baseFeeChangeDenominator, param.description ?? null]
   );
+  return rows.length > 0;
 }
 
 export async function getEip1559ParamCount(): Promise<number> {

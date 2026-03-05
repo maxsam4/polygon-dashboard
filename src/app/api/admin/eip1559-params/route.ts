@@ -37,48 +37,53 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { blockNumber, baseFeeChangeDenominator, description } = body;
 
-    if (!blockNumber || !baseFeeChangeDenominator) {
+    if (blockNumber === undefined || blockNumber === null ||
+        baseFeeChangeDenominator === undefined || baseFeeChangeDenominator === null) {
       return NextResponse.json(
         { error: 'blockNumber and baseFeeChangeDenominator are required' },
         { status: 400 }
       );
     }
 
-    // Validate blockNumber is a valid integer string
-    if (!/^\d+$/.test(String(blockNumber))) {
+    // Validate blockNumber is a valid non-negative integer string
+    const blockStr = String(blockNumber);
+    if (!/^\d+$/.test(blockStr)) {
       return NextResponse.json(
         { error: 'blockNumber must be a non-negative integer' },
         { status: 400 }
       );
     }
 
-    // Validate baseFeeChangeDenominator is a strict positive integer
+    // Validate baseFeeChangeDenominator is a strict positive integer within int32 range
     const bfcdStr = String(baseFeeChangeDenominator);
-    if (!/^\d+$/.test(bfcdStr) || Number(bfcdStr) <= 0) {
+    if (!/^\d+$/.test(bfcdStr)) {
       return NextResponse.json(
         { error: 'baseFeeChangeDenominator must be a positive integer' },
         { status: 400 }
       );
     }
-
-    const blockNum = BigInt(blockNumber);
     const bfcd = Number(bfcdStr);
+    if (!Number.isSafeInteger(bfcd) || bfcd < 1 || bfcd > 2147483647) {
+      return NextResponse.json(
+        { error: 'baseFeeChangeDenominator must be between 1 and 2147483647' },
+        { status: 400 }
+      );
+    }
 
-    // Check for duplicate
-    const existing = await getAllEip1559Params();
-    const isDuplicate = existing.some(p => p.blockNumber === blockNum);
-    if (isDuplicate) {
+    const blockNum = BigInt(blockStr);
+
+    const inserted = await insertEip1559Param({
+      blockNumber: blockNum,
+      baseFeeChangeDenominator: bfcd,
+      description: description || undefined,
+    });
+
+    if (!inserted) {
       return NextResponse.json(
         { error: 'A parameter already exists for this block number', duplicate: true },
         { status: 409 }
       );
     }
-
-    await insertEip1559Param({
-      blockNumber: blockNum,
-      baseFeeChangeDenominator: bfcd,
-      description: description || undefined,
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
