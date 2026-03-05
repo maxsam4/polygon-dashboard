@@ -20,6 +20,8 @@ interface LiveStreamBlock {
   blockTimeSec: number | null;
   mgasPerSec: number | null;
   tps: number | null;
+  // EIP-1559 gas target percentage
+  gasTargetPct: number | null;
   // Receipt-based metrics (null = pending)
   avgPriorityFeeGwei: number | null;
   totalPriorityFeeGwei: number | null;
@@ -76,6 +78,7 @@ function liveStreamBlockToUI(b: LiveStreamBlock): BlockDataUI {
     totalPriorityFeeGwei: b.totalPriorityFeeGwei ?? null,
     finalized: b.finalized ?? false,
     timeToFinalitySec,
+    gasTargetPct: b.gasTargetPct ?? null,
   };
 }
 

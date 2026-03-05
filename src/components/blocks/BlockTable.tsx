@@ -36,13 +36,14 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
               <th className="px-3 py-2 text-right" style={{ minWidth: '70px' }}>Txs</th>
               <th className="px-3 py-2 text-right" style={{ minWidth: '55px' }}>MGAS/s</th>
               <th className="px-3 py-2 text-right" style={{ minWidth: '40px' }}>TPS</th>
+              <th className="px-3 py-2 text-right" style={{ minWidth: '60px' }}>Gas Target</th>
               <th className="px-3 py-2 text-right" style={{ minWidth: '60px' }}>Finality</th>
             </tr>
           </thead>
           <tbody>
             {blocks.length === 0 ? (
               <tr>
-                <td colSpan={13} className="px-3 py-8 text-center text-muted">
+                <td colSpan={14} className="px-3 py-8 text-center text-muted">
                   No blocks found
                 </td>
               </tr>
@@ -96,6 +97,7 @@ export function BlockTable({ blocks, title = 'Latest Blocks' }: BlockTableProps)
                   </td>
                   <td className="px-3 py-2 text-right">{block.mgasPerSec?.toFixed(1) ?? '-'}</td>
                   <td className="px-3 py-2 text-right">{block.tps?.toFixed(0) ?? '-'}</td>
+                  <td className="px-3 py-2 text-right">{block.gasTargetPct != null ? `${block.gasTargetPct.toFixed(1)}%` : '-'}</td>
                   <td className="px-3 py-2 text-right">
                     {block.finalized ? (
                       <span className="text-success font-medium">

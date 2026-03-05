@@ -45,6 +45,8 @@ export interface StreamBlock {
   // Receipt-based priority fee metrics (null = pending receipt data)
   avgPriorityFeeGwei: number | null;
   totalPriorityFeeGwei: number | null;
+  // EIP-1559 gas target percentage
+  gasTargetPct: number | null;
   // Finality data (populated when milestone arrives)
   finalized: boolean;
   finalizedAt: number | null; // unix timestamp

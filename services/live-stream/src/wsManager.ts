@@ -5,6 +5,45 @@ import { RingBuffer } from './ringBuffer.js';
 const GWEI = 1e9;
 const MGAS = 1e6;
 
+// EIP-1559 BaseFeeChangeDenominator values at hardfork blocks
+const KNOWN_EIP1559_PARAMS = [
+  { blockNumber: 23850000, baseFeeChangeDenominator: 8 },   // London
+  { blockNumber: 38189056, baseFeeChangeDenominator: 16 },  // Delhi (PIP-6)
+  { blockNumber: 73440256, baseFeeChangeDenominator: 64 },  // Bhilai (PIP-58)
+];
+
+const DANDELI_BLOCK = 81424000;
+
+function getBfcdForBlock(blockNumber: number): number | null {
+  if (blockNumber < KNOWN_EIP1559_PARAMS[0].blockNumber) return null;
+  let result = KNOWN_EIP1559_PARAMS[0].baseFeeChangeDenominator;
+  for (const p of KNOWN_EIP1559_PARAMS) {
+    if (p.blockNumber <= blockNumber) result = p.baseFeeChangeDenominator;
+    else break;
+  }
+  return result;
+}
+
+function deriveGasTargetPct(
+  currentBaseFeeGwei: number,
+  parentBaseFeeGwei: number,
+  parentGasUsed: bigint,
+  parentGasLimit: bigint,
+  bfcd: number
+): number | null {
+  if (parentBaseFeeGwei <= 0) return null;
+  if (parentGasUsed === 0n) return null;
+  const R = ((currentBaseFeeGwei - parentBaseFeeGwei) / parentBaseFeeGwei) * bfcd;
+  const denominator = R + 1;
+  if (Math.abs(denominator) < 1e-9) return null;
+  const gasTarget = Number(parentGasUsed) / denominator;
+  const parentGasLimitNum = Number(parentGasLimit);
+  if (parentGasLimitNum <= 0) return null;
+  const pct = (gasTarget / parentGasLimitNum) * 100;
+  if (pct < 1 || pct > 100) return null;
+  return Math.round(pct * 100) / 100;
+}
+
 // Reconnect backoff: 1s, 2s, 4s, 8s, 16s, max 30s
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
@@ -23,6 +62,7 @@ export class WSManager {
   private onNewBlock: BlockCallback | null = null;
   private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   private stalenessCheckTimer: NodeJS.Timeout | null = null;
+  private lastGasTargetPct: number | null = null;
 
   constructor(urls: string[], ringBuffer: RingBuffer) {
     this.urls = urls;
@@ -256,6 +296,28 @@ export class WSManager {
       tps = txCount / blockTimeSec;
     }
 
+    // Derive gas target percentage from previous block
+    let gasTargetPct: number | null = null;
+    const prevBlock = this.ringBuffer.get(blockNumber - 1);
+    if (prevBlock) {
+      const bfcd = getBfcdForBlock(blockNumber);
+      if (bfcd !== null) {
+        gasTargetPct = deriveGasTargetPct(
+          baseFeeGwei,
+          prevBlock.baseFeeGwei,
+          prevBlock.gasUsed,
+          prevBlock.gasLimit,
+          bfcd
+        );
+      }
+    }
+    // Carry-forward: use last known value or protocol default
+    if (gasTargetPct !== null) {
+      this.lastGasTargetPct = gasTargetPct;
+    } else {
+      gasTargetPct = this.lastGasTargetPct ?? (blockNumber < DANDELI_BLOCK ? 50.0 : 65.0);
+    }
+
     const block: StreamBlock = {
       blockNumber,
       blockHash: raw.hash,
@@ -271,6 +333,8 @@ export class WSManager {
       blockTimeSec,
       mgasPerSec,
       tps,
+      // EIP-1559 gas target percentage
+      gasTargetPct,
       // Receipt-based metrics (null = pending, populated by indexer)
       avgPriorityFeeGwei: null,
       totalPriorityFeeGwei: null,
