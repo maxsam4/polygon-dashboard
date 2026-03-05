@@ -177,7 +177,7 @@ export function deriveGasTargetPct(
   // Sanity check: gas target percentage should be between 1% and 100%
   if (pct < 1 || pct > 100) return null;
 
-  return pct;
+  return Math.round(pct * 100) / 100;
 }
 
 export function formatGwei(gwei: number): string {
