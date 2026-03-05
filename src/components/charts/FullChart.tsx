@@ -342,6 +342,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     // Clear existing series
     seriesRefs.current.forEach((series) => chartRef.current?.removeSeries(series));
     seriesRefs.current.clear();
+    let hasAnyData = false;
 
     seriesOptions
       .filter((opt) => opt.enabled)
@@ -462,18 +463,20 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
 
         series.setData(seriesData);
         seriesRefs.current.set(opt.key, series);
+        if (seriesData.length > 0) hasAnyData = true;
       });
 
     // Check if effect was cleaned up during series creation
     if (isCleanedUp || !chartRef.current) return;
 
     // Use setVisibleRange with the requested time bounds to ensure chart extends to the full range
-    if (timeRangeBounds) {
+    // Only call if at least one series has data — setVisibleRange crashes on empty charts
+    if (hasAnyData && timeRangeBounds) {
       chartRef.current.timeScale().setVisibleRange({
         from: timeRangeBounds.from as UTCTimestamp,
         to: timeRangeBounds.to as UTCTimestamp,
       });
-    } else {
+    } else if (hasAnyData) {
       chartRef.current.timeScale().fitContent();
     }
 
