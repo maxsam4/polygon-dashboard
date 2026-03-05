@@ -12,6 +12,7 @@ import { getAllEip1559Params } from '../queries/eip1559Params';
 
 const SERVICE_NAME = 'block_backfiller';
 const WORKER_NAME = 'BlockBackfiller';
+const PARAM_RELOAD_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Block Backfiller - Backwards indexing from lowest indexed block to target.
@@ -29,6 +30,8 @@ export class BlockBackfiller {
   private batchSize: number;
   private delayMs: number;
   private eip1559Params: Eip1559Param[] = [];
+  private lastGasTargetPct: number | null = null;
+  private lastParamReload: number = 0;
 
   constructor() {
     this.targetBlock = BigInt(process.env.BACKFILL_TO_BLOCK || '50000000');
@@ -126,6 +129,11 @@ export class BlockBackfiller {
   private async runLoop(): Promise<void> {
     while (this.running && this.cursor! > this.targetBlock) {
       try {
+        // Periodically reload EIP-1559 params to pick up admin changes
+        if (Date.now() - this.lastParamReload > PARAM_RELOAD_INTERVAL_MS) {
+          await this.loadEip1559Params();
+        }
+
         // Calculate block range to fetch (going backwards)
         const endBlock = this.cursor! - 1n;
         const startBlockRaw = endBlock - BigInt(this.batchSize) + 1n;
@@ -219,6 +227,7 @@ export class BlockBackfiller {
           baseFeeChangeDenominator: p.baseFeeChangeDenominator,
         }));
         console.log(`[${WORKER_NAME}] Loaded ${dbParams.length} EIP-1559 params from DB`);
+        this.lastParamReload = Date.now();
         return;
       }
     } catch {
@@ -229,6 +238,7 @@ export class BlockBackfiller {
       baseFeeChangeDenominator: p.baseFeeChangeDenominator,
     }));
     console.log(`[${WORKER_NAME}] Using ${this.eip1559Params.length} hardcoded EIP-1559 params`);
+    this.lastParamReload = Date.now();
   }
 
   /**
@@ -262,7 +272,6 @@ export class BlockBackfiller {
     }
   ): Promise<Block[]> {
     const result: Block[] = [];
-    let lastGasTargetPct: number | null = null;
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -283,7 +292,7 @@ export class BlockBackfiller {
       let gasTargetPct: number | null = null;
       if (i > 0) {
         const parent = blocks[i - 1];
-        const bfcd = getBfcdForBlock(parent.number, this.eip1559Params);
+        const bfcd = getBfcdForBlock(block.number, this.eip1559Params);
         if (bfcd !== null) {
           const parentBaseFee = Number(parent.baseFeePerGas ?? 0n) / 1e9;
           gasTargetPct = deriveGasTargetPct(
@@ -292,7 +301,7 @@ export class BlockBackfiller {
         }
       } else if (extraBlock) {
         // First block in batch - use the extra block as parent
-        const bfcd = getBfcdForBlock(extraBlock.number, this.eip1559Params);
+        const bfcd = getBfcdForBlock(block.number, this.eip1559Params);
         if (bfcd !== null) {
           const parentBaseFee = Number(extraBlock.baseFeePerGas ?? 0n) / 1e9;
           gasTargetPct = deriveGasTargetPct(
@@ -303,12 +312,12 @@ export class BlockBackfiller {
 
       // Carry-forward logic
       if (gasTargetPct !== null) {
-        lastGasTargetPct = gasTargetPct;
-      } else if (lastGasTargetPct !== null) {
-        gasTargetPct = lastGasTargetPct;
+        this.lastGasTargetPct = gasTargetPct;
+      } else if (this.lastGasTargetPct !== null) {
+        gasTargetPct = this.lastGasTargetPct;
       } else {
         gasTargetPct = getDefaultGasTargetPct(block.number);
-        lastGasTargetPct = gasTargetPct;
+        this.lastGasTargetPct = gasTargetPct;
       }
 
       result.push({

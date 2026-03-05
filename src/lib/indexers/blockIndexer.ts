@@ -14,6 +14,7 @@ import { getAllEip1559Params } from '../queries/eip1559Params';
 
 const SERVICE_NAME = 'block_indexer';
 const WORKER_NAME = 'BlockIndexer';
+const PARAM_RELOAD_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Block Indexer - Cursor-based, gap-free block indexer with reorg handling.
@@ -32,6 +33,7 @@ export class BlockIndexer {
   private lastBlockTimestamp: Date | null = null;
   private eip1559Params: Eip1559Param[] = [];
   private lastGasTargetPct: number | null = null;
+  private lastParamReload: number = 0;
 
   constructor() {
     this.batchSize = parseInt(process.env.INDEXER_BATCH_SIZE || '10', 10);
@@ -111,6 +113,11 @@ export class BlockIndexer {
   private async runLoop(): Promise<void> {
     while (this.running) {
       try {
+        // Periodically reload EIP-1559 params to pick up admin changes
+        if (Date.now() - this.lastParamReload > PARAM_RELOAD_INTERVAL_MS) {
+          await this.loadEip1559Params();
+        }
+
         const rpc = getRpcClient();
         const chainTip = await rpc.getLatestBlockNumber();
         const gap = Number(chainTip - this.cursor!.blockNumber);
@@ -221,6 +228,7 @@ export class BlockIndexer {
           baseFeeChangeDenominator: p.baseFeeChangeDenominator,
         }));
         console.log(`[${WORKER_NAME}] Loaded ${dbParams.length} EIP-1559 params from DB`);
+        this.lastParamReload = Date.now();
         return;
       }
     } catch {
@@ -231,6 +239,7 @@ export class BlockIndexer {
       baseFeeChangeDenominator: p.baseFeeChangeDenominator,
     }));
     console.log(`[${WORKER_NAME}] Using ${this.eip1559Params.length} hardcoded EIP-1559 params`);
+    this.lastParamReload = Date.now();
   }
 
   /**
@@ -289,6 +298,9 @@ export class BlockIndexer {
         parentBaseFeeGwei = prevBlock.baseFeeGwei;
         parentGasUsed = prevBlock.gasUsed;
         parentGasLimit = prevBlock.gasLimit;
+        if (prevBlock.gasTargetPct !== null) {
+          this.lastGasTargetPct = prevBlock.gasTargetPct;
+        }
       }
     }
 
@@ -306,8 +318,7 @@ export class BlockIndexer {
       // Derive gas target percentage
       let gasTargetPct: number | null = null;
       if (parentBaseFeeGwei !== undefined && parentGasUsed !== undefined && parentGasLimit !== undefined) {
-        const parentBlockNumber = block.number - 1n;
-        const bfcd = getBfcdForBlock(parentBlockNumber, this.eip1559Params);
+        const bfcd = getBfcdForBlock(block.number, this.eip1559Params);
         if (bfcd !== null) {
           gasTargetPct = deriveGasTargetPct(
             metrics.baseFeeGwei, parentBaseFeeGwei, parentGasUsed, parentGasLimit, bfcd

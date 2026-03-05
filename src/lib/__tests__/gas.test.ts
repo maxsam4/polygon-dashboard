@@ -1,6 +1,6 @@
 // Tests for gas.ts - calculateBlockMetrics and utility functions
 
-import { calculateBlockMetrics, weiToGwei, formatGwei, formatNumber } from '../gas';
+import { calculateBlockMetrics, weiToGwei, formatGwei, formatNumber, deriveGasTargetPct } from '../gas';
 
 describe('weiToGwei', () => {
   it('converts wei to gwei correctly', () => {
@@ -373,5 +373,54 @@ describe('calculateBlockMetrics', () => {
       expect(metrics.maxPriorityFeeGwei).toBe(0);
       expect(metrics.avgPriorityFeeGwei).toBeNull();
     });
+  });
+});
+
+describe('deriveGasTargetPct', () => {
+  it('derives ~50% when baseFee unchanged at half-full block', () => {
+    // baseFee unchanged → R = 0 → gasTarget = gasUsed → pct = gasUsed/gasLimit * 100
+    const result = deriveGasTargetPct(30, 30, 15000000n, 30000000n, 8);
+    expect(result).toBeCloseTo(50, 1);
+  });
+
+  it('derives ~65% when baseFee unchanged at 65% utilization', () => {
+    const result = deriveGasTargetPct(30, 30, 19500000n, 30000000n, 64);
+    expect(result).toBeCloseTo(65, 1);
+  });
+
+  it('derives target when baseFee increases (over-target block)', () => {
+    // Parent: 20M gasUsed / 30M limit, BFCD=8, baseFee 30→30.5
+    const result = deriveGasTargetPct(30.5, 30, 20000000n, 30000000n, 8);
+    expect(result).not.toBeNull();
+    expect(result!).toBeGreaterThan(50);
+    expect(result!).toBeLessThan(70);
+  });
+
+  it('returns null when parent baseFee is 0', () => {
+    expect(deriveGasTargetPct(30, 0, 15000000n, 30000000n, 8)).toBeNull();
+  });
+
+  it('returns null when parent baseFee is negative', () => {
+    expect(deriveGasTargetPct(30, -1, 15000000n, 30000000n, 8)).toBeNull();
+  });
+
+  it('returns null when parent gasUsed is 0', () => {
+    expect(deriveGasTargetPct(29, 30, 0n, 30000000n, 8)).toBeNull();
+  });
+
+  it('returns null when parent gasLimit is 0', () => {
+    expect(deriveGasTargetPct(30, 30, 15000000n, 0n, 8)).toBeNull();
+  });
+
+  it('returns null when derived pct is outside 1-100% bounds', () => {
+    // Craft inputs where R is very negative → gasTarget negative → out of bounds
+    const result = deriveGasTargetPct(10, 30, 25000000n, 30000000n, 8);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when denominator (R+1) is near zero', () => {
+    // baseFee drops drastically with BFCD=1 → R+1 near 0 → huge/invalid result
+    const result = deriveGasTargetPct(0.001, 100, 15000000n, 30000000n, 1);
+    expect(result).toBeNull();
   });
 });

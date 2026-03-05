@@ -44,13 +44,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const blockNum = BigInt(blockNumber);
-    const bfcd = parseInt(baseFeeChangeDenominator, 10);
+    // Validate blockNumber is a valid integer string
+    if (!/^\d+$/.test(String(blockNumber))) {
+      return NextResponse.json(
+        { error: 'blockNumber must be a non-negative integer' },
+        { status: 400 }
+      );
+    }
 
-    if (isNaN(bfcd) || bfcd <= 0) {
+    // Validate baseFeeChangeDenominator is a strict positive integer
+    const bfcdStr = String(baseFeeChangeDenominator);
+    if (!/^\d+$/.test(bfcdStr) || Number(bfcdStr) <= 0) {
       return NextResponse.json(
         { error: 'baseFeeChangeDenominator must be a positive integer' },
         { status: 400 }
+      );
+    }
+
+    const blockNum = BigInt(blockNumber);
+    const bfcd = Number(bfcdStr);
+
+    // Check for duplicate
+    const existing = await getAllEip1559Params();
+    const isDuplicate = existing.some(p => p.blockNumber === blockNum);
+    if (isDuplicate) {
+      return NextResponse.json(
+        { error: 'A parameter already exists for this block number', duplicate: true },
+        { status: 409 }
       );
     }
 

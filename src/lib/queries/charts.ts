@@ -276,7 +276,7 @@ async function getChartDataFromSource(
       SUM(block_time_sum)::DOUBLE PRECISION / NULLIF(SUM(block_count), 0) AS block_time_avg,
       NULL::double precision AS block_time_min,
       NULL::double precision AS block_time_max,
-      SUM(gas_target_pct_avg * block_count) / NULLIF(SUM(block_count), 0) AS gas_target_pct_avg
+      SUM(gas_target_pct_avg * block_count) / NULLIF(SUM(CASE WHEN gas_target_pct_avg IS NOT NULL THEN block_count END), 0) AS gas_target_pct_avg
     FROM ${table}
     WHERE bucket >= $2 AND bucket <= $3
     GROUP BY time_bucket($1::interval, bucket)

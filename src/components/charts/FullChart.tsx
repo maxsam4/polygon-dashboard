@@ -423,10 +423,12 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             value: d.gasLimitSum > 0 ? (d.gasUsedSum / d.gasLimitSum) * 100 : 0,
           }));
         } else if (metric === 'gasTarget') {
-          seriesData = blockData.map((d) => ({
-            time: d.timestamp as UTCTimestamp,
-            value: d.gasTargetPctAvg ?? 65,
-          }));
+          seriesData = blockData
+            .filter((d) => d.gasTargetPctAvg !== null)
+            .map((d) => ({
+              time: d.timestamp as UTCTimestamp,
+              value: d.gasTargetPctAvg!,
+            }));
         } else if (metric === 'borBlockTime') {
           seriesData = data
             .filter((d) => d.blockTimeAvg !== null)
