@@ -3,9 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { EndpointStat, MethodStat, RpcTimeSeriesPoint } from '@/lib/queries/rpcStats';
 
-const POLL_INTERVAL_MS = 30_000;
+type TimeRange = '1H' | '6H' | '1D' | '1W' | '1M';
 
-type TimeRange = '1H' | '6H' | '1D';
+const POLL_INTERVAL_MS: Record<TimeRange, number> = {
+  '1H': 30_000,
+  '6H': 60_000,
+  '1D': 5 * 60_000,
+  '1W': 15 * 60_000,
+  '1M': 30 * 60_000,
+};
 
 interface RpcStatsSummary {
   endpoints: EndpointStat[];
@@ -27,12 +33,16 @@ export function useRpcStats() {
     '1H': 60 * 60 * 1000,
     '6H': 6 * 60 * 60 * 1000,
     '1D': 24 * 60 * 60 * 1000,
+    '1W': 7 * 24 * 60 * 60 * 1000,
+    '1M': 30 * 24 * 60 * 60 * 1000,
   };
 
   const bucketForRange: Record<TimeRange, string> = {
     '1H': '1m',
     '6H': '5m',
     '1D': '15m',
+    '1W': '1h',
+    '1M': '4h',
   };
 
   const fetchData = useCallback(async () => {
@@ -73,9 +83,9 @@ export function useRpcStats() {
   useEffect(() => {
     setLoading(true);
     fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
+    const interval = setInterval(fetchData, POLL_INTERVAL_MS[timeRange]);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, timeRange]);
 
   return {
     timeRange,

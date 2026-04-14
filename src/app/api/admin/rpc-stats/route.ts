@@ -4,7 +4,7 @@ import { getEndpointStats, getMethodStats, getRpcTimeSeries } from '@/lib/querie
 
 export const dynamic = 'force-dynamic';
 
-const MAX_RANGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_RANGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (matches retention policy)
 const DEFAULT_RANGE_MS = 60 * 60 * 1000; // 1 hour
 
 export async function GET(request: NextRequest) {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (to.getTime() - from.getTime() > MAX_RANGE_MS) {
-      return NextResponse.json({ error: 'Time range must be < 7 days' }, { status: 400 });
+      return NextResponse.json({ error: 'Time range must be <= 30 days' }, { status: 400 });
     }
 
     if (view === 'timeseries') {

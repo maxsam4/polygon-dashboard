@@ -5,7 +5,7 @@ import { EndpointStatsTable, MethodStatsTable } from '@/components/rpc/RpcStatsT
 import { RpcPerformanceChart } from '@/components/rpc/RpcPerformanceChart';
 import { useRpcStats } from '@/hooks/useRpcStats';
 
-const TIME_RANGES = ['1H', '6H', '1D'] as const;
+const TIME_RANGES = ['1H', '6H', '1D', '1W', '1M'] as const;
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
