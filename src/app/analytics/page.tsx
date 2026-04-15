@@ -14,7 +14,7 @@ export default function AnalyticsPage() {
           <LazyCustomizableChart
             title="Compare (Dual Axis)"
             defaultLeftSeries="baseFee"
-            defaultRightSeries="blockLimit"
+            defaultRightSeries="medianPriorityFee"
             dualAxis={true}
           />
           <LazyCustomizableChart
