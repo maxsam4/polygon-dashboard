@@ -56,9 +56,19 @@ export const TIME_SEC = {
 } as const;
 
 // Block time threshold for data quality checks.
-// Polygon's target block time is 2s. Values above this threshold are likely
+// Polygon's target block time is 1.75s, produced as a 2,2,2,1 pattern of integer-second
+// gaps (so the max normal gap is still 2s). Values above this threshold are likely
 // stale or incorrect (e.g., from a missed previous block) and should be overwritten.
 export const BLOCK_TIME_SUSPECT_THRESHOLD_SEC = 3;
+
+// 1.75s block-time hardfork. Empirically detected from prod DB: the first block with
+// a 1-second gap was 86478656 at 2026-05-06 14:22:35 UTC. Before this block, every gap
+// was a steady 2s. From this block onward, the network produces a 2,2,2,1 pattern of
+// integer-second gaps averaging 1.75s.
+export const BLOCK_TIME_175S_FORK_BLOCK = 86478656n;
+export const BLOCK_TIME_175S_FORK_TIMESTAMP_UNIX = 1778077355; // 2026-05-06 14:22:35 UTC
+export const PRE_FORK_AVG_BLOCK_TIME_SEC = 2;
+export const POST_FORK_AVG_BLOCK_TIME_SEC = 1.75;
 
 // Worker polling intervals
 export const WORKER_INTERVALS = {
@@ -155,7 +165,7 @@ export const ANOMALY_THRESHOLDS = {
   block_time: {
     warning_low: null,
     warning_high: 3,
-    critical_low: 1,
+    critical_low: null, // 1s gaps are normal under the post-fork 2,2,2,1 pattern
     critical_high: 5,
     min_consecutive_blocks: 1,
   },

@@ -1,7 +1,13 @@
 import { query, queryOne } from '../db';
 import { Block, BlockRow } from '../types';
 import { getTableStats } from './stats';
-import { BLOCK_TIME_SUSPECT_THRESHOLD_SEC } from '../constants';
+import {
+  BLOCK_TIME_SUSPECT_THRESHOLD_SEC,
+  BLOCK_TIME_175S_FORK_BLOCK,
+  BLOCK_TIME_175S_FORK_TIMESTAMP_UNIX,
+  PRE_FORK_AVG_BLOCK_TIME_SEC,
+  POST_FORK_AVG_BLOCK_TIME_SEC,
+} from '../constants';
 
 function rowToBlock(row: BlockRow): Block {
   return {
@@ -47,12 +53,18 @@ export async function getLatestBlocks(limit = 20): Promise<Block[]> {
 }
 
 export async function getBlockByNumber(blockNumber: bigint): Promise<Block | null> {
-  // Polygon produces blocks every ~2s. Estimate timestamp from block number
-  // to enable TimescaleDB chunk pruning and avoid full table scans on 80M+ rows.
-  // Polygon genesis: June 1, 2020. Use a generous ±1 day window around estimate.
+  // Estimate timestamp from block number to enable TimescaleDB chunk pruning and avoid
+  // full table scans on 80M+ rows. Polygon's block time changed from 2s to 1.75s at
+  // BLOCK_TIME_175S_FORK_BLOCK. Pre-fork: anchor at genesis (2020-06-01) and walk at 2s.
+  // Post-fork: anchor at the fork's actual timestamp and walk at 1.75s — the genesis
+  // formula drifts ~163 days by block 86M because Polygon's earlier history wasn't
+  // uniformly 2s. Use a generous ±1 day window around the estimate.
   const POLYGON_GENESIS_UNIX = 1590969600; // 2020-06-01T00:00:00Z
-  const AVG_BLOCK_TIME_SEC = 2;
-  const estimatedTimestamp = POLYGON_GENESIS_UNIX + Number(blockNumber) * AVG_BLOCK_TIME_SEC;
+  const estimatedTimestamp =
+    blockNumber < BLOCK_TIME_175S_FORK_BLOCK
+      ? POLYGON_GENESIS_UNIX + Number(blockNumber) * PRE_FORK_AVG_BLOCK_TIME_SEC
+      : BLOCK_TIME_175S_FORK_TIMESTAMP_UNIX +
+        Number(blockNumber - BLOCK_TIME_175S_FORK_BLOCK) * POST_FORK_AVG_BLOCK_TIME_SEC;
   const windowSec = 86400; // ±1 day to account for block time variance over millions of blocks
   const tsLow = new Date((estimatedTimestamp - windowSec) * 1000);
   const tsHigh = new Date((estimatedTimestamp + windowSec) * 1000);
@@ -218,7 +230,7 @@ export async function insertBlock(block: Omit<Block, 'createdAt' | 'updatedAt'>)
       total_priority_fee_gwei = COALESCE(EXCLUDED.total_priority_fee_gwei, blocks.total_priority_fee_gwei),
       tx_count = EXCLUDED.tx_count,
       -- Only update block_time if new value is not null, or existing value is null/suspect.
-      -- Polygon target block time is 2s; values > BLOCK_TIME_SUSPECT_THRESHOLD_SEC (${BLOCK_TIME_SUSPECT_THRESHOLD_SEC}s)
+      -- Polygon target block time is 1.75s (2,2,2,1 pattern); values > BLOCK_TIME_SUSPECT_THRESHOLD_SEC (${BLOCK_TIME_SUSPECT_THRESHOLD_SEC}s)
       -- are likely stale (e.g., from a missed previous block) and should be overwritten.
       block_time_sec = CASE
         WHEN EXCLUDED.block_time_sec IS NOT NULL THEN EXCLUDED.block_time_sec

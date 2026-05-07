@@ -8,7 +8,7 @@ See `prod.md` for server details. **Always deploy to local first, then prod.** C
 
 ## Database Safety
 
-**NEVER drop/truncate tables** - contains months of historical data.
+**NEVER drop/truncate tables** - contains 5+ years of historical data (83M+ blocks).
 
 Forbidden:
 - `DROP TABLE` / `TRUNCATE TABLE`
@@ -133,31 +133,12 @@ Password-protected admin panel at `/admin` with JWT session authentication:
 Detects anomalies in key metrics and stores them for alerting:
 
 - **Tables**: `anomalies` (detected anomalies), `metric_thresholds` (configurable thresholds)
-- **Block Ranges**: Consecutive blocks with the same anomaly are grouped into ranges (e.g., "blocks 100-105" instead of 6 separate alerts)
-  - `start_block_number` and `end_block_number` columns define the range
-  - Ranges are extended across indexer batches via `findExtendableAnomalyRange()`
-  - Different severities or metric types are never merged
-- **Thresholds**: Configurable via admin panel at `/admin`
-  - Gas Price: warning 10-2000 Gwei, critical 2-5000 Gwei
-  - Block Time: warning > 3s, critical 1-5s
-  - Finality: warning > 10s, critical > 30s
-  - TPS: warning 5-2000, critical > 3000
-  - MGAS/s: warning < 2
-  - Reorgs: Always critical (exempt from min_consecutive_blocks filter)
-- **Min Consecutive Blocks**: Each metric can require N consecutive blocks with anomaly before showing
-  - Set via admin panel per metric type
-  - Filters transient spikes (e.g., gas_price defaults to 2 blocks)
-  - Applied at query time in `getAnomalies()` and `getAnomalyCount()`
-  - Reorgs always shown regardless of this setting
+- **Block Ranges**: Consecutive anomalous blocks grouped into ranges via `findExtendableAnomalyRange()`
+- **Thresholds**: Configurable per metric via admin panel at `/admin` (see `src/lib/constants.ts` for defaults)
+- **Min Consecutive Blocks**: Per-metric filter to suppress transient spikes (applied at query time)
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
-- **API**:
-  - `GET /api/anomalies` - filtering, pagination, count-only mode (requires auth)
-  - `POST /api/anomalies/acknowledge` - acknowledge alerts by id(s) or all in time range
-- **UI**: `/alerts` page (publicly accessible) with stats, filters, sortable table, and acknowledgement controls
-- **Acknowledgement**: Alerts can be acknowledged to remove them from the nav badge count (requires admin auth)
-  - Select individual alerts or use "Acknowledge All" for bulk operations
-  - Acknowledged alerts shown with reduced opacity and "ack" status badge
-  - Filter by status: All / Unacknowledged / Acknowledged
+- **API**: `GET /api/anomalies` (filtering, pagination), `POST /api/anomalies/acknowledge` (bulk ack)
+- **UI**: `/alerts` page with filters, acknowledgement controls
 
 ### Gas Target Percentage (EIP-1559 Elasticity)
 
@@ -195,6 +176,8 @@ npm run test:watch          # Watch mode during development
 npm run test:coverage       # Generate coverage report
 ```
 
+Run a single test file: `npx jest src/lib/__tests__/gas.test.ts`
+
 Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
 - `jose` is an ESM module - mock it in tests rather than configuring Jest ESM transform
@@ -203,13 +186,8 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 
 ### Shared Utilities
 
-- `src/lib/constants.ts` - Centralized constants (UI_CONSTANTS, RPC_RETRY_CONFIG, STATUS_THRESHOLDS, ANOMALY_THRESHOLDS, GWEI, bucket sizes)
-- `src/lib/dateUtils.ts` - Date/time formatting utilities for charts
-- `src/lib/statusUtils.ts` - Status page utilities (formatAge, formatSpeed, calculateSpeeds)
-- `src/lib/chartSeriesConfig.ts` - Chart series configurations and metric definitions
-- `src/lib/utils.ts` - General utilities (sleep, formatPol)
-- `src/lib/anomalyDetector.ts` - Anomaly detection logic for block metrics
-- `src/lib/rpcStats.ts` - RPC call stats recording with in-memory buffer and periodic flush
+- `src/lib/constants.ts` - All magic numbers, thresholds, and config constants
+- `src/lib/chartSeriesConfig.ts` - Chart metric definitions (add new chart metrics here)
 - `src/lib/eip1559Params.ts` - EIP-1559 BFCD lookup and gas target percentage defaults
 
 ### Hooks
@@ -253,6 +231,7 @@ Tests are located in `src/lib/__tests__/` following the pattern `**/*.test.ts`.
 - **Adding a column to `blocks`** - Update all of: `Block` interface, `BlockRow` interface, `rowToBlock()`, `insertBlock()` params + ON CONFLICT, `insertBlocksBatch()` params + PARAMS_PER_BLOCK, `reorgHandler.ts` block construction, test fixtures (`__tests__/fixtures/blocks.ts`, `receiptEnricher.test.ts`). Optionally: `BlockDataUI`, `ChartDataPoint`, continuous aggregates, chart queries.
 - **lightweight-charts `setVisibleRange`** crashes with "Value is null" when no series has data points. Always guard with a `hasAnyData` check before calling `setVisibleRange()` or `fitContent()`.
 - **Backfiller processes backwards** - `BlockBackfiller` goes ascending within a batch but backwards across batches. Never use class-level carry-forward state (it would propagate newer values into older blocks). Use batch-scoped local variables instead.
+- **Block time post-fork (block 86478656, 2026-05-06 14:22:35 UTC)** - Polygon switched from a steady 2s to a 1.75s average produced as a 2,2,2,1 pattern of integer-second gaps. Standard `eth_getBlockByNumber` does not expose sub-second timestamps; bor has no extended timestamp method; Heimdall has nanosecond block times but those are consensus blocks, not 1:1 with bor blocks. Per-block charts will look jaggy (1s/2s alternation); aggregation over ≥1m buckets smooths this naturally. Use `BLOCK_TIME_175S_FORK_BLOCK` from `src/lib/constants.ts` when splitting calculations across the fork.
 - Magic numbers go in `src/lib/constants.ts`
 - Shared formatting functions go in dedicated utility modules
 - Clean up dead code after you make changes
