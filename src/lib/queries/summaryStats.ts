@@ -269,16 +269,23 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
   let inflation: SummaryStats['inflation'] = null;
   if (rateRows.length > 0) {
     const rates = prepareRatesForCalculation(rateRows);
-    // Issuance stops at now — the snapped window may extend into the future
+    // Issuance stops at now — the snapped window may extend into the future.
+    // It also can't start before the first on-chain rate record (findRateAt
+    // returns null there, which would zero issuance for the whole range —
+    // e.g. ALL starting in 2020 vs rates starting Oct 2023).
+    const firstRateStartSec = Number(rates[0].startTimestamp);
+    const issuanceStartSec = Math.max(snappedFrom, firstRateStartSec);
     const issuanceEndSec = Math.min(snappedTo, nowSec);
-    const issuancePol = weiToPol(calculateBucketIssuance(snappedFrom, issuanceEndSec, rates));
+    const issuancePol = issuanceStartSec < issuanceEndSec
+      ? weiToPol(calculateBucketIssuance(issuanceStartSec, issuanceEndSec, rates))
+      : 0;
     const burnedPol = basePol;
     const netInflationPol = issuancePol - burnedPol;
 
     let netInflationPctOfSupply: number | null = null;
-    const rateAtStart = findRateAt(snappedFrom, rates);
+    const rateAtStart = findRateAt(issuanceStartSec, rates);
     if (rateAtStart) {
-      const supplyAtStartPol = weiToPol(calculateSupplyAt(snappedFrom, rateAtStart));
+      const supplyAtStartPol = weiToPol(calculateSupplyAt(issuanceStartSec, rateAtStart));
       if (supplyAtStartPol > 0) {
         netInflationPctOfSupply = (netInflationPol / supplyAtStartPol) * 100;
       }
