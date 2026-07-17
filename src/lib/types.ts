@@ -108,6 +108,59 @@ export interface ChartDataPoint {
   blockTimeMin: number | null;
   blockTimeMax: number | null;
   gasTargetPctAvg: number | null;
+  // USD values are already in USD (converted server-side via pol_prices join);
+  // null = no price data for the bucket (pre-history or fetcher outage).
+  totalBaseFeeUsdSum: number | null;
+  totalPriorityFeeUsdSum: number | null;
+  priceUsdAvg: number | null;
+}
+
+// POL/MATIC hourly price row (pol_prices table)
+export interface PolPrice {
+  ts: Date;         // hour start (UTC)
+  priceUsd: number; // hourly close
+  source: string;   // 'binance:MATICUSDT' | 'binance:POLUSDT' | 'carry_forward'
+}
+
+// /api/stats response (aggregate summary over a time range)
+export interface SummaryStats {
+  range: { from: number; to: number }; // unix seconds, snapped to source bucket boundaries
+  source: 'blocks' | 'blocks_1min_agg' | 'blocks_1hour_agg';
+  fees: {
+    basePol: number;
+    priorityPol: number;
+    totalPol: number;
+    baseUsd: number | null;
+    priorityUsd: number | null;
+    totalUsd: number | null;
+    avgTxFeePol: number | null;
+    avgTxFeeUsd: number | null;
+    usdMissingHours: number; // hours in range with no price row (partial USD coverage)
+  };
+  throughput: {
+    avgTps: number | null;
+    peakTps: number | null;
+    avgMgas: number | null;
+    peakMgas: number | null;
+  };
+  blocks: {
+    count: number;
+    txCount: number;
+    avgBlockTimeSec: number | null;
+    gasUsedSum: number;
+    utilizationPct: number | null;
+    blockStart: number | null;
+    blockEnd: number | null;
+    avgFinalitySec: number | null;
+  };
+  inflation: {
+    issuancePol: number;
+    burnedPol: number;
+    netInflationPol: number;
+    netInflationUsd: number | null;
+    netInflationPctOfSupply: number | null;
+  } | null; // null when inflation rates unavailable
+  priceUsd: number | null; // latest known POL price
 }
 
 // Inflation rate data from database

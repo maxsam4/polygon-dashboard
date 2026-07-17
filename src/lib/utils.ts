@@ -92,6 +92,21 @@ export function formatPol(pol: number, decimals = 2): string {
 }
 
 /**
+ * Format a USD value: "$" prefix, K/M/B abbreviation for large values,
+ * plain 2-decimal locale formatting otherwise. null = no price data.
+ */
+export function formatUsd(value: number | null | undefined, decimals = 2): string {
+  if (value === null || value === undefined) return '-';
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1_000_000) return `${sign}$${formatLargeNumber(abs, decimals)}`;
+  return `${sign}$${abs.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
+}
+
+/**
  * Get the CSS color class for gas utilization percentage
  * Green: 55-75% (around 65% target)
  * Yellow: 15-55% or 75-85%

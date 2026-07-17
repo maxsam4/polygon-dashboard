@@ -77,6 +77,23 @@ export const WORKER_INTERVALS = {
   RECONCILER_INTERVAL_MS: 10 * 1000,
 } as const;
 
+// POL/MATIC price tracking (PriceIndexer, Binance public klines)
+// PRICE_HISTORY_START is deliberately a couple of days before the earliest indexed
+// block (repo uses 2020-06-01 as the block-time epoch) so every block has a price.
+export const PRICE_HISTORY_START_MS = Date.parse('2020-05-30T00:00:00Z');
+export const MATIC_USDT_END_MS = Date.parse('2024-09-10T00:00:00Z'); // Binance delisted MATIC spot pairs
+export const POL_USDT_START_MS = Date.parse('2024-09-13T00:00:00Z'); // POLUSDT trading opened
+export const PRICE_POLL_MS = parseInt(process.env.PRICE_POLL_MS || '60000', 10);
+export const PRICE_BACKFILL_DELAY_MS = 300;
+export const BINANCE_KLINE_LIMIT = 1000;
+export const HOUR_MS = 60 * 60 * 1000;
+export const BINANCE_API_URLS = process.env.BINANCE_API_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [
+  'https://api.binance.com',
+  'https://api1.binance.com',
+  'https://api2.binance.com',
+  'https://api3.binance.com',
+];
+
 // Chart colors - Terminal theme
 export const CHART_COLORS = {
   PRIMARY: '#00FF41',    // Matrix green

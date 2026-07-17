@@ -11,6 +11,7 @@ import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
 import { MilestoneIndexer, getMilestoneIndexer } from '../indexers/milestoneIndexer';
 import { BlockBackfiller, getBlockBackfiller } from '../indexers/blockBackfiller';
 import { MilestoneBackfiller, getMilestoneBackfiller } from '../indexers/milestoneBackfiller';
+import { PriceIndexer, getPriceIndexer } from '../indexers/priceIndexer';
 export { getAllWorkerStatuses };
 export type { WorkerStatus };
 
@@ -21,6 +22,7 @@ const globalState = globalThis as typeof globalThis & {
   __milestoneIndexer?: MilestoneIndexer;
   __blockBackfiller?: BlockBackfiller;
   __milestoneBackfiller?: MilestoneBackfiller;
+  __priceIndexer?: PriceIndexer;
 };
 
 export function areWorkersRunning(): boolean {
@@ -42,12 +44,14 @@ export async function startWorkers(): Promise<void> {
   globalState.__blockBackfiller = getBlockBackfiller();
   globalState.__milestoneIndexer = getMilestoneIndexer();
   globalState.__milestoneBackfiller = getMilestoneBackfiller();
+  globalState.__priceIndexer = getPriceIndexer();
 
   const workers = [
     { name: 'BlockIndexer', start: () => globalState.__blockIndexer!.start() },
     { name: 'BlockBackfiller', start: () => globalState.__blockBackfiller!.start() },
     { name: 'MilestoneIndexer', start: () => globalState.__milestoneIndexer!.start() },
     { name: 'MilestoneBackfiller', start: () => globalState.__milestoneBackfiller!.start() },
+    { name: 'PriceIndexer', start: () => globalState.__priceIndexer!.start() },
   ];
 
   const results = await Promise.allSettled(workers.map(w => w.start()));
@@ -83,6 +87,7 @@ export function stopWorkers(): void {
   globalState.__milestoneIndexer?.stop();
   globalState.__blockBackfiller?.stop();
   globalState.__milestoneBackfiller?.stop();
+  globalState.__priceIndexer?.stop();
   // Flush status after workers are stopped so 'stopped' state is persisted
   stopStatusFlush();
 

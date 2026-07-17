@@ -79,6 +79,9 @@ services:
       # Priority fee backfiller
       HISTORICAL_PRIORITY_FEE_BATCH_SIZE: ${HISTORICAL_PRIORITY_FEE_BATCH_SIZE:-}
       HISTORICAL_PRIORITY_FEE_DELAY_MS: ${HISTORICAL_PRIORITY_FEE_DELAY_MS:-}
+      # Price indexer (POL/MATIC USD, Binance klines)
+      PRICE_POLL_MS: ${PRICE_POLL_MS:-}
+      BINANCE_API_URLS: ${BINANCE_API_URLS:-}
       PORT: 3003
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3003/health"]

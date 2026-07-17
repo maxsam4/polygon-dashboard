@@ -63,6 +63,9 @@ interface ChartRow {
   block_time_min: number | null;
   block_time_max: number | null;
   gas_target_pct_avg: number | null;
+  total_base_fee_usd_sum: number | null;
+  total_priority_fee_usd_sum: number | null;
+  price_usd_avg: number | null;
 }
 
 /**
@@ -125,6 +128,9 @@ export async function getChartData(
     blockTimeMin: row.block_time_min,
     blockTimeMax: row.block_time_max,
     gasTargetPctAvg: row.gas_target_pct_avg,
+    totalBaseFeeUsdSum: row.total_base_fee_usd_sum,
+    totalPriorityFeeUsdSum: row.total_priority_fee_usd_sum,
+    priceUsdAvg: row.price_usd_avg,
   }));
 
   return { data, total };
@@ -186,8 +192,12 @@ async function getChartDataFromSource(
         AVG(block_time_sec) AS block_time_avg,
         MIN(block_time_sec) AS block_time_min,
         MAX(block_time_sec) AS block_time_max,
-        AVG(gas_target_pct) AS gas_target_pct_avg
+        AVG(gas_target_pct) AS gas_target_pct_avg,
+        SUM(total_base_fee_gwei * p.price_usd) / 1e9 AS total_base_fee_usd_sum,
+        SUM(total_priority_fee_gwei * p.price_usd) / 1e9 AS total_priority_fee_usd_sum,
+        AVG(p.price_usd) AS price_usd_avg
       FROM blocks
+      LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', blocks.timestamp)
       WHERE timestamp >= $2 AND timestamp <= $3
       GROUP BY bucket
       ORDER BY bucket
@@ -234,8 +244,12 @@ async function getChartDataFromSource(
         block_time_sum::DOUBLE PRECISION / NULLIF(block_count, 0) AS block_time_avg,
         NULL::double precision AS block_time_min,
         NULL::double precision AS block_time_max,
-        gas_target_pct_avg
+        gas_target_pct_avg,
+        total_base_fee_sum * p.price_usd / 1e9 AS total_base_fee_usd_sum,
+        total_priority_fee_sum * p.price_usd / 1e9 AS total_priority_fee_usd_sum,
+        p.price_usd AS price_usd_avg
       FROM ${table}
+      LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', bucket)
       WHERE bucket >= $1 AND bucket <= $2
       ORDER BY bucket
       LIMIT $3 OFFSET $4`,
@@ -276,9 +290,13 @@ async function getChartDataFromSource(
       SUM(block_time_sum)::DOUBLE PRECISION / NULLIF(SUM(block_count), 0) AS block_time_avg,
       NULL::double precision AS block_time_min,
       NULL::double precision AS block_time_max,
-      SUM(gas_target_pct_avg * block_count) / NULLIF(SUM(CASE WHEN gas_target_pct_avg IS NOT NULL THEN block_count END), 0) AS gas_target_pct_avg
+      SUM(gas_target_pct_avg * block_count) / NULLIF(SUM(CASE WHEN gas_target_pct_avg IS NOT NULL THEN block_count END), 0) AS gas_target_pct_avg,
+      SUM(total_base_fee_sum * p.price_usd) / 1e9 AS total_base_fee_usd_sum,
+      SUM(total_priority_fee_sum * p.price_usd) / 1e9 AS total_priority_fee_usd_sum,
+      AVG(p.price_usd) AS price_usd_avg
     FROM ${table}
-    WHERE bucket >= $2 AND bucket <= $3
+    LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', ${table}.bucket)
+    WHERE ${table}.bucket >= $2 AND ${table}.bucket <= $3
     GROUP BY time_bucket($1::interval, bucket)
     ORDER BY bucket
     LIMIT $4 OFFSET $5`,
