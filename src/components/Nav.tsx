@@ -20,6 +20,7 @@ export function Nav() {
   const links = [
     { href: '/', label: 'Dashboard' },
     { href: '/analytics', label: 'Analytics' },
+    { href: '/stats', label: 'Stats' },
     { href: '/blocks', label: 'Blocks' },
     { href: '/milestones', label: 'Milestones' },
     ...(isAuthenticated ? [

@@ -168,6 +168,25 @@ Records every RPC call attempt for visibility into endpoint performance:
 - **UI**: `/admin/rpc-stats` — summary cards, endpoint/method tables, p95 response time and success rate charts
 - **Nav**: "RPC Stats" link visible when authenticated
 
+### POL Price Tracking (USD)
+
+Hourly POL/MATIC USD prices power USD fee charts on /analytics and the /stats page:
+
+- **Table**: `pol_prices` (plain table, ~53K rows) — `ts` (hour start, PK), `price_usd` (hourly close), `source`
+- **Worker**: `PriceIndexer` (`src/lib/indexers/priceIndexer.ts`) — Binance public klines, no API key. Self-backfills from 2020-05-30 on first start (~55 requests), then polls latest candles every `PRICE_POLL_MS` (60s). Cursor (epoch-secs of last closed candle) in `indexer_state.last_block`.
+- **MATIC→POL migration**: MATICUSDT klines until 2024-09-10 (Binance delisting), POLUSDT from 2024-09-13 (1:1 swap); the 3-day gap and any missing hours are filled as `source='carry_forward'` — the series is gap-free by construction.
+- **Client**: `src/lib/binance.ts` (host rotation, 10s timeout, explicit HTTP 451 geo-block detection — US IPs are blocked by Binance; override hosts via `BINANCE_API_URLS`).
+- **USD conversion rule**: always join at hourly granularity *inside* aggregation: `LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', <row time>)`, `SUM(fee_gwei * p.price_usd)/1e9`. Never multiply a multi-hour total by an average price. USD fields in `ChartDataPoint` arrive already in USD (do NOT divide by `GWEI_PER_POL`) and are null when price data is missing.
+
+### Chain Stats Page (/stats)
+
+Public aggregate summary over selectable ranges (1H/6H/1D/1W/1M/1Y/YTD/ALL, default 1D):
+
+- **Query**: `src/lib/queries/summaryStats.ts` — window snapped to source bucket boundaries; source routing: raw `blocks` only for range ≤6h AND from ≥ now−24h (compression is age-based!), `blocks_1min_agg` ≤7d, else `blocks_1hour_agg` with the un-materialized head (~2h) unioned from the 1min agg.
+- **Peaks**: `tps_max` / `mgas_per_sec_max` columns exist in both continuous aggregates (added 20260718) — never scan raw blocks for peaks over long ranges.
+- **API**: `GET /api/stats?from=<unixSec>&to=<unixSec>` (public). **UI**: `src/app/stats/page.tsx`, hook `src/hooks/useSummaryStats.ts`, shared cards `src/components/StatCard.tsx` (also used by rpc-stats).
+- Net inflation reuses `inflationCalc.ts` (issuance − burned base fees), same math as InflationChart.
+
 ## Testing
 
 ```bash

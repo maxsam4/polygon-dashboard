@@ -15,7 +15,7 @@ import { useTheme } from '../ThemeProvider';
 import { ChartControls } from './ChartControls';
 import { ChartTooltip, TooltipContent } from './ChartTooltip';
 import { ChartDataPoint } from '@/lib/types';
-import { formatPol } from '@/lib/utils';
+import { formatPol, formatUsd } from '@/lib/utils';
 import {
   GWEI_PER_POL,
   CHART_COLOR_PALETTE,
@@ -46,6 +46,21 @@ interface FullChartProps {
 
 function getRecommendedBucket(range: string): string {
   return TIME_RANGE_BUCKETS[range] ?? '1h';
+}
+
+const USD_FEE_METRICS = ['totalBaseFeeUsd', 'totalPriorityFeeUsd', 'totalFeeUsd'] as const;
+type UsdFeeMetric = (typeof USD_FEE_METRICS)[number];
+
+function isUsdFeeMetric(metric: ChartMetric): metric is UsdFeeMetric {
+  return (USD_FEE_METRICS as readonly string[]).includes(metric);
+}
+
+// USD value for a point, or null when the bucket has no price data
+function usdValueForMetric(metric: UsdFeeMetric, d: ChartDataPoint): number | null {
+  if (metric === 'totalBaseFeeUsd') return d.totalBaseFeeUsdSum;
+  if (metric === 'totalPriorityFeeUsd') return d.totalPriorityFeeUsdSum;
+  if (d.totalBaseFeeUsdSum === null && d.totalPriorityFeeUsdSum === null) return null;
+  return (d.totalBaseFeeUsdSum ?? 0) + (d.totalPriorityFeeUsdSum ?? 0);
 }
 
 export function FullChart({ title, metric, showCumulative = false }: FullChartProps) {
@@ -277,6 +292,15 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
               maximumFractionDigits: 2
             });
           }
+          if (isUsdFeeMetric(metric)) {
+            return '$' + price.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+          if (metric === 'polPrice') {
+            return '$' + price.toFixed(4);
+          }
           return price.toFixed(2);
         },
       },
@@ -416,6 +440,26 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
           } else {
             seriesData = blockData.map((d) => ({ time: d.timestamp as UTCTimestamp, value: (d.totalBaseFeeSum + d.totalPriorityFeeSum) / GWEI_PER_POL }));
           }
+        } else if (isUsdFeeMetric(metric)) {
+          // Values arrive from the API already in USD (converted server-side);
+          // null = no price data for the bucket, filtered out.
+          const pointsWithUsd = blockData.filter((d) => usdValueForMetric(metric, d) !== null);
+          if (opt.key === 'cumulative') {
+            let cumulative = 0;
+            seriesData = pointsWithUsd.map((d) => {
+              cumulative += usdValueForMetric(metric, d)!;
+              return { time: d.timestamp as UTCTimestamp, value: cumulative };
+            });
+          } else {
+            seriesData = pointsWithUsd.map((d) => ({
+              time: d.timestamp as UTCTimestamp,
+              value: usdValueForMetric(metric, d)!,
+            }));
+          }
+        } else if (metric === 'polPrice') {
+          seriesData = blockData
+            .filter((d) => d.priceUsdAvg !== null)
+            .map((d) => ({ time: d.timestamp as UTCTimestamp, value: d.priceUsdAvg! }));
         } else if (metric === 'blockLimit') {
           // Show average block limit per bucket (in millions of gas)
           seriesData = blockData.map((d) => ({
@@ -519,6 +563,9 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
     if (metric === 'totalFee') {
       return blockData.reduce((sum, d) => sum + d.totalBaseFeeSum + d.totalPriorityFeeSum, 0);
     }
+    if (isUsdFeeMetric(metric)) {
+      return blockData.reduce((sum, d) => sum + (usdValueForMetric(metric, d) ?? 0), 0);
+    }
     return null;
   })();
 
@@ -537,7 +584,7 @@ export function FullChart({ title, metric, showCumulative = false }: FullChartPr
             <div className="text-right">
               <span className="text-sm text-muted">Period Total: </span>
               <span className="text-lg font-semibold text-accent">
-                {formatFeeAsPol(periodTotal)} POL
+                {isUsdFeeMetric(metric) ? formatUsd(periodTotal) : `${formatFeeAsPol(periodTotal)} POL`}
               </span>
             </div>
           )}

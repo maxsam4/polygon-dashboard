@@ -1,31 +1,12 @@
 'use client';
 
 import { Nav } from '@/components/Nav';
+import { Card, StatCard } from '@/components/StatCard';
 import { EndpointStatsTable, MethodStatsTable } from '@/components/rpc/RpcStatsTable';
 import { RpcPerformanceChart } from '@/components/rpc/RpcPerformanceChart';
 import { useRpcStats } from '@/hooks/useRpcStats';
 
 const TIME_RANGES = ['1H', '6H', '1D', '1W', '1M'] as const;
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="terminal-card rounded-lg p-4 relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-accent rounded-t-lg" />
-      <h3 className="text-lg font-semibold text-foreground mb-3 pt-1">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="terminal-card rounded-lg p-4 text-center">
-      <div className="text-muted text-xs font-medium uppercase tracking-wide mb-1">{label}</div>
-      <div className="text-2xl font-bold text-foreground font-mono">{value}</div>
-      {sub && <div className="text-muted text-xs mt-1">{sub}</div>}
-    </div>
-  );
-}
 
 export default function RpcStatsPage() {
   const { timeRange, setTimeRange, summary, timeseries, loading, error } = useRpcStats();
@@ -74,10 +55,10 @@ export default function RpcStatsPage() {
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <SummaryCard label="Total Calls" value={totalCalls.toLocaleString()} />
-              <SummaryCard label="Success Rate" value={`${overallSuccessRate}%`} />
-              <SummaryCard label="Avg Response" value={`${avgResponseMs}ms`} />
-              <SummaryCard label="Timeout Rate" value={`${overallTimeoutRate}%`} sub={`${totalTimeouts.toLocaleString()} timeouts`} />
+              <StatCard label="Total Calls" value={totalCalls.toLocaleString()} />
+              <StatCard label="Success Rate" value={`${overallSuccessRate}%`} />
+              <StatCard label="Avg Response" value={`${avgResponseMs}ms`} />
+              <StatCard label="Timeout Rate" value={`${overallTimeoutRate}%`} sub={`${totalTimeouts.toLocaleString()} timeouts`} />
             </div>
 
             {/* Endpoint Stats */}

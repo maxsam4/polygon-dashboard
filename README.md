@@ -9,6 +9,8 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - **Real-time Block Monitoring** - Live updates via SSE showing the latest blocks with detailed metrics
 - **Gas Price Analytics** - Track base fees and priority fees (min/max/avg/median) in gwei
 - **Fee Tracking** - Monitor total base fees and priority fees per block with cumulative graphs showing fee accumulation over time
+- **POL Price Tracking** - Hourly POL/MATIC USD prices (Binance klines, backfilled to 2020, MATIC→POL migration handled) with USD-denominated fee charts
+- **Chain Stats Page** - `/stats` summary of fees (POL + USD), TPS/MGAS/s (avg + peak), transactions, and net POL inflation over selectable time ranges
 - **Finality Tracking** - Monitor time-to-finality using Polygon's milestone system via Heimdall API
 - **Performance Metrics** - View MGAS/s and TPS with historical charts
 - **Historical Analytics** - Interactive charts with configurable time ranges, granularity, and zoom selection
@@ -82,6 +84,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - `BlockBackfiller` - Backwards indexer from lowest block to target, inline receipt enrichment
 - `MilestoneIndexer` - Cursor-based milestone indexer, writes finality directly
 - `MilestoneBackfiller` - Backwards indexer from lowest sequence_id to target
+- `PriceIndexer` - Hourly POL/MATIC USD prices from Binance klines; self-backfills on first start, then polls for the latest candles
 
 ### Database Tables
 
@@ -95,6 +98,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 | `table_stats` | Cached min/max/count for performance |
 | `anomalies` | Detected metric anomalies |
 | `metric_thresholds` | Configurable anomaly thresholds |
+| `pol_prices` | Hourly POL/MATIC USD closing prices |
 
 ### Code Organization
 
@@ -189,6 +193,8 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
 | `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
 | `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |
+| `PRICE_POLL_MS` | 60000 | Poll interval for the POL price indexer |
+| `BINANCE_API_URLS` | api.binance.com + mirrors | Comma-separated Binance API hosts for price klines |
 | `LIVE_STREAM_URL` | http://live-stream:3002 | URL for live-stream service |
 
 ## API Endpoints
@@ -205,6 +211,7 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `GET /api/export?type=blocks&format=csv` | Export data in CSV/JSON format |
 | `GET /api/status` | Worker status (from DB, written by indexer container) |
 | `GET /api/anomalies` | Detected anomalies with filtering and pagination |
+| `GET /api/stats?from=X&to=Y` | Aggregate chain stats (fees POL+USD, throughput, inflation) for a time range |
 
 ## Environment Variables
 
@@ -221,4 +228,6 @@ The application will be available on port 3000 (configurable via `APP_PORT`).
 | `RPC_DELAY_MS` | 100 | Delay between RPC calls |
 | `INDEXER_POLL_MS` | 1000 | Poll interval for indexers |
 | `MILESTONE_POLL_MS` | 1000 | Poll interval for milestone indexer |
+| `PRICE_POLL_MS` | 60000 | Poll interval for the POL price indexer |
+| `BINANCE_API_URLS` | api.binance.com + mirrors | Comma-separated Binance API hosts for price klines |
 | `LIVE_STREAM_URL` | http://live-stream:3002 | URL for live-stream service |

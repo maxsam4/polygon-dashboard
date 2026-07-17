@@ -14,6 +14,10 @@ export type ChartMetric =
   | 'totalBaseFee'
   | 'totalPriorityFee'
   | 'totalFee'
+  | 'totalBaseFeeUsd'
+  | 'totalPriorityFeeUsd'
+  | 'totalFeeUsd'
+  | 'polPrice'
   | 'blockLimit'
   | 'blockLimitUtilization'
   | 'borBlockTime'
@@ -51,6 +55,9 @@ export function getSeriesOptionsForMetric(
     case 'totalBaseFee':
     case 'totalPriorityFee':
     case 'totalFee':
+    case 'totalBaseFeeUsd':
+    case 'totalPriorityFeeUsd':
+    case 'totalFeeUsd':
       if (showCumulative) {
         return [
           { key: 'cumulative', label: 'Cumulative', enabled: true, color: colors[0] },
@@ -91,6 +98,11 @@ export function getSeriesOptionsForMetric(
     case 'gasTarget':
       return [
         { key: 'value', label: 'Gas Target %', enabled: true, color: colors[0] },
+      ];
+
+    case 'polPrice':
+      return [
+        { key: 'value', label: 'POL Price (USD)', enabled: true, color: colors[0] },
       ];
 
     case 'finality':

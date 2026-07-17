@@ -51,6 +51,13 @@ export default function AnalyticsPage() {
           <LazyFullChart title="Cumulative Base Fee per Block (POL)" metric="totalBaseFee" showCumulative />
           <LazyFullChart title="Cumulative Priority Fee per Block (POL)" metric="totalPriorityFee" showCumulative />
           <LazyFullChart title="Cumulative Total Fee per Block (POL)" metric="totalFee" showCumulative />
+          <LazyFullChart title="POL Price (USD)" metric="polPrice" />
+          <LazyFullChart title="Total Base Fee per Block (USD)" metric="totalBaseFeeUsd" />
+          <LazyFullChart title="Total Priority Fee per Block (USD)" metric="totalPriorityFeeUsd" />
+          <LazyFullChart title="Total Fee per Block (USD)" metric="totalFeeUsd" />
+          <LazyFullChart title="Cumulative Base Fee per Block (USD)" metric="totalBaseFeeUsd" showCumulative />
+          <LazyFullChart title="Cumulative Priority Fee per Block (USD)" metric="totalPriorityFeeUsd" showCumulative />
+          <LazyFullChart title="Cumulative Total Fee per Block (USD)" metric="totalFeeUsd" showCumulative />
         </div>
       </main>
     </div>
