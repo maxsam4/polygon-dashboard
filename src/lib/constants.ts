@@ -87,7 +87,10 @@ export const PRICE_POLL_MS = parseInt(process.env.PRICE_POLL_MS || '60000', 10);
 export const PRICE_BACKFILL_DELAY_MS = 300;
 export const BINANCE_KLINE_LIMIT = 1000;
 export const HOUR_MS = 60 * 60 * 1000;
-export const BINANCE_API_URLS = process.env.BINANCE_API_URLS?.split(',').map(s => s.trim()).filter(Boolean) || [
+// Note: docker-compose passes unset vars as empty strings, and ''.split(',')
+// filters to a truthy empty array - hence the explicit length check.
+const binanceUrlsFromEnv = process.env.BINANCE_API_URLS?.split(',').map(s => s.trim()).filter(Boolean);
+export const BINANCE_API_URLS = binanceUrlsFromEnv && binanceUrlsFromEnv.length > 0 ? binanceUrlsFromEnv : [
   'https://api.binance.com',
   'https://api1.binance.com',
   'https://api2.binance.com',
