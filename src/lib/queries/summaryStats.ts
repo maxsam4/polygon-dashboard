@@ -9,6 +9,7 @@ import {
   calculateSupplyAt,
   findRateAt,
   weiToPol,
+  annualize,
 } from '../inflationCalc';
 
 type StatsSource = SummaryStats['source'];
@@ -40,6 +41,9 @@ interface SummaryRow {
   peak_tps: string | number | null;
   peak_mgas: string | number | null;
   data_end: Date | string | null;
+  base_fee_gwei_avg: string | number | null;
+  median_priority_fee_gwei_avg: string | number | null;
+  total_fee_gwei_avg: string | number | null;
 }
 
 function toNum(value: string | number | null | undefined): number | null {
@@ -89,7 +93,10 @@ async function fetchSummaryRow(
         AVG(b.time_to_finality_sec) FILTER (WHERE b.finalized) AS finality_avg,
         MAX(b.tps) AS peak_tps,
         MAX(b.mgas_per_sec) AS peak_mgas,
-        MAX(b.timestamp) AS data_end
+        MAX(b.timestamp) AS data_end,
+        AVG(b.base_fee_gwei) AS base_fee_gwei_avg,
+        AVG(b.median_priority_fee_gwei) AS median_priority_fee_gwei_avg,
+        AVG(b.base_fee_gwei + b.avg_priority_fee_gwei) AS total_fee_gwei_avg
       FROM blocks b
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', b.timestamp)
       WHERE b.timestamp >= $1 AND b.timestamp < $2`,
@@ -115,7 +122,10 @@ async function fetchSummaryRow(
         SUM(a.finality_avg * a.finalized_count) / NULLIF(SUM(a.finalized_count), 0) AS finality_avg,
         MAX(a.tps_max) AS peak_tps,
         MAX(a.mgas_per_sec_max) AS peak_mgas,
-        LEAST(MAX(a.bucket) + INTERVAL '1 minute', $2) AS data_end
+        LEAST(MAX(a.bucket) + INTERVAL '1 minute', $2) AS data_end,
+        SUM(a.base_fee_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS base_fee_gwei_avg,
+        SUM(a.median_priority_fee_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS median_priority_fee_gwei_avg,
+        SUM(a.total_gas_price_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS total_fee_gwei_avg
       FROM blocks_1min_agg a
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', a.bucket)
       WHERE a.bucket >= $1 AND a.bucket < $2`,
@@ -142,7 +152,10 @@ async function fetchSummaryRow(
         finality_avg,
         finalized_count,
         tps_max,
-        mgas_per_sec_max
+        mgas_per_sec_max,
+        base_fee_avg,
+        median_priority_fee_avg,
+        total_gas_price_avg
       FROM blocks_1hour_agg
       WHERE bucket >= $1 AND bucket < $2
       UNION ALL
@@ -160,7 +173,10 @@ async function fetchSummaryRow(
         SUM(finality_avg * finalized_count) / NULLIF(SUM(finalized_count), 0),
         SUM(finalized_count),
         MAX(tps_max),
-        MAX(mgas_per_sec_max)
+        MAX(mgas_per_sec_max),
+        SUM(base_fee_avg * block_count) / NULLIF(SUM(block_count), 0),
+        SUM(median_priority_fee_avg * block_count) / NULLIF(SUM(block_count), 0),
+        SUM(total_gas_price_avg * block_count) / NULLIF(SUM(block_count), 0)
       FROM blocks_1min_agg
       WHERE bucket >= (
           SELECT COALESCE(MAX(bucket) + INTERVAL '1 hour', '-infinity'::timestamptz)
@@ -185,6 +201,9 @@ async function fetchSummaryRow(
       SUM(s.finality_avg * s.finalized_count) / NULLIF(SUM(s.finalized_count), 0) AS finality_avg,
       MAX(s.tps_max) AS peak_tps,
       MAX(s.mgas_per_sec_max) AS peak_mgas,
+      SUM(s.base_fee_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS base_fee_gwei_avg,
+      SUM(s.median_priority_fee_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS median_priority_fee_gwei_avg,
+      SUM(s.total_gas_price_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS total_fee_gwei_avg,
       LEAST(
         (SELECT MAX(bucket) + INTERVAL '1 minute' FROM blocks_1min_agg WHERE bucket < $2),
         $2
@@ -365,12 +384,38 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
     const netInflationPol = issuancePol - burnedPol;
 
     let netInflationPctOfSupply: number | null = null;
+    let supplyAtStartPol = 0;
     const rateAtStart = findRateAt(issuanceStartSec, rates);
     if (rateAtStart) {
-      const supplyAtStartPol = weiToPol(calculateSupplyAt(issuanceStartSec, rateAtStart));
+      supplyAtStartPol = weiToPol(calculateSupplyAt(issuanceStartSec, rateAtStart));
       if (supplyAtStartPol > 0) {
         netInflationPctOfSupply = (netInflationPol / supplyAtStartPol) * 100;
       }
+    }
+
+    // Annualized run rates. Issuance and burn each extrapolate over their own
+    // covered window — they differ on ALL, where burn data (2020+) predates the
+    // first inflation-rate record (Oct 2023) — then net is the difference of
+    // the two per-year rates, which stays coherent across mismatched windows.
+    const issuancePeriodSec = Math.max(0, issuanceEndSec - issuanceStartSec);
+    const burnPeriodSec = Math.max(0, Math.min(snappedTo, nowSec, dataEndSec) - snappedFrom);
+    let annualized: NonNullable<SummaryStats['inflation']>['annualized'] = null;
+    if (burnPeriodSec > 0) {
+      const issuancePerYear =
+        issuancePeriodSec > 0 ? annualize(issuancePol, issuancePeriodSec) : 0;
+      const burnedPerYear = annualize(burnedPol, burnPeriodSec);
+      const netPerYear = issuancePerYear - burnedPerYear;
+      const pctOfSupply = (perYear: number): number | null =>
+        supplyAtStartPol > 0 ? (perYear / supplyAtStartPol) * 100 : null;
+      annualized = {
+        issuancePol: issuancePerYear,
+        burnedPol: burnedPerYear,
+        netInflationPol: netPerYear,
+        netInflationUsd: priceUsd !== null ? netPerYear * priceUsd : null,
+        issuancePctOfSupply: pctOfSupply(issuancePerYear),
+        burnedPctOfSupply: pctOfSupply(burnedPerYear),
+        netInflationPctOfSupply: pctOfSupply(netPerYear),
+      };
     }
 
     inflation = {
@@ -379,6 +424,7 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
       netInflationPol,
       netInflationUsd: priceUsd !== null ? netInflationPol * priceUsd : null,
       netInflationPctOfSupply,
+      annualized,
     };
   }
 
@@ -395,6 +441,9 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
       avgTxFeePol,
       avgTxFeeUsd,
       usdMissingHours,
+      avgBaseFeeGwei: toNum(row?.base_fee_gwei_avg),
+      avgMedianPriorityFeeGwei: toNum(row?.median_priority_fee_gwei_avg),
+      avgTotalFeeGwei: toNum(row?.total_fee_gwei_avg),
     },
     throughput: {
       avgTps,

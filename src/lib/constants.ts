@@ -2,6 +2,10 @@
 export const GWEI_PER_POL = 1_000_000_000;
 export const GWEI = 1_000_000_000n;
 
+// Share of priority fees paid to the block producer (the rest goes to the
+// validator set via the fee distribution)
+export const PRODUCER_PRIORITY_FEE_SHARE = 0.26;
+
 // UI Constants
 export const UI_CONSTANTS = {
   TOOLTIP_WIDTH: 220,

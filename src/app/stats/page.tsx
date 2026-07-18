@@ -9,7 +9,11 @@ import {
   StatsSelection,
 } from '@/hooks/useSummaryStats';
 import { formatPol, formatUsd, formatLargeNumber } from '@/lib/utils';
-import { EXTERNAL_URLS, PRICE_HISTORY_START_MS } from '@/lib/constants';
+import {
+  EXTERNAL_URLS,
+  PRICE_HISTORY_START_MS,
+  PRODUCER_PRIORITY_FEE_SHARE,
+} from '@/lib/constants';
 import { SummaryStats } from '@/lib/types';
 
 // POL amounts: abbreviate once they stop being readable as full numbers
@@ -33,6 +37,19 @@ function fmtNum(value: number | null | undefined, decimals = 2): string {
     minimumFractionDigits: effDecimals,
     maximumFractionDigits: effDecimals,
   });
+}
+
+const SECONDS_PER_YEAR = 365 * 24 * 3600;
+
+// Extrapolate a window total to a per-year run rate
+function annualizeOverRange(value: number, range: SummaryStats['range']): number | null {
+  const periodSec = range.to - range.from;
+  return periodSec > 0 ? value * (SECONDS_PER_YEAR / periodSec) : null;
+}
+
+function fmtPctPerYear(pct: number | null | undefined): string | null {
+  if (pct === null || pct === undefined) return null;
+  return `${pct.toFixed(2)}%/yr`;
 }
 
 // "peak 6,932 @ #90,437,541" with the block number linking to the explorer
@@ -246,6 +263,9 @@ export default function StatsPage() {
   const totalUsd = stats?.fees.totalUsd ?? null;
   const netInflation = stats?.inflation?.netInflationPol ?? null;
   const priceUsd = stats?.priceUsd ?? null;
+  const annualized = stats?.inflation?.annualized ?? null;
+  const feesUsdPerYear =
+    stats && totalUsd !== null ? annualizeOverRange(totalUsd, stats.range) : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -275,7 +295,10 @@ export default function StatsPage() {
                 label="Total Fees"
                 primary={totalUsd !== null ? formatUsd(totalUsd) : '-'}
                 secondary={`${fmtPol(stats.fees.totalPol)} POL`}
-                detail={`base ${fmtPol(stats.fees.basePol)} · priority ${fmtPol(stats.fees.priorityPol)} POL`}
+                detail={
+                  `base ${fmtPol(stats.fees.basePol)} · priority ${fmtPol(stats.fees.priorityPol)} POL` +
+                  (feesUsdPerYear !== null ? ` · ≈${formatUsd(feesUsdPerYear)}/yr` : '')
+                }
               />
               <HeroCard
                 label="POL Price"
@@ -292,9 +315,15 @@ export default function StatsPage() {
                     : undefined
                 }
                 detail={
-                  stats.inflation?.netInflationPctOfSupply != null
-                    ? `${stats.inflation.netInflationPctOfSupply.toFixed(4)}% of supply · issuance − burn`
-                    : 'issuance − burn'
+                  [
+                    stats.inflation?.netInflationPctOfSupply != null
+                      ? `${stats.inflation.netInflationPctOfSupply.toFixed(4)}% of supply`
+                      : null,
+                    fmtPctPerYear(annualized?.netInflationPctOfSupply),
+                    'issuance − burn',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
                 }
                 primaryClassName={
                   netInflation !== null && netInflation < 0 ? 'text-accent' : 'text-warning'
@@ -315,6 +344,20 @@ export default function StatsPage() {
                   sub={stats.fees.priorityUsd !== null ? formatUsd(stats.fees.priorityUsd) : undefined}
                 />
                 <StatCard
+                  label="Producer Revenue"
+                  value={`${fmtPol(stats.fees.priorityPol * PRODUCER_PRIORITY_FEE_SHARE)} POL`}
+                  sub={
+                    stats.fees.priorityUsd !== null
+                      ? `${formatUsd(stats.fees.priorityUsd * PRODUCER_PRIORITY_FEE_SHARE)} · ${Math.round(PRODUCER_PRIORITY_FEE_SHARE * 100)}% of priority fees`
+                      : `${Math.round(PRODUCER_PRIORITY_FEE_SHARE * 100)}% of priority fees`
+                  }
+                />
+                <StatCard
+                  label="Total Fees"
+                  value={`${fmtPol(stats.fees.totalPol)} POL`}
+                  sub={totalUsd !== null ? formatUsd(totalUsd) : undefined}
+                />
+                <StatCard
                   label="Avg Tx Fee"
                   value={
                     stats.fees.avgTxFeePol !== null ? `${formatPol(stats.fees.avgTxFeePol, 6)} POL` : '-'
@@ -324,9 +367,31 @@ export default function StatsPage() {
                   }
                 />
                 <StatCard
-                  label="Total Fees"
-                  value={`${fmtPol(stats.fees.totalPol)} POL`}
-                  sub={totalUsd !== null ? formatUsd(totalUsd) : undefined}
+                  label="Avg Base Fee"
+                  value={
+                    stats.fees.avgBaseFeeGwei !== null
+                      ? `${fmtNum(stats.fees.avgBaseFeeGwei)} gwei`
+                      : '-'
+                  }
+                  sub="per gas"
+                />
+                <StatCard
+                  label="Avg Priority Fee"
+                  value={
+                    stats.fees.avgMedianPriorityFeeGwei !== null
+                      ? `${fmtNum(stats.fees.avgMedianPriorityFeeGwei)} gwei`
+                      : '-'
+                  }
+                  sub="median, per gas"
+                />
+                <StatCard
+                  label="Avg Total Fee"
+                  value={
+                    stats.fees.avgTotalFeeGwei !== null
+                      ? `${fmtNum(stats.fees.avgTotalFeeGwei)} gwei`
+                      : '-'
+                  }
+                  sub="per gas"
                 />
               </div>
               {stats.fees.usdMissingHours > 0 && (
@@ -417,27 +482,56 @@ export default function StatsPage() {
                     label="POL Issued"
                     value={`${fmtPol(stats.inflation.issuancePol)} POL`}
                     sub={
-                      priceUsd !== null
-                        ? `${formatUsd(stats.inflation.issuancePol * priceUsd)} at latest price`
-                        : undefined
+                      <>
+                        {priceUsd !== null && (
+                          <div>{formatUsd(stats.inflation.issuancePol * priceUsd)} at latest price</div>
+                        )}
+                        {annualized && (
+                          <div>
+                            {fmtPol(annualized.issuancePol)} POL/yr
+                            {annualized.issuancePctOfSupply !== null &&
+                              ` · ${fmtPctPerYear(annualized.issuancePctOfSupply)}`}
+                          </div>
+                        )}
+                      </>
                     }
                   />
                   <StatCard
                     label="POL Burned"
                     value={`${fmtPol(stats.inflation.burnedPol)} POL`}
                     sub={
-                      stats.fees.baseUsd !== null
-                        ? `${formatUsd(stats.fees.baseUsd)} · base fees (EIP-1559)`
-                        : 'base fees (EIP-1559)'
+                      <>
+                        <div>
+                          {stats.fees.baseUsd !== null
+                            ? `${formatUsd(stats.fees.baseUsd)} · base fees`
+                            : 'base fees'}
+                        </div>
+                        {annualized && (
+                          <div>
+                            {fmtPol(annualized.burnedPol)} POL/yr
+                            {annualized.burnedPctOfSupply !== null &&
+                              ` · ${fmtPctPerYear(annualized.burnedPctOfSupply)}`}
+                          </div>
+                        )}
+                      </>
                     }
                   />
                   <StatCard
                     label="Net Inflation"
                     value={`${fmtPol(stats.inflation.netInflationPol)} POL`}
                     sub={
-                      stats.inflation.netInflationPctOfSupply !== null
-                        ? `${stats.inflation.netInflationPctOfSupply.toFixed(4)}% of supply`
-                        : undefined
+                      <>
+                        {stats.inflation.netInflationPctOfSupply !== null && (
+                          <div>{stats.inflation.netInflationPctOfSupply.toFixed(4)}% of supply</div>
+                        )}
+                        {annualized && (
+                          <div>
+                            {fmtPol(annualized.netInflationPol)} POL/yr
+                            {annualized.netInflationPctOfSupply !== null &&
+                              ` · ${fmtPctPerYear(annualized.netInflationPctOfSupply)}`}
+                          </div>
+                        )}
+                      </>
                     }
                     valueClassName={
                       stats.inflation.netInflationPol < 0 ? 'text-accent' : 'text-warning'
@@ -450,7 +544,14 @@ export default function StatsPage() {
                         ? formatUsd(stats.inflation.netInflationUsd)
                         : '-'
                     }
-                    sub="at latest price"
+                    sub={
+                      <>
+                        <div>at latest price</div>
+                        {annualized?.netInflationUsd != null && (
+                          <div>{formatUsd(annualized.netInflationUsd)}/yr</div>
+                        )}
+                      </>
+                    }
                   />
                 </div>
               </Section>

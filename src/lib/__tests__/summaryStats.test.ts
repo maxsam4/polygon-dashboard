@@ -53,6 +53,9 @@ const emptyRow = {
   peak_tps: null,
   peak_mgas: null,
   data_end: null,
+  base_fee_gwei_avg: null,
+  median_priority_fee_gwei_avg: null,
+  total_fee_gwei_avg: null,
 };
 
 /**
@@ -242,6 +245,9 @@ describe('getSummaryStats derived math', () => {
     finality_avg: 4.2,
     peak_tps: 512.5,
     peak_mgas: 55.25,
+    base_fee_gwei_avg: 25.5,
+    median_priority_fee_gwei_avg: 30.25,
+    total_fee_gwei_avg: 60.75,
   };
 
   it('computes fee totals and averages', async () => {
@@ -256,6 +262,9 @@ describe('getSummaryStats derived math', () => {
     expect(result.fees.totalUsd).toBeCloseTo(0.75);
     expect(result.fees.avgTxFeePol).toBeCloseTo(3 / 100000);
     expect(result.fees.avgTxFeeUsd).toBeCloseTo(0.75 / 100000);
+    expect(result.fees.avgBaseFeeGwei).toBe(25.5);
+    expect(result.fees.avgMedianPriorityFeeGwei).toBe(30.25);
+    expect(result.fees.avgTotalFeeGwei).toBe(60.75);
   });
 
   it('computes throughput and block stats', async () => {
@@ -372,6 +381,16 @@ describe('getSummaryStats inflation', () => {
     expect(result.inflation!.netInflationUsd).toBeCloseTo(-2.5);
     // -5 POL of 10B supply, as a percentage
     expect(result.inflation!.netInflationPctOfSupply).toBeCloseTo((-5 / 1e10) * 100, 12);
+
+    // Annualized run rates: a 1h window extrapolates by 8760 hours/year
+    const ann = result.inflation!.annualized!;
+    expect(ann.issuancePol).toBe(0);
+    expect(ann.burnedPol).toBeCloseTo(5 * 8760);
+    expect(ann.netInflationPol).toBeCloseTo(-5 * 8760);
+    expect(ann.netInflationUsd).toBeCloseTo(-5 * 8760 * 0.5);
+    expect(ann.issuancePctOfSupply).toBeCloseTo(0, 12);
+    expect(ann.burnedPctOfSupply).toBeCloseTo(((5 * 8760) / 1e10) * 100, 12);
+    expect(ann.netInflationPctOfSupply).toBeCloseTo(((-5 * 8760) / 1e10) * 100, 12);
   });
 
   it('clamps issuance to the data head (data_end) instead of now', async () => {

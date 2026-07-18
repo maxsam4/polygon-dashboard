@@ -136,6 +136,9 @@ export interface SummaryStats {
     avgTxFeePol: number | null;
     avgTxFeeUsd: number | null;
     usdMissingHours: number; // hours in range with no price row (partial USD coverage)
+    avgBaseFeeGwei: number | null; // per-gas averages (block-count weighted)
+    avgMedianPriorityFeeGwei: number | null;
+    avgTotalFeeGwei: number | null;
   };
   throughput: {
     avgTps: number | null;
@@ -161,6 +164,18 @@ export interface SummaryStats {
     netInflationPol: number;
     netInflationUsd: number | null;
     netInflationPctOfSupply: number | null;
+    // Per-year run rates extrapolated from this window. Issuance and burn are
+    // each annualized over their own covered window (they differ on ALL, where
+    // burn data predates the first inflation-rate record), net = issuance - burn.
+    annualized: {
+      issuancePol: number;
+      burnedPol: number;
+      netInflationPol: number;
+      netInflationUsd: number | null;
+      issuancePctOfSupply: number | null;
+      burnedPctOfSupply: number | null;
+      netInflationPctOfSupply: number | null;
+    } | null; // null when the window has no data coverage
   } | null; // null when inflation rates unavailable
   priceUsd: number | null; // latest known POL price
 }
