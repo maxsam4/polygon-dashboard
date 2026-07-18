@@ -96,16 +96,18 @@ export function formatPol(pol: number, decimals = 2): string {
 
 /**
  * Format a USD value: "$" prefix, K/M/B abbreviation for large values,
- * plain 2-decimal locale formatting otherwise. null = no price data.
+ * no cents from $10k up (they only add width), 2-decimal locale
+ * formatting otherwise. null = no price data.
  */
 export function formatUsd(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return '-';
   const abs = Math.abs(value);
   const sign = value < 0 ? '-' : '';
   if (abs >= 1_000_000) return `${sign}$${formatLargeNumber(abs, decimals)}`;
+  const effDecimals = abs >= 10_000 ? 0 : decimals;
   return `${sign}$${abs.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: effDecimals,
+    maximumFractionDigits: effDecimals,
   })}`;
 }
 

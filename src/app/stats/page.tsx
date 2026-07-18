@@ -16,10 +16,13 @@ import {
 } from '@/lib/constants';
 import { SummaryStats } from '@/lib/types';
 
-// POL amounts: abbreviate once they stop being readable as full numbers
+// POL amounts: abbreviate once they stop being readable as full numbers,
+// and drop decimals from 10k up (they only add width)
 function fmtPol(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return '-';
-  if (Math.abs(value) >= 1_000_000) return formatLargeNumber(value, decimals);
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return formatLargeNumber(value, decimals);
+  if (abs >= 10_000) return formatPol(value, 0);
   return formatPol(value, decimals);
 }
 

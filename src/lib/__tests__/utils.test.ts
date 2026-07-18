@@ -4,6 +4,7 @@ import {
   sleep,
   getTimeAgo,
   formatLargeNumber,
+  formatUsd,
   formatGas,
   formatGweiToPol,
   formatPol,
@@ -93,6 +94,27 @@ describe('formatLargeNumber', () => {
     expect(formatLargeNumber(-1_298_828.51)).toBe('-1.30M');
     expect(formatLargeNumber(-15_500_000_000)).toBe('-15.50B');
     expect(formatLargeNumber(-500)).toBe('-500.00');
+  });
+});
+
+describe('formatUsd', () => {
+  it('keeps cents below $10k', () => {
+    expect(formatUsd(9_999.99)).toBe('$9,999.99');
+    expect(formatUsd(0.013368, 6)).toBe('$0.013368');
+  });
+
+  it('drops cents from $10k up', () => {
+    expect(formatUsd(340_091.83)).toBe('$340,092');
+    expect(formatUsd(-340_091.83)).toBe('-$340,092');
+  });
+
+  it('abbreviates from $1M up', () => {
+    expect(formatUsd(2_740_000)).toBe('$2.74M');
+  });
+
+  it('returns dash for missing values', () => {
+    expect(formatUsd(null)).toBe('-');
+    expect(formatUsd(undefined)).toBe('-');
   });
 });
 
