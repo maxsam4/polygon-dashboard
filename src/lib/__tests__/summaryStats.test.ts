@@ -18,6 +18,11 @@ import { queryOne } from '@/lib/db';
 import { getAllInflationRates } from '@/lib/queries/inflation';
 import { getLatestPrice } from '@/lib/queries/prices';
 import { getSummaryStats } from '@/lib/queries/summaryStats';
+import {
+  calculateBucketIssuance,
+  prepareRatesForCalculation,
+  weiToPol,
+} from '@/lib/inflationCalc';
 import type { InflationRate } from '@/lib/types';
 
 const mockQueryOne = queryOne as jest.Mock;
@@ -47,24 +52,30 @@ const emptyRow = {
   finality_avg: null,
   peak_tps: null,
   peak_mgas: null,
+  data_end: null,
 };
 
 /**
- * Wire queryOne: the earliest-bucket lookup gets `earliest`, the main
- * aggregate query gets `row`.
+ * Wire queryOne: the earliest-bucket lookup gets `earliest`, the peak
+ * drill-down lookups (LIMIT 1) get null, the main aggregate query gets `row`.
  */
 function mockDb(row: Record<string, unknown> = emptyRow, earliest: Date | null = null) {
   mockQueryOne.mockImplementation((sql: string) => {
     if (sql.includes('min_bucket')) {
       return Promise.resolve({ min_bucket: earliest });
     }
+    if (sql.includes('LIMIT 1')) {
+      return Promise.resolve(null);
+    }
     return Promise.resolve(row);
   });
 }
 
-/** The main aggregate query call (SQL + params), excluding the earliest lookup */
+/** The main aggregate query call (SQL + params), excluding earliest/peak lookups */
 function mainQueryCall(): [string, unknown[]] {
-  const calls = mockQueryOne.mock.calls.filter((c) => !(c[0] as string).includes('min_bucket'));
+  const calls = mockQueryOne.mock.calls.filter(
+    (c) => !(c[0] as string).includes('min_bucket') && !(c[0] as string).includes('LIMIT 1')
+  );
   expect(calls).toHaveLength(1);
   return calls[0] as [string, unknown[]];
 }
@@ -363,6 +374,37 @@ describe('getSummaryStats inflation', () => {
     expect(result.inflation!.netInflationPctOfSupply).toBeCloseTo((-5 / 1e10) * 100, 12);
   });
 
+  it('clamps issuance to the data head (data_end) instead of now', async () => {
+    const rate: InflationRate = {
+      id: 1,
+      blockNumber: 1n,
+      blockTimestamp: new Date(0),
+      interestPerYearLog2: 28569152196770890n, // current 2%/yr rate
+      startSupply: POL_SUPPLY_10B_WEI,
+      startTimestamp: 0n,
+      createdAt: new Date(0),
+    };
+    const dataEndSec = NOW_SEC - 600; // indexing lag: burn data ends 10 min ago
+    mockDb({ ...emptyRow, data_end: new Date(dataEndSec * 1000) });
+    mockGetAllInflationRates.mockResolvedValue([rate]);
+
+    const result = await getSummaryStats(NOW_SEC - HOUR, NOW_SEC);
+
+    const rates = prepareRatesForCalculation([
+      {
+        startTimestamp: 0n,
+        interestPerYearLog2: 28569152196770890n,
+        startSupply: POL_SUPPLY_10B_WEI,
+      },
+    ]);
+    const expected = weiToPol(calculateBucketIssuance(NOW_SEC - HOUR, dataEndSec, rates));
+    const unclamped = weiToPol(calculateBucketIssuance(NOW_SEC - HOUR, NOW_SEC, rates));
+
+    expect(expected).toBeGreaterThan(0);
+    expect(result.inflation!.issuancePol).toBeCloseTo(expected, 6);
+    expect(result.inflation!.issuancePol).toBeLessThan(unclamped);
+  });
+
   it('leaves netInflationUsd null without a latest price', async () => {
     mockDb({ ...emptyRow, base_fee_gwei_sum: '5000000000' });
     mockGetAllInflationRates.mockResolvedValue([flatRate]);
@@ -371,5 +413,70 @@ describe('getSummaryStats inflation', () => {
     const result = await getSummaryStats(NOW_SEC - HOUR, NOW_SEC);
     expect(result.inflation!.netInflationUsd).toBeNull();
     expect(result.priceUsd).toBeNull();
+  });
+});
+
+describe('getSummaryStats peak blocks', () => {
+  it('resolves peak blocks directly from raw blocks for the raw source', async () => {
+    mockQueryOne.mockImplementation((sql: string) => {
+      if (sql.includes('min_bucket')) return Promise.resolve({ min_bucket: null });
+      if (sql.includes('LIMIT 1')) {
+        if (sql.includes('ORDER BY tps DESC')) return Promise.resolve({ block_number: '90000001' });
+        if (sql.includes('ORDER BY mgas_per_sec DESC')) {
+          return Promise.resolve({ block_number: '90000002' });
+        }
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(emptyRow);
+    });
+
+    const result = await getSummaryStats(NOW_SEC - HOUR, NOW_SEC);
+    expect(result.source).toBe('blocks');
+    expect(result.throughput.peakTpsBlock).toBe(90000001);
+    expect(result.throughput.peakMgasBlock).toBe(90000002);
+  });
+
+  it('drills minute -> block for the 1min aggregate source', async () => {
+    const minuteBucket = new Date((Math.floor(NOW_SEC / 60) * 60 - 3600) * 1000);
+    const rawWindows: Array<[Date, Date]> = [];
+    mockQueryOne.mockImplementation((sql: string, params?: unknown[]) => {
+      if (sql.includes('min_bucket')) return Promise.resolve({ min_bucket: null });
+      if (sql.includes('LIMIT 1')) {
+        if (sql.includes('FROM blocks_1min_agg')) return Promise.resolve({ bucket: minuteBucket });
+        if (sql.includes('FROM blocks')) {
+          rawWindows.push([params![0] as Date, params![1] as Date]);
+          return Promise.resolve({ block_number: '89000001' });
+        }
+      }
+      return Promise.resolve(emptyRow);
+    });
+
+    const result = await getSummaryStats(NOW_SEC - DAY, NOW_SEC);
+    expect(result.source).toBe('blocks_1min_agg');
+    expect(result.throughput.peakTpsBlock).toBe(89000001);
+    expect(result.throughput.peakMgasBlock).toBe(89000001);
+    // the raw lookup must scan exactly the peak minute
+    for (const [from, to] of rawWindows) {
+      expect(from.getTime()).toBe(minuteBucket.getTime());
+      expect(to.getTime()).toBe(minuteBucket.getTime() + 60_000);
+    }
+  });
+
+  it('returns null peak blocks when the drill-down finds nothing', async () => {
+    mockDb();
+    const result = await getSummaryStats(NOW_SEC - HOUR, NOW_SEC);
+    expect(result.throughput.peakTpsBlock).toBeNull();
+    expect(result.throughput.peakMgasBlock).toBeNull();
+  });
+
+  it('returns null peak blocks when the lookup fails, without failing the stats', async () => {
+    mockQueryOne.mockImplementation((sql: string) => {
+      if (sql.includes('min_bucket')) return Promise.resolve({ min_bucket: null });
+      if (sql.includes('LIMIT 1')) return Promise.reject(new Error('timeout'));
+      return Promise.resolve(emptyRow);
+    });
+    const result = await getSummaryStats(NOW_SEC - HOUR, NOW_SEC);
+    expect(result.throughput.peakTpsBlock).toBeNull();
+    expect(result.throughput.peakMgasBlock).toBeNull();
   });
 });

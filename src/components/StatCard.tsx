@@ -21,7 +21,7 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  sub?: string;
+  sub?: React.ReactNode;
   valueClassName?: string;
 }) {
   return (

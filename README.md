@@ -10,7 +10,7 @@ A real-time analytics dashboard for monitoring Polygon blockchain metrics includ
 - **Gas Price Analytics** - Track base fees and priority fees (min/max/avg/median) in gwei
 - **Fee Tracking** - Monitor total base fees and priority fees per block with cumulative graphs showing fee accumulation over time
 - **POL Price Tracking** - Hourly POL/MATIC USD prices (Binance klines, backfilled to 2020, MATIC→POL migration handled) with USD-denominated fee charts
-- **Chain Stats Page** - `/stats` summary of fees (POL + USD), TPS/MGAS/s (avg + peak), transactions, and net POL inflation over selectable time ranges
+- **Chain Stats Page** - `/stats` summary of fees (POL + USD), TPS/MGAS/s (avg + peak with explorer-linked peak blocks), transactions, and net POL inflation with USD values, over preset ranges, calendar months, or custom UTC date ranges
 - **Finality Tracking** - Monitor time-to-finality using Polygon's milestone system via Heimdall API
 - **Performance Metrics** - View MGAS/s and TPS with historical charts
 - **Historical Analytics** - Interactive charts with configurable time ranges, granularity, and zoom selection

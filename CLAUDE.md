@@ -180,12 +180,13 @@ Hourly POL/MATIC USD prices power USD fee charts on /analytics and the /stats pa
 
 ### Chain Stats Page (/stats)
 
-Public aggregate summary over selectable ranges (1H/6H/1D/1W/1M/1Y/YTD/ALL, default 1D):
+Public aggregate summary over selectable ranges (1H/6H/1D/1W/1M/1Y/YTD/ALL presets, calendar-month picker, custom UTC date range; default 1D):
 
-- **Query**: `src/lib/queries/summaryStats.ts` — window snapped to source bucket boundaries; source routing: raw `blocks` only for range ≤6h AND from ≥ now−24h (compression is age-based!), `blocks_1min_agg` ≤7d, else `blocks_1hour_agg` with the un-materialized head (~2h) unioned from the 1min agg.
-- **Peaks**: `tps_max` / `mgas_per_sec_max` columns exist in both continuous aggregates (added 20260718) — never scan raw blocks for peaks over long ranges.
-- **API**: `GET /api/stats?from=<unixSec>&to=<unixSec>` (public). **UI**: `src/app/stats/page.tsx`, hook `src/hooks/useSummaryStats.ts`, shared cards `src/components/StatCard.tsx` (also used by rpc-stats).
-- Net inflation reuses `inflationCalc.ts` (issuance − burned base fees), same math as InflationChart.
+- **Query**: `src/lib/queries/summaryStats.ts` — window snapped to source bucket boundaries; source routing: raw `blocks` only for range ≤6h AND from ≥ now−24h (compression is age-based!), `blocks_1min_agg` for range ≤7d (full history since 2020 — routing is about row count, not retention), else `blocks_1hour_agg` with the un-materialized head (~2h) unioned from the 1min agg.
+- **Peaks**: `tps_max` / `mgas_per_sec_max` columns exist in both continuous aggregates (added 20260718) — never scan raw blocks for peaks over long ranges. Peak *blocks* (for explorer links) are resolved best-effort by `findPeakBlock()`: peak hour → peak minute → raw blocks within that one minute (narrow windows, safe even on compressed chunks).
+- **API**: `GET /api/stats?from=<unixSec>&to=<unixSec>` (public). **UI**: `src/app/stats/page.tsx`, hook `src/hooks/useSummaryStats.ts` (`StatsSelection`: preset | month | custom), shared cards `src/components/StatCard.tsx` (also used by rpc-stats).
+- Net inflation reuses `inflationCalc.ts` (issuance − burned base fees), same math as InflationChart. **Issuance window is clamped to the source's `data_end`** (last indexed bucket) so issuance and burn cover the identical window — integrating issuance through `now` while burn stops at the indexing lag biases short ranges toward inflation.
+- **Inflation data is verified correct against chain** (2026-07-18): `inflation_rates` DB rows match the on-chain EmissionManager (`INTEREST_PER_YEAR_LOG2`, `START_SUPPLY` read via eth_call), and per-block burn = `baseFeePerGas × gasUsed` matches RPC exactly. POL nets deflationary over weeks, but burn oscillates around issuance (~24.1k POL/h at 2%/yr) intraday — quiet hours genuinely show positive net inflation; that is real, not bad data.
 
 ## Testing
 

@@ -17,7 +17,7 @@ type StatsSource = SummaryStats['source'];
 // so raw queries are gated to recent, short windows — far inside the uncompressed range)
 const RAW_MAX_RANGE_SEC = 6 * 3600; // raw blocks only for ranges <= 6h...
 const RAW_MAX_AGE_SEC = 24 * 3600; // ...that start within the last 24h
-const MIN_AGG_MAX_RANGE_SEC = 7 * 24 * 3600; // 1min agg keeps only ~7 days
+const MIN_AGG_MAX_RANGE_SEC = 7 * 24 * 3600; // above this, minute rows are too many — use hourly
 
 /**
  * One row returned by the aggregate query (same shape for all three sources).
@@ -39,6 +39,7 @@ interface SummaryRow {
   finality_avg: string | number | null;
   peak_tps: string | number | null;
   peak_mgas: string | number | null;
+  data_end: Date | string | null;
 }
 
 function toNum(value: string | number | null | undefined): number | null {
@@ -87,7 +88,8 @@ async function fetchSummaryRow(
         MAX(b.block_number) AS block_end,
         AVG(b.time_to_finality_sec) FILTER (WHERE b.finalized) AS finality_avg,
         MAX(b.tps) AS peak_tps,
-        MAX(b.mgas_per_sec) AS peak_mgas
+        MAX(b.mgas_per_sec) AS peak_mgas,
+        MAX(b.timestamp) AS data_end
       FROM blocks b
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', b.timestamp)
       WHERE b.timestamp >= $1 AND b.timestamp < $2`,
@@ -112,7 +114,8 @@ async function fetchSummaryRow(
         MAX(a.block_end) AS block_end,
         SUM(a.finality_avg * a.finalized_count) / NULLIF(SUM(a.finalized_count), 0) AS finality_avg,
         MAX(a.tps_max) AS peak_tps,
-        MAX(a.mgas_per_sec_max) AS peak_mgas
+        MAX(a.mgas_per_sec_max) AS peak_mgas,
+        LEAST(MAX(a.bucket) + INTERVAL '1 minute', $2) AS data_end
       FROM blocks_1min_agg a
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', a.bucket)
       WHERE a.bucket >= $1 AND a.bucket < $2`,
@@ -181,11 +184,79 @@ async function fetchSummaryRow(
       MAX(s.block_end) AS block_end,
       SUM(s.finality_avg * s.finalized_count) / NULLIF(SUM(s.finalized_count), 0) AS finality_avg,
       MAX(s.tps_max) AS peak_tps,
-      MAX(s.mgas_per_sec_max) AS peak_mgas
+      MAX(s.mgas_per_sec_max) AS peak_mgas,
+      LEAST(
+        (SELECT MAX(bucket) + INTERVAL '1 minute' FROM blocks_1min_agg WHERE bucket < $2),
+        $2
+      ) AS data_end
     FROM src s
     LEFT JOIN pol_prices p ON p.ts = s.bucket`,
     [fromDate, toDate]
   );
+}
+
+/**
+ * Resolve the block that achieved the range's peak for a metric.
+ * Aggregates store the max value but not which block produced it, so drill
+ * down: peak hour (hourly source, incl. the un-materialized head) -> peak
+ * minute -> raw blocks within that minute. Every step is a narrow,
+ * index-friendly window, so this stays cheap even when the peak lands in a
+ * compressed chunk. Best-effort: returns null when anything is missing.
+ */
+async function findPeakBlock(
+  source: StatsSource,
+  metric: 'tps' | 'mgas_per_sec',
+  fromDate: Date,
+  toDate: Date
+): Promise<number | null> {
+  const aggCol = metric === 'tps' ? 'tps_max' : 'mgas_per_sec_max';
+
+  let minuteFrom = fromDate;
+  let minuteTo = toDate;
+
+  if (source === 'blocks_1hour_agg') {
+    const hourRow = await queryOne<{ bucket: Date }>(
+      `WITH src AS (
+        SELECT bucket, ${aggCol} AS peak FROM blocks_1hour_agg
+        WHERE bucket >= $1 AND bucket < $2
+        UNION ALL
+        SELECT time_bucket('1 hour', bucket), MAX(${aggCol})
+        FROM blocks_1min_agg
+        WHERE bucket >= (
+            SELECT COALESCE(MAX(bucket) + INTERVAL '1 hour', '-infinity'::timestamptz)
+            FROM blocks_1hour_agg
+          )
+          AND bucket >= $1 AND bucket < $2
+        GROUP BY 1
+      )
+      SELECT bucket FROM src ORDER BY peak DESC NULLS LAST LIMIT 1`,
+      [fromDate, toDate]
+    );
+    if (!hourRow) return null;
+    minuteFrom = new Date(hourRow.bucket);
+    minuteTo = new Date(minuteFrom.getTime() + 3600_000);
+  }
+
+  if (source !== 'blocks') {
+    const minuteRow = await queryOne<{ bucket: Date }>(
+      `SELECT bucket FROM blocks_1min_agg
+       WHERE bucket >= $1 AND bucket < $2
+       ORDER BY ${aggCol} DESC NULLS LAST LIMIT 1`,
+      [minuteFrom, minuteTo]
+    );
+    if (!minuteRow) return null;
+    minuteFrom = new Date(minuteRow.bucket);
+    minuteTo = new Date(minuteFrom.getTime() + 60_000);
+  }
+
+  const blockRow = await queryOne<{ block_number: string }>(
+    `SELECT block_number FROM blocks
+     WHERE timestamp >= $1 AND timestamp < $2
+     ORDER BY ${metric} DESC NULLS LAST LIMIT 1`,
+    [minuteFrom, minuteTo]
+  );
+  const blockNumber = blockRow ? Number(blockRow.block_number) : NaN;
+  return Number.isFinite(blockNumber) ? blockNumber : null;
 }
 
 /**
@@ -231,10 +302,14 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
   const snappedFrom = Math.floor(from / bucketSec) * bucketSec;
   const snappedTo = Math.ceil(to / bucketSec) * bucketSec;
 
-  const [row, latestPrice, rateRows] = await Promise.all([
-    fetchSummaryRow(source, new Date(snappedFrom * 1000), new Date(snappedTo * 1000)),
+  const fromDate = new Date(snappedFrom * 1000);
+  const toDate = new Date(snappedTo * 1000);
+  const [row, latestPrice, rateRows, peakTpsBlock, peakMgasBlock] = await Promise.all([
+    fetchSummaryRow(source, fromDate, toDate),
     getLatestPrice(),
     getAllInflationRates(),
+    findPeakBlock(source, 'tps', fromDate, toDate).catch(() => null),
+    findPeakBlock(source, 'mgas_per_sec', fromDate, toDate).catch(() => null),
   ]);
 
   const baseGweiSum = toNum(row?.base_fee_gwei_sum) ?? 0;
@@ -275,7 +350,14 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
     // e.g. ALL starting in 2020 vs rates starting Oct 2023).
     const firstRateStartSec = Number(rates[0].startTimestamp);
     const issuanceStartSec = Math.max(snappedFrom, firstRateStartSec);
-    const issuanceEndSec = Math.min(snappedTo, nowSec);
+    // Clamp issuance to the burn data actually summed: burn ends at the last
+    // indexed bucket, which trails `now` by the indexing/materialization lag
+    // (~1-4 min). Integrating issuance through `now` while burn stops earlier
+    // biases short ranges toward inflation.
+    const dataEndSec = row?.data_end
+      ? Math.floor(new Date(row.data_end).getTime() / 1000)
+      : nowSec;
+    const issuanceEndSec = Math.min(snappedTo, nowSec, dataEndSec);
     const issuancePol = issuanceStartSec < issuanceEndSec
       ? weiToPol(calculateBucketIssuance(issuanceStartSec, issuanceEndSec, rates))
       : 0;
@@ -317,8 +399,10 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
     throughput: {
       avgTps,
       peakTps: toNum(row?.peak_tps),
+      peakTpsBlock,
       avgMgas,
       peakMgas: toNum(row?.peak_mgas),
+      peakMgasBlock,
     },
     blocks: {
       count: blockCount,

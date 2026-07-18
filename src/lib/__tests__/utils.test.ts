@@ -84,6 +84,16 @@ describe('formatLargeNumber', () => {
     expect(formatLargeNumber(1_500_000, 1)).toBe('1.5M');
     expect(formatLargeNumber(1_500_000, 3)).toBe('1.500M');
   });
+
+  it('formats trillions with T suffix', () => {
+    expect(formatLargeNumber(74_528_220_000_000)).toBe('74.53T');
+  });
+
+  it('abbreviates negative values with sign preserved', () => {
+    expect(formatLargeNumber(-1_298_828.51)).toBe('-1.30M');
+    expect(formatLargeNumber(-15_500_000_000)).toBe('-15.50B');
+    expect(formatLargeNumber(-500)).toBe('-500.00');
+  });
 });
 
 describe('formatGas', () => {

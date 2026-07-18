@@ -16,7 +16,13 @@ export const STATS_TIME_RANGES: StatsTimeRange[] = [
   'ALL',
 ];
 
-const POLL_INTERVAL_MS: Record<StatsTimeRange, number> = {
+/** What the user selected: a rolling preset, a calendar month, or explicit bounds. */
+export type StatsSelection =
+  | { kind: 'preset'; range: StatsTimeRange }
+  | { kind: 'month'; year: number; month: number } // month: 1-12, UTC calendar month
+  | { kind: 'custom'; fromSec: number; toSec: number };
+
+const PRESET_POLL_INTERVAL_MS: Record<StatsTimeRange, number> = {
   '1H': 15_000,
   '6H': 30_000,
   '1D': 60_000,
@@ -39,7 +45,7 @@ const FIXED_RANGE_MS: Partial<Record<StatsTimeRange, number>> = {
   '1Y': 365 * DAY_MS,
 };
 
-function fromSecForRange(range: StatsTimeRange, nowMs: number): number {
+function fromSecForPreset(range: StatsTimeRange, nowMs: number): number {
   if (range === 'ALL') {
     return 0; // server clamps to earliest data
   }
@@ -50,14 +56,34 @@ function fromSecForRange(range: StatsTimeRange, nowMs: number): number {
   return Math.floor((nowMs - rangeMs) / 1000);
 }
 
+function boundsForSelection(sel: StatsSelection, nowMs: number): { from: number; to: number } {
+  if (sel.kind === 'preset') {
+    return { from: fromSecForPreset(sel.range, nowMs), to: Math.floor(nowMs / 1000) };
+  }
+  if (sel.kind === 'month') {
+    return {
+      from: Math.floor(Date.UTC(sel.year, sel.month - 1, 1) / 1000),
+      to: Math.floor(Date.UTC(sel.year, sel.month, 1) / 1000),
+    };
+  }
+  return { from: sel.fromSec, to: sel.toSec };
+}
+
+function pollIntervalMs(sel: StatsSelection, nowMs: number): number {
+  if (sel.kind === 'preset') return PRESET_POLL_INTERVAL_MS[sel.range];
+  // Historical windows never change; only keep polling if the window is still open
+  const { to } = boundsForSelection(sel, nowMs);
+  return to * 1000 >= nowMs - 2 * 60_000 ? 60_000 : 10 * 60_000;
+}
+
 export function useSummaryStats(): {
-  timeRange: StatsTimeRange;
-  setTimeRange: (r: StatsTimeRange) => void;
+  selection: StatsSelection;
+  setSelection: (s: StatsSelection) => void;
   stats: SummaryStats | null;
   loading: boolean;
   error: string | null;
 } {
-  const [timeRange, setTimeRange] = useState<StatsTimeRange>('1D');
+  const [selection, setSelection] = useState<StatsSelection>({ kind: 'preset', range: '1D' });
   const [stats, setStats] = useState<SummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,10 +91,9 @@ export function useSummaryStats(): {
   const fetchData = useCallback(async () => {
     try {
       const nowMs = Date.now();
-      const to = Math.floor(nowMs / 1000);
-      const from = fromSecForRange(timeRange, nowMs);
+      const { from, to } = boundsForSelection(selection, nowMs);
 
-      const res = await fetch(`/api/stats?from=${from}&to=${to}`);
+      const res = await fetch(`/api/stats?from=${from}&to=${Math.min(to, Math.floor(nowMs / 1000))}`);
       if (!res.ok) {
         throw new Error('Failed to fetch summary stats');
       }
@@ -81,18 +106,18 @@ export function useSummaryStats(): {
     } finally {
       setLoading(false);
     }
-  }, [timeRange]);
+  }, [selection]);
 
   useEffect(() => {
     setLoading(true);
     fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS[timeRange]);
+    const interval = setInterval(fetchData, pollIntervalMs(selection, Date.now()));
     return () => clearInterval(interval);
-  }, [fetchData, timeRange]);
+  }, [fetchData, selection]);
 
   return {
-    timeRange,
-    setTimeRange,
+    selection,
+    setSelection,
     stats,
     loading,
     error,

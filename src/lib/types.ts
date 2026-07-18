@@ -140,8 +140,10 @@ export interface SummaryStats {
   throughput: {
     avgTps: number | null;
     peakTps: number | null;
+    peakTpsBlock: number | null; // block that hit the peak (for explorer links)
     avgMgas: number | null;
     peakMgas: number | null;
+    peakMgasBlock: number | null;
   };
   blocks: {
     count: number;

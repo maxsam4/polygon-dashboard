@@ -41,12 +41,15 @@ export function getTimeAgo(date: Date): string {
 }
 
 /**
- * Format large numbers with K/M/B suffixes
+ * Format large numbers with K/M/B/T suffixes (sign-aware)
  */
 export function formatLargeNumber(num: number, decimals = 2): string {
-  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(decimals)}B`;
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(decimals)}M`;
-  if (num >= 1_000) return `${(num / 1_000).toFixed(decimals)}K`;
+  const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+  if (abs >= 1_000_000_000_000) return `${sign}${(abs / 1_000_000_000_000).toFixed(decimals)}T`;
+  if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(decimals)}B`;
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(decimals)}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(decimals)}K`;
   return num.toFixed(decimals);
 }
 

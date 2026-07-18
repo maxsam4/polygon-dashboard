@@ -1,9 +1,15 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { Nav } from '@/components/Nav';
 import { StatCard } from '@/components/StatCard';
-import { useSummaryStats, STATS_TIME_RANGES } from '@/hooks/useSummaryStats';
+import {
+  useSummaryStats,
+  STATS_TIME_RANGES,
+  StatsSelection,
+} from '@/hooks/useSummaryStats';
 import { formatPol, formatUsd, formatLargeNumber } from '@/lib/utils';
+import { EXTERNAL_URLS, PRICE_HISTORY_START_MS } from '@/lib/constants';
 import { SummaryStats } from '@/lib/types';
 
 // POL amounts: abbreviate once they stop being readable as full numbers
@@ -21,10 +27,35 @@ function fmtCount(value: number | null | undefined): string {
 
 function fmtNum(value: number | null | undefined, decimals = 2): string {
   if (value === null || value === undefined) return '-';
+  // Big values don't need forced decimals ("6,932.00" -> "6,932")
+  const effDecimals = Math.abs(value) >= 100 ? 0 : decimals;
   return value.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: effDecimals,
+    maximumFractionDigits: effDecimals,
   });
+}
+
+// "peak 6,932 @ #90,437,541" with the block number linking to the explorer
+function PeakSub({ peak, block }: { peak: number | null; block: number | null }) {
+  if (peak === null) return null;
+  return (
+    <>
+      peak {fmtNum(peak)}
+      {block !== null && (
+        <>
+          {' @ '}
+          <a
+            href={`${EXTERNAL_URLS.POLYGONSCAN_BLOCK}${block}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent hover:underline"
+          >
+            #{block.toLocaleString('en-US')}
+          </a>
+        </>
+      )}
+    </>
+  );
 }
 
 function formatWindow(range: SummaryStats['range']): string {
@@ -79,34 +110,151 @@ function HeroCard({
   );
 }
 
+// All calendar months from the start of indexed data to now, newest first
+function monthOptions(): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [];
+  const start = new Date(PRICE_HISTORY_START_MS);
+  const now = new Date();
+  let y = now.getUTCFullYear();
+  let m = now.getUTCMonth() + 1; // 1-12
+  const startY = start.getUTCFullYear();
+  const startM = start.getUTCMonth() + 1;
+  while (y > startY || (y === startY && m >= startM)) {
+    const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', {
+      month: 'short', year: 'numeric', timeZone: 'UTC',
+    });
+    options.push({ value: `${y}-${String(m).padStart(2, '0')}`, label });
+    m -= 1;
+    if (m === 0) { m = 12; y -= 1; }
+  }
+  return options;
+}
+
+function RangePicker({
+  selection,
+  setSelection,
+}: {
+  selection: StatsSelection;
+  setSelection: (s: StatsSelection) => void;
+}) {
+  const months = useMemo(monthOptions, []);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  const monthValue =
+    selection.kind === 'month'
+      ? `${selection.year}-${String(selection.month).padStart(2, '0')}`
+      : '';
+
+  const applyCustom = () => {
+    if (!customFrom || !customTo) return;
+    const fromSec = Math.floor(Date.parse(`${customFrom}T00:00:00Z`) / 1000);
+    // inclusive end date: end of that UTC day
+    const toSec = Math.floor(Date.parse(`${customTo}T00:00:00Z`) / 1000) + 86400;
+    if (!Number.isFinite(fromSec) || !Number.isFinite(toSec) || fromSec >= toSec) return;
+    setSelection({ kind: 'custom', fromSec, toSec });
+  };
+
+  const inputClass =
+    'bg-surface border border-accent/20 rounded px-2 py-1 text-sm text-foreground font-mono ' +
+    '[color-scheme:dark] focus:outline-none focus:border-accent/60';
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-wrap gap-1 items-center">
+        {STATS_TIME_RANGES.map((range) => (
+          <button
+            key={range}
+            onClick={() => setSelection({ kind: 'preset', range })}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 ${
+              selection.kind === 'preset' && selection.range === range
+                ? 'btn-gradient-active'
+                : 'text-muted hover:text-accent hover:bg-surface-hover'
+            }`}
+          >
+            {range}
+          </button>
+        ))}
+        <select
+          value={monthValue}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            const [y, m] = e.target.value.split('-').map(Number);
+            setSelection({ kind: 'month', year: y, month: m });
+          }}
+          className={`px-2 py-1.5 rounded text-sm font-medium bg-transparent cursor-pointer ${
+            selection.kind === 'month'
+              ? 'btn-gradient-active'
+              : 'text-muted hover:text-accent hover:bg-surface-hover'
+          }`}
+        >
+          <option value="" disabled>
+            Month
+          </option>
+          {months.map((m) => (
+            <option key={m.value} value={m.value} className="bg-surface text-foreground">
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => setShowCustom((v) => !v)}
+          className={`px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 ${
+            selection.kind === 'custom'
+              ? 'btn-gradient-active'
+              : 'text-muted hover:text-accent hover:bg-surface-hover'
+          }`}
+        >
+          Custom
+        </button>
+      </div>
+      {showCustom && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
+            className={inputClass}
+            aria-label="From date (UTC)"
+          />
+          <span className="text-muted">→</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
+            className={inputClass}
+            aria-label="To date (UTC, inclusive)"
+          />
+          <button
+            onClick={applyCustom}
+            disabled={!customFrom || !customTo}
+            className="px-3 py-1 rounded text-sm font-medium btn-gradient-active disabled:opacity-40"
+          >
+            Apply
+          </button>
+          <span className="text-muted text-xs">UTC days, end inclusive</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StatsPage() {
-  const { timeRange, setTimeRange, stats, loading, error } = useSummaryStats();
+  const { selection, setSelection, stats, loading, error } = useSummaryStats();
 
   const totalUsd = stats?.fees.totalUsd ?? null;
   const netInflation = stats?.inflation?.netInflationPol ?? null;
+  const priceUsd = stats?.priceUsd ?? null;
 
   return (
     <div className="min-h-screen bg-background">
       <Nav />
 
       <main className="w-full px-4 py-6 max-w-6xl mx-auto">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
           <h1 className="text-2xl font-bold text-foreground">Chain Stats</h1>
-          <div className="flex flex-wrap gap-1">
-            {STATS_TIME_RANGES.map((range) => (
-              <button
-                key={range}
-                onClick={() => setTimeRange(range)}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 ${
-                  timeRange === range
-                    ? 'btn-gradient-active'
-                    : 'text-muted hover:text-accent hover:bg-surface-hover'
-                }`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
+          <RangePicker selection={selection} setSelection={setSelection} />
         </div>
 
         {stats && (
@@ -131,7 +279,7 @@ export default function StatsPage() {
               />
               <HeroCard
                 label="POL Price"
-                primary={stats.priceUsd !== null ? `$${stats.priceUsd.toFixed(4)}` : '-'}
+                primary={priceUsd !== null ? `$${priceUsd.toFixed(4)}` : '-'}
                 detail="latest hourly close"
                 primaryClassName="text-foreground"
               />
@@ -195,18 +343,24 @@ export default function StatsPage() {
                   label="TPS"
                   value={fmtNum(stats.throughput.avgTps)}
                   sub={
-                    stats.throughput.peakTps !== null
-                      ? `peak ${fmtNum(stats.throughput.peakTps)}`
-                      : undefined
+                    stats.throughput.peakTps !== null ? (
+                      <PeakSub
+                        peak={stats.throughput.peakTps}
+                        block={stats.throughput.peakTpsBlock}
+                      />
+                    ) : undefined
                   }
                 />
                 <StatCard
                   label="MGAS/s"
                   value={fmtNum(stats.throughput.avgMgas)}
                   sub={
-                    stats.throughput.peakMgas !== null
-                      ? `peak ${fmtNum(stats.throughput.peakMgas)}`
-                      : undefined
+                    stats.throughput.peakMgas !== null ? (
+                      <PeakSub
+                        peak={stats.throughput.peakMgas}
+                        block={stats.throughput.peakMgasBlock}
+                      />
+                    ) : undefined
                   }
                 />
                 <StatCard
@@ -262,11 +416,20 @@ export default function StatsPage() {
                   <StatCard
                     label="POL Issued"
                     value={`${fmtPol(stats.inflation.issuancePol)} POL`}
+                    sub={
+                      priceUsd !== null
+                        ? `${formatUsd(stats.inflation.issuancePol * priceUsd)} at latest price`
+                        : undefined
+                    }
                   />
                   <StatCard
                     label="POL Burned"
                     value={`${fmtPol(stats.inflation.burnedPol)} POL`}
-                    sub="base fees (EIP-1559)"
+                    sub={
+                      stats.fees.baseUsd !== null
+                        ? `${formatUsd(stats.fees.baseUsd)} · base fees (EIP-1559)`
+                        : 'base fees (EIP-1559)'
+                    }
                   />
                   <StatCard
                     label="Net Inflation"
