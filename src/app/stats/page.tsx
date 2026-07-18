@@ -379,7 +379,7 @@ export default function StatsPage() {
             </Section>
 
             <Section label="Fees">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <StatCard
                   label="Avg Tx Fee"
                   value={
@@ -390,7 +390,12 @@ export default function StatsPage() {
                   }
                 />
                 <StatCard
-                  label="Min POL Transfer"
+                  label="Avg Min Total Fee"
+                  value={minTotalFeeGwei !== null ? `${fmtNum(minTotalFeeGwei)} gwei` : '-'}
+                  sub="base + min priority"
+                />
+                <StatCard
+                  label="POL Transfer"
                   value={minPolTransferPol !== null ? `${formatPol(minPolTransferPol, 6)} POL` : '-'}
                   sub={
                     minPolTransferPol !== null && priceUsd !== null
@@ -399,7 +404,7 @@ export default function StatsPage() {
                   }
                 />
                 <StatCard
-                  label="Min USDC Transfer"
+                  label="USDC Transfer"
                   value={minUsdcTransferPol !== null ? `${formatPol(minUsdcTransferPol, 6)} POL` : '-'}
                   sub={
                     minUsdcTransferPol !== null && priceUsd !== null
@@ -408,7 +413,7 @@ export default function StatsPage() {
                   }
                 />
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard
                   label="Avg Base Fee"
                   value={
@@ -435,11 +440,6 @@ export default function StatsPage() {
                       : '-'
                   }
                   sub="per gas"
-                />
-                <StatCard
-                  label="Avg Min Total Fee"
-                  value={minTotalFeeGwei !== null ? `${fmtNum(minTotalFeeGwei)} gwei` : '-'}
-                  sub="base + min priority"
                 />
                 <StatCard
                   label="Avg Total Fee"
