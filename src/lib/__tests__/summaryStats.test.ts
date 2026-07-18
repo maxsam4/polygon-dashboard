@@ -55,6 +55,7 @@ const emptyRow = {
   data_end: null,
   base_fee_gwei_avg: null,
   median_priority_fee_gwei_avg: null,
+  min_priority_fee_gwei_avg: null,
   total_fee_gwei_avg: null,
 };
 
@@ -247,6 +248,7 @@ describe('getSummaryStats derived math', () => {
     peak_mgas: 55.25,
     base_fee_gwei_avg: 25.5,
     median_priority_fee_gwei_avg: 30.25,
+    min_priority_fee_gwei_avg: 27.5,
     total_fee_gwei_avg: 60.75,
   };
 
@@ -264,6 +266,7 @@ describe('getSummaryStats derived math', () => {
     expect(result.fees.avgTxFeeUsd).toBeCloseTo(0.75 / 100000);
     expect(result.fees.avgBaseFeeGwei).toBe(25.5);
     expect(result.fees.avgMedianPriorityFeeGwei).toBe(30.25);
+    expect(result.fees.avgMinPriorityFeeGwei).toBe(27.5);
     expect(result.fees.avgTotalFeeGwei).toBe(60.75);
   });
 

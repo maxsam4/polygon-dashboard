@@ -6,6 +6,12 @@ export const GWEI = 1_000_000_000n;
 // validator set via the fee distribution)
 export const PRODUCER_PRIORITY_FEE_SHARE = 0.26;
 
+// Gas units for the reference min-fee transfer tiles on /stats
+export const TRANSFER_GAS_UNITS = {
+  POL: 21_000,
+  USDC: 80_000,
+} as const;
+
 // UI Constants
 export const UI_CONSTANTS = {
   TOOLTIP_WIDTH: 220,

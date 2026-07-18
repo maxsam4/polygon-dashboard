@@ -11,8 +11,10 @@ import {
 import { formatPol, formatUsd, formatLargeNumber } from '@/lib/utils';
 import {
   EXTERNAL_URLS,
+  GWEI_PER_POL,
   PRICE_HISTORY_START_MS,
   PRODUCER_PRIORITY_FEE_SHARE,
+  TRANSFER_GAS_UNITS,
 } from '@/lib/constants';
 import { SummaryStats } from '@/lib/types';
 
@@ -270,6 +272,17 @@ export default function StatsPage() {
   const feesUsdPerYear =
     stats && totalUsd !== null ? annualizeOverRange(totalUsd, stats.range) : null;
 
+  // Cheapest-possible gas price (base + min priority) and what a plain
+  // POL / USDC transfer costs at that price
+  const minTotalFeeGwei =
+    stats?.fees.avgBaseFeeGwei != null && stats.fees.avgMinPriorityFeeGwei != null
+      ? stats.fees.avgBaseFeeGwei + stats.fees.avgMinPriorityFeeGwei
+      : null;
+  const minPolTransferPol =
+    minTotalFeeGwei !== null ? (TRANSFER_GAS_UNITS.POL * minTotalFeeGwei) / GWEI_PER_POL : null;
+  const minUsdcTransferPol =
+    minTotalFeeGwei !== null ? (TRANSFER_GAS_UNITS.USDC * minTotalFeeGwei) / GWEI_PER_POL : null;
+
   return (
     <div className="min-h-screen bg-background">
       <Nav />
@@ -298,10 +311,7 @@ export default function StatsPage() {
                 label="Total Fees"
                 primary={totalUsd !== null ? formatUsd(totalUsd) : '-'}
                 secondary={`${fmtPol(stats.fees.totalPol)} POL`}
-                detail={
-                  `base ${fmtPol(stats.fees.basePol)} · priority ${fmtPol(stats.fees.priorityPol)} POL` +
-                  (feesUsdPerYear !== null ? ` · ≈${formatUsd(feesUsdPerYear)}/yr` : '')
-                }
+                detail={feesUsdPerYear !== null ? `≈${formatUsd(feesUsdPerYear)}/yr` : undefined}
               />
               <HeroCard
                 label="POL Price"
@@ -323,10 +333,9 @@ export default function StatsPage() {
                       ? `${stats.inflation.netInflationPctOfSupply.toFixed(4)}% of supply`
                       : null,
                     fmtPctPerYear(annualized?.netInflationPctOfSupply),
-                    'issuance − burn',
                   ]
                     .filter(Boolean)
-                    .join(' · ')
+                    .join(' · ') || undefined
                 }
                 primaryClassName={
                   netInflation !== null && netInflation < 0 ? 'text-accent' : 'text-warning'
@@ -334,7 +343,7 @@ export default function StatsPage() {
               />
             </div>
 
-            <Section label="Fees">
+            <Section label="Revenue">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard
                   label="Base Fee (Burned)"
@@ -360,6 +369,17 @@ export default function StatsPage() {
                   value={`${fmtPol(stats.fees.totalPol)} POL`}
                   sub={totalUsd !== null ? formatUsd(totalUsd) : undefined}
                 />
+              </div>
+              {stats.fees.usdMissingHours > 0 && (
+                <div className="text-muted text-xs mt-2">
+                  USD totals are partial: {stats.fees.usdMissingHours} hour
+                  {stats.fees.usdMissingHours === 1 ? '' : 's'} in this window have no price data.
+                </div>
+              )}
+            </Section>
+
+            <Section label="Fees">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                 <StatCard
                   label="Avg Tx Fee"
                   value={
@@ -369,6 +389,26 @@ export default function StatsPage() {
                     stats.fees.avgTxFeeUsd !== null ? formatUsd(stats.fees.avgTxFeeUsd, 6) : undefined
                   }
                 />
+                <StatCard
+                  label="Min POL Transfer"
+                  value={minPolTransferPol !== null ? `${formatPol(minPolTransferPol, 6)} POL` : '-'}
+                  sub={
+                    minPolTransferPol !== null && priceUsd !== null
+                      ? `${formatUsd(minPolTransferPol * priceUsd, 6)} · ${TRANSFER_GAS_UNITS.POL.toLocaleString()} gas`
+                      : `${TRANSFER_GAS_UNITS.POL.toLocaleString()} gas`
+                  }
+                />
+                <StatCard
+                  label="Min USDC Transfer"
+                  value={minUsdcTransferPol !== null ? `${formatPol(minUsdcTransferPol, 6)} POL` : '-'}
+                  sub={
+                    minUsdcTransferPol !== null && priceUsd !== null
+                      ? `${formatUsd(minUsdcTransferPol * priceUsd, 6)} · ${TRANSFER_GAS_UNITS.USDC.toLocaleString()} gas`
+                      : `${TRANSFER_GAS_UNITS.USDC.toLocaleString()} gas`
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <StatCard
                   label="Avg Base Fee"
                   value={
@@ -388,21 +428,29 @@ export default function StatsPage() {
                   sub="median, per gas"
                 />
                 <StatCard
+                  label="Avg Min Priority"
+                  value={
+                    stats.fees.avgMinPriorityFeeGwei !== null
+                      ? `${fmtNum(stats.fees.avgMinPriorityFeeGwei)} gwei`
+                      : '-'
+                  }
+                  sub="per gas"
+                />
+                <StatCard
+                  label="Avg Min Total Fee"
+                  value={minTotalFeeGwei !== null ? `${fmtNum(minTotalFeeGwei)} gwei` : '-'}
+                  sub="base + min priority"
+                />
+                <StatCard
                   label="Avg Total Fee"
                   value={
                     stats.fees.avgTotalFeeGwei !== null
                       ? `${fmtNum(stats.fees.avgTotalFeeGwei)} gwei`
                       : '-'
                   }
-                  sub="per gas"
+                  sub="base + avg priority"
                 />
               </div>
-              {stats.fees.usdMissingHours > 0 && (
-                <div className="text-muted text-xs mt-2">
-                  USD totals are partial: {stats.fees.usdMissingHours} hour
-                  {stats.fees.usdMissingHours === 1 ? '' : 's'} in this window have no price data.
-                </div>
-              )}
             </Section>
 
             <Section label="Throughput">

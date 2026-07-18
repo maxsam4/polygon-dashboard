@@ -43,6 +43,7 @@ interface SummaryRow {
   data_end: Date | string | null;
   base_fee_gwei_avg: string | number | null;
   median_priority_fee_gwei_avg: string | number | null;
+  min_priority_fee_gwei_avg: string | number | null;
   total_fee_gwei_avg: string | number | null;
 }
 
@@ -96,6 +97,7 @@ async function fetchSummaryRow(
         MAX(b.timestamp) AS data_end,
         AVG(b.base_fee_gwei) AS base_fee_gwei_avg,
         AVG(b.median_priority_fee_gwei) AS median_priority_fee_gwei_avg,
+        AVG(b.min_priority_fee_gwei) AS min_priority_fee_gwei_avg,
         AVG(b.base_fee_gwei + b.avg_priority_fee_gwei) AS total_fee_gwei_avg
       FROM blocks b
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', b.timestamp)
@@ -125,6 +127,7 @@ async function fetchSummaryRow(
         LEAST(MAX(a.bucket) + INTERVAL '1 minute', $2) AS data_end,
         SUM(a.base_fee_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS base_fee_gwei_avg,
         SUM(a.median_priority_fee_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS median_priority_fee_gwei_avg,
+        SUM(a.min_priority_fee_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS min_priority_fee_gwei_avg,
         SUM(a.total_gas_price_avg * a.block_count) / NULLIF(SUM(a.block_count), 0) AS total_fee_gwei_avg
       FROM blocks_1min_agg a
       LEFT JOIN pol_prices p ON p.ts = date_trunc('hour', a.bucket)
@@ -155,6 +158,7 @@ async function fetchSummaryRow(
         mgas_per_sec_max,
         base_fee_avg,
         median_priority_fee_avg,
+        min_priority_fee_avg,
         total_gas_price_avg
       FROM blocks_1hour_agg
       WHERE bucket >= $1 AND bucket < $2
@@ -176,6 +180,7 @@ async function fetchSummaryRow(
         MAX(mgas_per_sec_max),
         SUM(base_fee_avg * block_count) / NULLIF(SUM(block_count), 0),
         SUM(median_priority_fee_avg * block_count) / NULLIF(SUM(block_count), 0),
+        SUM(min_priority_fee_avg * block_count) / NULLIF(SUM(block_count), 0),
         SUM(total_gas_price_avg * block_count) / NULLIF(SUM(block_count), 0)
       FROM blocks_1min_agg
       WHERE bucket >= (
@@ -203,6 +208,7 @@ async function fetchSummaryRow(
       MAX(s.mgas_per_sec_max) AS peak_mgas,
       SUM(s.base_fee_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS base_fee_gwei_avg,
       SUM(s.median_priority_fee_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS median_priority_fee_gwei_avg,
+      SUM(s.min_priority_fee_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS min_priority_fee_gwei_avg,
       SUM(s.total_gas_price_avg * s.block_count) / NULLIF(SUM(s.block_count), 0) AS total_fee_gwei_avg,
       LEAST(
         (SELECT MAX(bucket) + INTERVAL '1 minute' FROM blocks_1min_agg WHERE bucket < $2),
@@ -443,6 +449,7 @@ export async function getSummaryStats(fromSec: number, toSec: number): Promise<S
       usdMissingHours,
       avgBaseFeeGwei: toNum(row?.base_fee_gwei_avg),
       avgMedianPriorityFeeGwei: toNum(row?.median_priority_fee_gwei_avg),
+      avgMinPriorityFeeGwei: toNum(row?.min_priority_fee_gwei_avg),
       avgTotalFeeGwei: toNum(row?.total_fee_gwei_avg),
     },
     throughput: {

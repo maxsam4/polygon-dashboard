@@ -138,6 +138,7 @@ export interface SummaryStats {
     usdMissingHours: number; // hours in range with no price row (partial USD coverage)
     avgBaseFeeGwei: number | null; // per-gas averages (block-count weighted)
     avgMedianPriorityFeeGwei: number | null;
+    avgMinPriorityFeeGwei: number | null;
     avgTotalFeeGwei: number | null;
   };
   throughput: {
