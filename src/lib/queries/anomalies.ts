@@ -468,6 +468,28 @@ export async function acknowledgeAnomalies(ids: number[]): Promise<number> {
 }
 
 /**
+ * Auto-acknowledge anomalies older than maxAgeDays. The /alerts page only
+ * shows this much history, so older unacknowledged alerts keep the nav badge
+ * lit with no way to clear them from the UI. Called periodically by the
+ * indexer worker. Returns the number of rows updated.
+ */
+export async function autoAcknowledgeOldAnomalies(maxAgeDays: number): Promise<number> {
+  const result = await queryOne<{ count: string }>(
+    `WITH updated AS (
+       UPDATE anomalies
+       SET acknowledged = TRUE, acknowledged_at = NOW()
+       WHERE timestamp < NOW() - make_interval(days => $1)
+         AND (acknowledged = FALSE OR acknowledged IS NULL)
+       RETURNING 1
+     )
+     SELECT COUNT(*) as count FROM updated`,
+    [maxAgeDays]
+  );
+
+  return parseInt(result?.count || '0', 10);
+}
+
+/**
  * Acknowledge all anomalies within a time range.
  * Returns the number of rows updated.
  */

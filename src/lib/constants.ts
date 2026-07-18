@@ -219,6 +219,11 @@ export const ANOMALY_THRESHOLDS = {
 export type AnomalyMetricType = keyof typeof ANOMALY_THRESHOLDS | 'reorg';
 export type AnomalySeverity = 'warning' | 'critical';
 
+// Anomalies older than this are auto-acknowledged by the indexer (the /alerts
+// page only shows this much history, so older unacknowledged alerts would keep
+// the nav badge lit with no way to clear them from the UI)
+export const ANOMALY_AUTO_ACK_AGE_DAYS = 30;
+
 // All available time ranges for chart controls
 export const ALL_TIME_RANGES = ['5m', '15m', '30m', '1H', '3H', '6H', '1D', '1W', '1M', '6M', '1Y', 'YTD', 'ALL', 'Custom'] as const;
 

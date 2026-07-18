@@ -5,6 +5,8 @@ import { getAllWorkerStatuses, startStatusFlush, stopStatusFlush } from './worke
 import type { WorkerStatus } from './workerStatus';
 import { waitForMigrations } from '../waitForMigrations';
 import { startStatsFlush, stopStatsFlush } from '../rpcStats';
+import { autoAcknowledgeOldAnomalies } from '../queries/anomalies';
+import { ANOMALY_AUTO_ACK_AGE_DAYS } from '../constants';
 
 // Indexers
 import { BlockIndexer, getBlockIndexer } from '../indexers/blockIndexer';
@@ -27,6 +29,35 @@ const globalState = globalThis as typeof globalThis & {
 
 export function areWorkersRunning(): boolean {
   return globalState.__workersStarted ?? false;
+}
+
+// Hourly auto-acknowledge of anomalies that aged out of the /alerts window
+const ANOMALY_AUTO_ACK_INTERVAL_MS = 60 * 60 * 1000;
+let anomalyAutoAckTimer: NodeJS.Timeout | null = null;
+
+async function runAnomalyAutoAck(): Promise<void> {
+  try {
+    const count = await autoAcknowledgeOldAnomalies(ANOMALY_AUTO_ACK_AGE_DAYS);
+    if (count > 0) {
+      console.log(`[Workers] Auto-acknowledged ${count} anomalies older than ${ANOMALY_AUTO_ACK_AGE_DAYS} days`);
+    }
+  } catch (err) {
+    console.error('[Workers] Anomaly auto-acknowledge failed:', err);
+  }
+}
+
+function startAnomalyAutoAck(): void {
+  if (anomalyAutoAckTimer) return;
+  anomalyAutoAckTimer = setInterval(runAnomalyAutoAck, ANOMALY_AUTO_ACK_INTERVAL_MS);
+  // Run once at startup so stale alerts clear immediately
+  runAnomalyAutoAck();
+}
+
+function stopAnomalyAutoAck(): void {
+  if (anomalyAutoAckTimer) {
+    clearInterval(anomalyAutoAckTimer);
+    anomalyAutoAckTimer = null;
+  }
 }
 
 export async function startWorkers(): Promise<void> {
@@ -74,6 +105,7 @@ export async function startWorkers(): Promise<void> {
 
   startStatsFlush();
   startStatusFlush();
+  startAnomalyAutoAck();
   globalState.__workersStarted = true;
   console.log(`[Workers] ${workers.length - failed.length}/${workers.length} indexers started successfully`);
 }
@@ -82,6 +114,7 @@ export function stopWorkers(): void {
   console.log('[Workers] Stopping indexers...');
 
   stopStatsFlush();
+  stopAnomalyAutoAck();
   // Stop workers first so they update their state to 'stopped'
   globalState.__blockIndexer?.stop();
   globalState.__milestoneIndexer?.stop();

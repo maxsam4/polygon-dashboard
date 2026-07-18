@@ -139,6 +139,7 @@ Detects anomalies in key metrics and stores them for alerting:
 - **Integration**: BlockIndexer calls `checkBlocksForAnomalies()` after each batch
 - **API**: `GET /api/anomalies` (filtering, pagination), `POST /api/anomalies/acknowledge` (bulk ack)
 - **UI**: `/alerts` page with filters, acknowledgement controls
+- **Auto-ack**: indexer worker auto-acknowledges anomalies older than `ANOMALY_AUTO_ACK_AGE_DAYS` (30 — the /alerts history window) hourly + at startup, so aged-out alerts can't keep the nav badge lit
 
 ### Gas Target Percentage (EIP-1559 Elasticity)
 
