@@ -57,6 +57,31 @@ function fmtPctPerYear(pct: number | null | undefined): string | null {
   return `${pct.toFixed(2)}%/yr`;
 }
 
+// Revenue card sub: window USD on line 1, annualized run rate on line 2
+function RevenueSub({
+  pol,
+  usd,
+  range,
+}: {
+  pol: number;
+  usd: number | null;
+  range: SummaryStats['range'];
+}) {
+  const polPerYear = annualizeOverRange(pol, range);
+  const usdPerYear = usd !== null ? annualizeOverRange(usd, range) : null;
+  return (
+    <>
+      {usd !== null && <div>{formatUsd(usd)}</div>}
+      {polPerYear !== null && (
+        <div>
+          {fmtPol(polPerYear)} POL/yr
+          {usdPerYear !== null && ` · ${formatUsd(usdPerYear)}/yr`}
+        </div>
+      )}
+    </>
+  );
+}
+
 // "peak 6,932 @ #90,437,541" with the block number linking to the explorer
 function PeakSub({ peak, block }: { peak: number | null; block: number | null }) {
   if (peak === null) return null;
@@ -348,26 +373,34 @@ export default function StatsPage() {
                 <StatCard
                   label="Base Fee (Burned)"
                   value={`${fmtPol(stats.fees.basePol)} POL`}
-                  sub={stats.fees.baseUsd !== null ? formatUsd(stats.fees.baseUsd) : undefined}
+                  sub={<RevenueSub pol={stats.fees.basePol} usd={stats.fees.baseUsd} range={stats.range} />}
                 />
                 <StatCard
                   label="Priority Fee"
                   value={`${fmtPol(stats.fees.priorityPol)} POL`}
-                  sub={stats.fees.priorityUsd !== null ? formatUsd(stats.fees.priorityUsd) : undefined}
+                  sub={
+                    <RevenueSub pol={stats.fees.priorityPol} usd={stats.fees.priorityUsd} range={stats.range} />
+                  }
                 />
                 <StatCard
                   label="Producer Revenue"
                   value={`${fmtPol(stats.fees.priorityPol * PRODUCER_PRIORITY_FEE_SHARE)} POL`}
                   sub={
-                    stats.fees.priorityUsd !== null
-                      ? `${formatUsd(stats.fees.priorityUsd * PRODUCER_PRIORITY_FEE_SHARE)} · ${Math.round(PRODUCER_PRIORITY_FEE_SHARE * 100)}% of priority fees`
-                      : `${Math.round(PRODUCER_PRIORITY_FEE_SHARE * 100)}% of priority fees`
+                    <RevenueSub
+                      pol={stats.fees.priorityPol * PRODUCER_PRIORITY_FEE_SHARE}
+                      usd={
+                        stats.fees.priorityUsd !== null
+                          ? stats.fees.priorityUsd * PRODUCER_PRIORITY_FEE_SHARE
+                          : null
+                      }
+                      range={stats.range}
+                    />
                   }
                 />
                 <StatCard
                   label="Total Fees"
                   value={`${fmtPol(stats.fees.totalPol)} POL`}
-                  sub={totalUsd !== null ? formatUsd(totalUsd) : undefined}
+                  sub={<RevenueSub pol={stats.fees.totalPol} usd={totalUsd} range={stats.range} />}
                 />
               </div>
               {stats.fees.usdMissingHours > 0 && (
